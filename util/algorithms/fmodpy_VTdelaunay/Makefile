@@ -1,5 +1,5 @@
 FORT = gfortran
-CFLAGS = -c
+CFLAGS = -c -fPIC
 LEGACY = -std=legacy -w
 INC = -llapack -lblas
 
