@@ -1,0 +1,144 @@
+MODULE VTDELAUNAY_WRAPPER
+  USE ISO_C_BINDING, ONLY: C_LONG, C_DOUBLE, C_INT
+  USE REAL_PRECISION
+  USE VTDELAUNAY
+  IMPLICIT NONE
+
+CONTAINS
+
+
+  SUBROUTINE c_DELAUNAYP( D, N, PTS, P, SIMP, WEIGHTS, ERR, EPS_OPT, E&
+     &PS_OPT_PRESENT, RNORM_OPT, RNORM_OPT_PRESENT, BUDGET_OPT, BUDGET&
+     &_OPT_PRESENT, EXTRAP_OPT, EXTRAP_OPT_PRESENT ) BIND(c)
+    
+    INTEGER(KIND=C_LONG), INTENT(IN) :: D
+    INTEGER :: TEMP_D
+    
+    INTEGER(KIND=C_LONG), INTENT(IN) :: N
+    INTEGER :: TEMP_N
+    
+    REAL(KIND=C_DOUBLE), INTENT(IN), DIMENSION(D,N) :: PTS
+    
+    REAL(KIND=C_DOUBLE), INTENT(IN), DIMENSION(D) :: P
+    
+    INTEGER(KIND=C_LONG), INTENT(OUT), DIMENSION(D+1) :: SIMP
+    INTEGER, DIMENSION(D+1) :: TEMP_SIMP
+    
+    REAL(KIND=C_DOUBLE), INTENT(OUT), DIMENSION(D+1) :: WEIGHTS
+    
+    INTEGER(KIND=C_LONG), INTENT(OUT) :: ERR
+    INTEGER :: TEMP_ERR
+    
+    REAL(KIND=C_DOUBLE), INTENT(IN), OPTIONAL :: EPS_OPT
+    LOGICAL(KIND=C_INT), INTENT(IN) :: EPS_OPT_PRESENT
+    
+    REAL(KIND=C_DOUBLE), INTENT(OUT), OPTIONAL :: RNORM_OPT
+    LOGICAL(KIND=C_INT), INTENT(IN) :: RNORM_OPT_PRESENT
+    
+    INTEGER(KIND=C_LONG), INTENT(IN), OPTIONAL :: BUDGET_OPT
+    LOGICAL(KIND=C_INT), INTENT(IN) :: BUDGET_OPT_PRESENT
+    INTEGER :: TEMP_BUDGET_OPT
+    
+    LOGICAL(KIND=C_INT), INTENT(IN), OPTIONAL :: EXTRAP_OPT
+    LOGICAL(KIND=C_INT), INTENT(IN) :: EXTRAP_OPT_PRESENT
+    
+    TEMP_D = D
+    TEMP_N = N
+    TEMP_BUDGET_OPT = BUDGET_OPT
+    
+    IF (.NOT. EPS_OPT_PRESENT) THEN
+       IF (.NOT. RNORM_OPT_PRESENT) THEN
+          IF (.NOT. BUDGET_OPT_PRESENT) THEN
+             IF (.NOT. EXTRAP_OPT_PRESENT) THEN
+                CALL DELAUNAYP(TEMP_D, TEMP_N, PTS, P, TEMP_SIMP, WEIG&
+                     &HTS, TEMP_ERR)
+             ELSE
+                CALL DELAUNAYP(TEMP_D, TEMP_N, PTS, P, TEMP_SIMP, WEIG&
+                     &HTS, TEMP_ERR, EXTRAP_OPT=EXTRAP_OPT)
+             ENDIF
+          ELSE
+             IF (.NOT. EXTRAP_OPT_PRESENT) THEN
+                CALL DELAUNAYP(TEMP_D, TEMP_N, PTS, P, TEMP_SIMP, WEIG&
+                     &HTS, TEMP_ERR, BUDGET_OPT=TEMP_BUDGET_OPT)
+             ELSE
+                CALL DELAUNAYP(TEMP_D, TEMP_N, PTS, P, TEMP_SIMP, WEIG&
+                     &HTS, TEMP_ERR, BUDGET_OPT=TEMP_BUDGET_OPT, EXTRA&
+                     &P_OPT=EXTRAP_OPT)
+             ENDIF
+          ENDIF
+       ELSE
+          IF (.NOT. BUDGET_OPT_PRESENT) THEN
+             IF (.NOT. EXTRAP_OPT_PRESENT) THEN
+                CALL DELAUNAYP(TEMP_D, TEMP_N, PTS, P, TEMP_SIMP, WEIG&
+                     &HTS, TEMP_ERR, RNORM_OPT=RNORM_OPT)
+             ELSE
+                CALL DELAUNAYP(TEMP_D, TEMP_N, PTS, P, TEMP_SIMP, WEIG&
+                     &HTS, TEMP_ERR, RNORM_OPT=RNORM_OPT, EXTRAP_OPT=E&
+                     &XTRAP_OPT)
+             ENDIF
+          ELSE
+             IF (.NOT. EXTRAP_OPT_PRESENT) THEN
+                CALL DELAUNAYP(TEMP_D, TEMP_N, PTS, P, TEMP_SIMP, WEIG&
+                     &HTS, TEMP_ERR, RNORM_OPT=RNORM_OPT, BUDGET_OPT=T&
+                     &EMP_BUDGET_OPT)
+             ELSE
+                CALL DELAUNAYP(TEMP_D, TEMP_N, PTS, P, TEMP_SIMP, WEIG&
+                     &HTS, TEMP_ERR, RNORM_OPT=RNORM_OPT, BUDGET_OPT=T&
+                     &EMP_BUDGET_OPT, EXTRAP_OPT=EXTRAP_OPT)
+             ENDIF
+          ENDIF
+       ENDIF
+    ELSE
+       IF (.NOT. RNORM_OPT_PRESENT) THEN
+          IF (.NOT. BUDGET_OPT_PRESENT) THEN
+             IF (.NOT. EXTRAP_OPT_PRESENT) THEN
+                CALL DELAUNAYP(TEMP_D, TEMP_N, PTS, P, TEMP_SIMP, WEIG&
+                     &HTS, TEMP_ERR, EPS_OPT=EPS_OPT)
+             ELSE
+                CALL DELAUNAYP(TEMP_D, TEMP_N, PTS, P, TEMP_SIMP, WEIG&
+                     &HTS, TEMP_ERR, EPS_OPT=EPS_OPT, EXTRAP_OPT=EXTRA&
+                     &P_OPT)
+             ENDIF
+          ELSE
+             IF (.NOT. EXTRAP_OPT_PRESENT) THEN
+                CALL DELAUNAYP(TEMP_D, TEMP_N, PTS, P, TEMP_SIMP, WEIG&
+                     &HTS, TEMP_ERR, EPS_OPT=EPS_OPT, BUDGET_OPT=TEMP_&
+                     &BUDGET_OPT)
+             ELSE
+                CALL DELAUNAYP(TEMP_D, TEMP_N, PTS, P, TEMP_SIMP, WEIG&
+                     &HTS, TEMP_ERR, EPS_OPT=EPS_OPT, BUDGET_OPT=TEMP_&
+                     &BUDGET_OPT, EXTRAP_OPT=EXTRAP_OPT)
+             ENDIF
+          ENDIF
+       ELSE
+          IF (.NOT. BUDGET_OPT_PRESENT) THEN
+             IF (.NOT. EXTRAP_OPT_PRESENT) THEN
+                CALL DELAUNAYP(TEMP_D, TEMP_N, PTS, P, TEMP_SIMP, WEIG&
+                     &HTS, TEMP_ERR, EPS_OPT=EPS_OPT, RNORM_OPT=RNORM_&
+                     &OPT)
+             ELSE
+                CALL DELAUNAYP(TEMP_D, TEMP_N, PTS, P, TEMP_SIMP, WEIG&
+                     &HTS, TEMP_ERR, EPS_OPT=EPS_OPT, RNORM_OPT=RNORM_&
+                     &OPT, EXTRAP_OPT=EXTRAP_OPT)
+             ENDIF
+          ELSE
+             IF (.NOT. EXTRAP_OPT_PRESENT) THEN
+                CALL DELAUNAYP(TEMP_D, TEMP_N, PTS, P, TEMP_SIMP, WEIG&
+                     &HTS, TEMP_ERR, EPS_OPT=EPS_OPT, RNORM_OPT=RNORM_&
+                     &OPT, BUDGET_OPT=TEMP_BUDGET_OPT)
+             ELSE
+                CALL DELAUNAYP(TEMP_D, TEMP_N, PTS, P, TEMP_SIMP, WEIG&
+                     &HTS, TEMP_ERR, EPS_OPT=EPS_OPT, RNORM_OPT=RNORM_&
+                     &OPT, BUDGET_OPT=TEMP_BUDGET_OPT, EXTRAP_OPT=EXTR&
+                     &AP_OPT)
+             ENDIF
+          ENDIF
+       ENDIF
+    ENDIF
+    
+    SIMP = TEMP_SIMP
+    ERR = TEMP_ERR
+    
+  END SUBROUTINE c_DELAUNAYP
+
+END MODULE VTDELAUNAY_WRAPPER

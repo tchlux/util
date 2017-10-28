@@ -57,9 +57,13 @@ if __name__ == "__main__":
     
     #      Upload to github with version tag     
     # ===========================================
-    run(["git", "push", "util", "master"])
-    run(["git", "tag", "-a", version, "-m", notes])
-    run(["git", "push", "--tags"])
+    try:
+        run(["git", "push", "util", "master"])
+        run(["git", "tag", "-a", version, "-m", notes])
+        run(["git", "push", "--tags"])
+    except:
+        print("Error encountered when uploading new git tag.")
+        pass
     
     #      Use twine to upload the package to PyPI     
     # =================================================
