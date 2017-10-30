@@ -33,7 +33,7 @@ UPDATE_README = not DRY_RUN
 GIT_UPDATE = not DRY_RUN
 GIT_RELEASE = not DRY_RUN
 AUTO_MANIFEST = True
-MANIFEST_EXCLUSIONS = [".git"]
+MANIFEST_EXCLUSIONS = [".git", ".gitignore"]
 PYPI_BUILD = True
 PYPI_RELEASE = not DRY_RUN
 # CLEAN_AFTER = not DRY_RUN
@@ -99,6 +99,8 @@ if __name__ == "__main__":
             f.write("".join(contents))
 
     if AUTO_MANIFEST:
+        #      Generate an all-inclusive manifest     
+        # ============================================
         with open("MANIFEST.in", "w") as f:
             for name in os.listdir(os.getcwd()):
                 if name not in MANIFEST_EXCLUSIONS:

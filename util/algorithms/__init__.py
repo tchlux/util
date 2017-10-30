@@ -253,7 +253,7 @@ class qHullDelaunay(Approximator):
 
 # Wrapper class for using the Delaunay fortran code
 class Delaunay(Approximator):
-    from .fmodpy_VTdelaunay.VTdelaunay import delaunayp
+    from .VTdelaunay import delaunayp
     def __init__(self):
         self.pts = None
         self.values = None
@@ -408,7 +408,7 @@ class MARS(Approximator):
 
 # Wrapper class for using the MARS fortran code
 class FortMARS(Approximator):
-    from .fmodpy_marspack.marspack import mars, fmod
+    from .marspack import mars, fmod
     def __init__(self):
         self.fm = self.im = None
 
@@ -533,7 +533,7 @@ class FortMARS(Approximator):
 
 # Wrapper class for using the LSHEP fortran code
 class LSHEP(Approximator):
-    from .fmodpy_linear_shepard.linear_shepard import lshep, lshepval
+    from .linear_shepard import lshep, lshepval
     ierrors = {}
     def __init__(self):
         self.x = self.f = self.a = self.rw = None
@@ -580,7 +580,7 @@ class LSHEP(Approximator):
 
 # Wrapper class for using the box_spline_basis fortran module
 class BBS(Approximator):
-    from .fmodpy_bootstrapped_box_splines.bootstrapped_box_splines import compute_boxes, eval_boxes
+    from .bootstrapped_box_splines import compute_boxes, eval_boxes
     def __init__(self):
         self.boxes = self.widths = self.weights = None
         self.shift = self.scale = None
@@ -614,7 +614,7 @@ class BBS(Approximator):
 
 # Wrapper class for using the box_spline_basis fortran module
 class FitBoxMesh(Approximator):
-    from .fmodpy_fit_box_mod.fit_box_mod import compute_boxes, eval_boxes
+    from .fit_box_mod import compute_boxes, eval_boxes
     def __init__(self):
         self.boxes = self.widths = self.weights = None
         self.shift = self.scale = None
@@ -648,7 +648,7 @@ class FitBoxMesh(Approximator):
 # Function for creating a surface over a region defined by the
 # axis-aligned bounding box of all data points
 class MaxBoxMesh(Approximator):
-    from .fmodpy_max_box_mod.max_box_mod import max_boxes, linear_eval
+    from .max_box_mod import max_boxes, linear_eval
 
     def __init__(self):
         self.boxes = None
@@ -878,7 +878,7 @@ DEFAULT_MIN_STEPS = 10
 DEFAULT_MIN_IMPROVEMENT = 0.0001
 
 import time
-from util.algorithms.DiRect import DiRect as optimize
+from .DiRect import DiRect as optimize
 
 # Class for tracking convergence of optimization algorithm
 class Tracker:

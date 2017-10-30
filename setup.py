@@ -38,7 +38,7 @@ if __name__ == "__main__":
         version=version,
         description = description,
         keywords = keywords,
-        classifiers=classifiers
+        classifiers=classifiers,
         include_package_data=True,
         url = 'https://github.com/{git_username}/{package}'.format(
             git_username=git_username, package=package),
