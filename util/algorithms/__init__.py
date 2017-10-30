@@ -726,53 +726,62 @@ class MaxBoxMesh(Approximator):
 # ===============================
 
 class BayesTree(Approximator):
-    # For managing and executing R codes, as well as importing packages
-    from rpy2.robjects.vectors import FloatVector
-    from rpy2.robjects.packages import importr
-    from rpy2.rinterface import RRuntimeError
-    from rpy2.robjects import r
-    from rpy2.robjects.numpy2ri import numpy2ri
-
-    def __init__(self):
-        self.train_x = None
-        self.train_y = None
-        self.BayesTree = None
-        self.ntree = None
-
-    # Simply store the data for later evaluation
     def fit(self, control_points, values, num_trees=BT_NUM_TREES):
-        # Local operations
-        self.train_x = BayesTree.r.matrix(BayesTree.numpy2ri(control_points),
-                                          nrow=control_points.shape[0],
-                                          ncol=control_points.shape[1])
-        self.train_y = BayesTree.FloatVector(values)
-        self.BayesTree = BayesTree.importr('BayesTree')
-        self.ntree = num_trees
+        print("BayesTree not implemented.")
+        pass
 
-    # Fit the training data and get the returned values
     def predict(self, x):
-        extra = False
-        # BayesTree cannot handle single test points, for some reason
-        # there must be at least 2 points. This adds an extra null point.
-        if x.shape[0] == 1:
-            extra = True
-            x = np.concatenate((np.ones(shape=(1,x.shape[1])),x))
-        # Convert the x input to an R data type
-        x = BayesTree.r.matrix(BayesTree.numpy2ri(x),
-                               nrow=x.shape[0], ncol=x.shape[1])
-        # Calculate the response for the given x with R
-        try:
-            response = self.BayesTree.bart(self.train_x, self.train_y, x,
-                                           verbose=False, ntree=self.ntree)
-            # The 7th return value is the estimated response
-            response = np.asarray(response[7], dtype=float)
-            # except:
-            #     response = np.array([DEFAULT_RESPONSE] * x.dim[0])
-        except BayesTree.RRuntimeError:
-            response = [DEFAULT_RESPONSE] * x.dim[0]
-        # Remove the extra point if it was added
-        if extra: response = response[-1:]
-        return response
+        print("BayesTree not implemented.")
+        pass
+
+# class BayesTree(Approximator):
+#     # For managing and executing R codes, as well as importing packages
+#     from rpy2.robjects.vectors import FloatVector
+#     from rpy2.robjects.packages import importr
+#     from rpy2.rinterface import RRuntimeError
+#     from rpy2.robjects import r
+#     from rpy2.robjects.numpy2ri import numpy2ri
+
+#     def __init__(self):
+#         self.train_x = None
+#         self.train_y = None
+#         self.BayesTree = None
+#         self.ntree = None
+
+#     # Simply store the data for later evaluation
+#     def fit(self, control_points, values, num_trees=BT_NUM_TREES):
+#         # Local operations
+#         self.train_x = BayesTree.r.matrix(BayesTree.numpy2ri(control_points),
+#                                           nrow=control_points.shape[0],
+#                                           ncol=control_points.shape[1])
+#         self.train_y = BayesTree.FloatVector(values)
+#         self.BayesTree = BayesTree.importr('BayesTree')
+#         self.ntree = num_trees
+
+#     # Fit the training data and get the returned values
+#     def predict(self, x):
+#         extra = False
+#         # BayesTree cannot handle single test points, for some reason
+#         # there must be at least 2 points. This adds an extra null point.
+#         if x.shape[0] == 1:
+#             extra = True
+#             x = np.concatenate((np.ones(shape=(1,x.shape[1])),x))
+#         # Convert the x input to an R data type
+#         x = BayesTree.r.matrix(BayesTree.numpy2ri(x),
+#                                nrow=x.shape[0], ncol=x.shape[1])
+#         # Calculate the response for the given x with R
+#         try:
+#             response = self.BayesTree.bart(self.train_x, self.train_y, x,
+#                                            verbose=False, ntree=self.ntree)
+#             # The 7th return value is the estimated response
+#             response = np.asarray(response[7], dtype=float)
+#             # except:
+#             #     response = np.array([DEFAULT_RESPONSE] * x.dim[0])
+#         except BayesTree.RRuntimeError:
+#             response = [DEFAULT_RESPONSE] * x.dim[0]
+#         # Remove the extra point if it was added
+#         if extra: response = response[-1:]
+#         return response
 
 # WARNING: Example test data that fails
 # train_x = [[0, 0],
@@ -791,36 +800,45 @@ class BayesTree(Approximator):
 # ==============================
 
 class dynaTree(Approximator):
-    # For managing and executing R codes, as well as importing packages
-    from rpy2.robjects.vectors import FloatVector
-    from rpy2.robjects.packages import importr
-    from rpy2.robjects import r
+    def fit(self, control_points, values, num_trees=BT_NUM_TREES):
+        print("dynaTree not implemented.")
+        pass
 
-    def __init__(self):
-        self.dT = None
-        self.dynaTree = None
-
-    # Simply store the data for later evaluation
-    def fit(self, control_points, values, num_parts=DT_NUM_PARTS, model=DT_MODEL):
-        # Local operations
-        X = dynaTree.r.matrix(control_points,
-                              nrow=control_points.shape[0],
-                              ncol=control_points.shape[1])
-        y = dynaTree.FloatVector(values)
-        self.dT = dynaTree.importr('dynaTree')
-        self.dynaTree = self.dT.dynaTree(X,y,N=num_parts, model=model,
-                                         verb=0, minp=len(y)//2)
-
-    # Fit the training data and get the returned values
     def predict(self, x):
-        # Convert the x input to an R data type
-        x = dynaTree.r.matrix(x, nrow=x.shape[0], ncol=x.shape[1])
-        # Calculate the response for the given x with R
-        response = self.dT.predict_dynaTree(self.dynaTree, x)
-        # The 12th return value is the estimated response
-        response = np.asarray(response[12], dtype=float)
-        # Return the response value(s)
-        return response
+        print("dynaTree not implemented.")
+        pass
+
+# class dynaTree(Approximator):
+#     # For managing and executing R codes, as well as importing packages
+#     from rpy2.robjects.vectors import FloatVector
+#     from rpy2.robjects.packages import importr
+#     from rpy2.robjects import r
+
+#     def __init__(self):
+#         self.dT = None
+#         self.dynaTree = None
+
+#     # Simply store the data for later evaluation
+#     def fit(self, control_points, values, num_parts=DT_NUM_PARTS, model=DT_MODEL):
+#         # Local operations
+#         X = dynaTree.r.matrix(control_points,
+#                               nrow=control_points.shape[0],
+#                               ncol=control_points.shape[1])
+#         y = dynaTree.FloatVector(values)
+#         self.dT = dynaTree.importr('dynaTree')
+#         self.dynaTree = self.dT.dynaTree(X,y,N=num_parts, model=model,
+#                                          verb=0, minp=len(y)//2)
+
+#     # Fit the training data and get the returned values
+#     def predict(self, x):
+#         # Convert the x input to an R data type
+#         x = dynaTree.r.matrix(x, nrow=x.shape[0], ncol=x.shape[1])
+#         # Calculate the response for the given x with R
+#         response = self.dT.predict_dynaTree(self.dynaTree, x)
+#         # The 12th return value is the estimated response
+#         response = np.asarray(response[12], dtype=float)
+#         # Return the response value(s)
+#         return response
 
 
 # =========================
@@ -828,43 +846,52 @@ class dynaTree(Approximator):
 # =========================
 
 class tgp(Approximator):
-    # For managing and executing R codes, as well as importing packages
-    from rpy2.robjects.vectors import FloatVector
-    from rpy2.robjects.packages import importr
-    from rpy2.robjects import r
+    def fit(self, control_points, values, num_trees=BT_NUM_TREES):
+        print("tgp not implemented.")
+        pass
 
-    def __init__(self):
-        self.train_x = None
-        self.train_y = None
-        self.tgp = None
-        self.bte = None
-
-    # Simply store the data for later evaluation
-    def fit(self, control_points, values, bte=TGP_BURNIN_TOTAL_ENERGY):
-        # Local operations
-        self.train_x = tgp.r.matrix(control_points,
-                                    nrow=control_points.shape[0],
-                                    ncol=control_points.shape[1])
-        self.train_y = tgp.FloatVector(values)
-        self.tgp = importr('tgp')
-        self.bte = bte
-        self.step = 0
-
-    # Fit the training data and get the returned values
     def predict(self, x):
-        # Convert the x input to an R data type
-        x = tgp.r.matrix(x, nrow=x.shape[0], ncol=x.shape[1])
-        # Calculate the response for the given x with R
-        bte = tgp.FloatVector(self.bte)
-        response = self.tgp.btgp(self.train_x, self.train_y, x,
-                                 BTE=bte, verb=0)
-        # response = self.tgp.btlm(self.train_x, self.train_y, x,
-        #                          BTE=bte, verb=0)
-        # response = self.tgp.bcart(self.train_x, self.train_y, x,
-        #                           BTE=bte, verb=0)
+        print("tgp not implemented.")
+        pass
 
-        # The 15th return value is the estimated response
-        return np.asarray(response[15], dtype=float)
+# class tgp(Approximator):
+#     # For managing and executing R codes, as well as importing packages
+#     from rpy2.robjects.vectors import FloatVector
+#     from rpy2.robjects.packages import importr
+#     from rpy2.robjects import r
+
+#     def __init__(self):
+#         self.train_x = None
+#         self.train_y = None
+#         self.tgp = None
+#         self.bte = None
+
+#     # Simply store the data for later evaluation
+#     def fit(self, control_points, values, bte=TGP_BURNIN_TOTAL_ENERGY):
+#         # Local operations
+#         self.train_x = tgp.r.matrix(control_points,
+#                                     nrow=control_points.shape[0],
+#                                     ncol=control_points.shape[1])
+#         self.train_y = tgp.FloatVector(values)
+#         self.tgp = importr('tgp')
+#         self.bte = bte
+#         self.step = 0
+
+#     # Fit the training data and get the returned values
+#     def predict(self, x):
+#         # Convert the x input to an R data type
+#         x = tgp.r.matrix(x, nrow=x.shape[0], ncol=x.shape[1])
+#         # Calculate the response for the given x with R
+#         bte = tgp.FloatVector(self.bte)
+#         response = self.tgp.btgp(self.train_x, self.train_y, x,
+#                                  BTE=bte, verb=0)
+#         # response = self.tgp.btlm(self.train_x, self.train_y, x,
+#         #                          BTE=bte, verb=0)
+#         # response = self.tgp.bcart(self.train_x, self.train_y, x,
+#         #                           BTE=bte, verb=0)
+
+#         # The 15th return value is the estimated response
+#         return np.asarray(response[15], dtype=float)
 
 
 # =================================================
