@@ -1,45 +1,51 @@
-from setuptools import setup, find_packages
+# Custom error (in case user does not have setuptools)
+class DependencyError(Exception): pass
 
-with open("version.txt") as f:
-    version = f.read().strip()
+# Try to import setuptools (if it fails, the user needs that package)
+try: 
+    from setuptools import setup, find_packages
+except:
+    raise(DependencyError("Missing python package 'setuptools'.\n  pip install --user setuptools"))
 
-setup(
-    author = 'Thomas C.H. Lux',
-    author_email = 'tchlux@vt.edu',
-    name='util',
+import os
+# Convenience function for reading information files
+def read(f_name, dir_name="about"):
+    text = []
+    with open(os.path.join(dir_name, f_name)) as f:
+        for line in f:
+            line = line.strip()
+            if (len(line) > 0) and (line[0] != "#"):
+                text.append(line)
+    return text
 
-    packages=find_packages(exclude=[]),
-    install_requires=['numpy>=1.11'],
-    version=version,
-    url = 'https://github.com/tchlux/util',
-    download_url = 'https://github.com/tchlux/util/archive/{version}.tar.gz'.format(version=version),
-    description = 'A machine learning, optimization, and data science utilities package.',
-    keywords = ['python', 'python3'],
-    python_requires = '>=3.0',
-    license='MIT',
-    classifiers=[
-        # How mature is this project? Common values are
-        #   3 - Alpha
-        #   4 - Beta
-        #   5 - Production/Stable
-        'Development Status :: 4 - Beta',
+if __name__ == "__main__":
+    #      Read in the package description files     
+    # ===============================================
+    package = os.path.basename(os.path.dirname(os.path.abspath(__file__)))
+    version =read("version.txt")[0]
+    description = read("description.txt")[0]
+    requirements = read("requirements.txt")
+    keywords = read("keywords.txt")
+    classifiers = read("classifiers.txt")
+    name, email, git_username = read("author.txt")
 
-        # Indicate who your project is intended for
-        'Intended Audience :: Developers',
-        'Topic :: Software Development :: Build Tools',
+    setup(
+        author = name,
+        author_email = email,
+        name=package,
+        packages=find_packages(exclude=[]),
+        install_requires=requirements,
+        version=version,
+        description = description,
+        keywords = keywords,
+        classifiers=classifiers
+        include_package_data=True,
+        url = 'https://github.com/{git_username}/{package}'.format(
+            git_username=git_username, package=package),
+        download_url = 'https://github.com/{git_username}/{package}/archive/{version}.tar.gz'.format(
+            git_username=git_username, package=package, version=version),
+        scripts=["scripts/compile_fortran.py"],
+        python_requires = '>=3.0',
+        license='MIT',
+    )
 
-        # Pick your license as you wish (should match "license" above)
-        'License :: OSI Approved :: MIT License',
-
-        # Specify the Python versions you support here. In particular, ensure
-        # that you indicate whether you support Python 2, Python 3 or both.
-        'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.2',
-        'Programming Language :: Python :: 3.3',
-        'Programming Language :: Python :: 3.4',
-        'Programming Language :: Python :: 3.5',
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7',
-]
-
-)
