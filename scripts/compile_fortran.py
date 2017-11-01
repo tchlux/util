@@ -19,6 +19,9 @@ for alg_name in algorithm_dirs:
         if (alg_name in f) and (".f" in f[:-3]):
             source_file = os.path.join(path, f)
             if os.path.isfile(source_file): break
+    else:
+        print("Could not find source for '%s'."%alg_name)
+        continue
     print(source_file)
     if (alg_name == "marspack"):
         fmodpy.wrap(source_file, output_directory=algorithms_path,
