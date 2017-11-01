@@ -303,7 +303,8 @@ class Delaunay(Approximator):
         response = []
         # Get the predictions from VTdelaunay
         p_in = np.asarray(x.T, dtype=np.float64, order="F")
-        work_in = np.ones(shape=(p_in.shape[0]*p_in.shape[1],), 
+        work_in = np.ones(shape=(max(5*p_in.shape[0],
+                                     p_in.shape[0]*p_in.shape[1]),), 
                           dtype=np.float64, order="F")
         simp_out = np.ones(shape=(p_in.shape[0]+1, p_in.shape[1]), 
                            dtype=np.int32, order="F")
@@ -319,6 +320,13 @@ class Delaunay(Approximator):
                            extrap_opt=1000,
                            interp_in_opt=interp_in,
                            interp_out_opt=interp_out)
+        if debug:
+            print("VTDelaunay")
+            print("P Input:   ", p_in.T)
+            print("Simp Out:  ", simp_out.T - 1)
+            print("Error Out: ", error_out)
+            print("Interp Out:", interp_out.T)
+
         return interp_out[0,:]
 
         # for i,x_pt in enumerate(x):
