@@ -1,11 +1,12 @@
 #!/usr/local/bin/python3
 
+class DependencyError(Exception): pass
+
 # Try to import fmodpy (to prepare the fortran sources locally)
 try:
     import fmodpy
 except:
-    print("ERROR: Need to install fmodpy.\n  pip install --user fmodpy")
-    exit()
+    raise(DependencyError("Missing python package 'fmodpy'.\n  pip install --user fmodpy"))
 
 import os
 

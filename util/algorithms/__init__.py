@@ -29,6 +29,9 @@ DT_MODEL = "linear"
 
 TGP_BURNIN_TOTAL_ENERGY = (20, 120, 1)
 
+MLP_R_ACTIVATION_FUNC = "relu"
+MLP_R_SOLVER = "lbfgs"
+
 # Get the name of a class as listed in python source file.
 CLASS_NAME = lambda obj: (repr(obj)[1:].split(" ")[0]).split(".")[-1]
 
@@ -63,6 +66,34 @@ class Approximator:
         # Return the response values
         return response[0] if single_response else response
 
+
+# ==========================================
+#      Multi-Layer Perceptron Regressor     
+# ==========================================
+class MLPRegressor(Approximator):
+    from sklearn.neural_network import MLPRegressor
+    def __init__(self, *args, activation=MLP_R_ACTIVATION_FUNC,
+                 solver=MLP_R_SOLVER, **kwargs):
+        kwargs.update(dict(activation=activation, solver=solver))
+        self.mlp = MLPRegressor.MLPRegressor(*args, **kwargs)
+    def fit(self, *args, **kwargs):
+        return self.mlp.fit(*args, **kwargs)
+    def predict(self, *args, **kwargs):
+        return self.mlp.predict(*args, **kwargs)
+
+
+# ==================================
+#      Support Vector Regressor     
+# ==================================
+class SVR(Approximator):
+    from sklearn.svm import SVR
+    def __init__(self, *args, **kwargs):
+        # kwargs.update(dict())
+        self.svr = SVR.SVR(*args, **kwargs)
+    def fit(self, *args, **kwargs):
+        return self.svr.fit(*args, **kwargs)
+    def predict(self, *args, **kwargs):
+        return self.svr.predict(*args, **kwargs)
 
 # ====================================================
 #      Simple Linear Model Implemented with Numpy     
