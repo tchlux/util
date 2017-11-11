@@ -585,8 +585,8 @@ class LSHEP(Approximator):
         self.a = np.ones(shape=self.x.shape, order="F")
         self.rw = np.ones(shape=(self.x.shape[1],), order="F")
         # In-place update of self.a and self.rw
-        a,rw,ier = LSHEP.lshep(self.x.shape[0], self.x.shape[1],
-                               self.x, self.f, self.a, self.rw)
+        LSHEP.lshep(self.x.shape[0], self.x.shape[1],
+                    self.x, self.f, self.a, self.rw)
 
     # Use fortran code to evaluate the computed boxes
     def predict(self, x):
@@ -594,11 +594,13 @@ class LSHEP(Approximator):
         response = []
         for x_pt in x:
             x_pt = np.array(np.reshape(x_pt,(self.x.shape[0],)), order="F")
-            ier, resp = LSHEP.lshepval(x_pt, self.x.shape[0],
+            resp = LSHEP.lshepval(x_pt, self.x.shape[0],
                                        self.x.shape[1], self.x,
                                        self.f, self.a, self.rw)
             response.append(resp)
-            LSHEP.ierrors[ier] = LSHEP.ierrors.get(ier,0) + 1
+            # TODO: Need to update fmodpy so that fortran functions
+            #       can still have output arguments. Then rewrite this.
+            # LSHEP.ierrors[ier] = LSHEP.ierrors.get(ier,0) + 1
         # Return the response values
         return response
 

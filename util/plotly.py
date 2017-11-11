@@ -520,6 +520,50 @@ class Plot:
         getattr(self, bar_spacing+"_min_max")[0] = min_max[0]
         getattr(self, bar_spacing+"_min_max")[1] = min_max[1]
 
+
+    # # Decorated "add" function that automatically sets the options
+    # # necessary for plotting an N-bin PDF histogram of a given set of
+    # # values. By default the bars are separated along "bar_spacing"
+    # # axis, and the area of all bars together adds to 1.
+    # # 
+    # #  name -- The string name of the series being added
+    # #  box_mean -- 'sd'  -> overlays a standard deviation diamond
+    # #           -- True  -> adds a dashed line for the mean to the box
+    # #           -- False -> only shows the standard quartiles and median
+    # #  
+    # def add_box(self, name, box_values, box_locations=None, orientation="v",
+    #             box_mean=True,
+    #             **kwargs):
+    #     # By default, the x values are just the name of the box
+    #     if box_locations == None: box_locations = [name] * len(box_values)
+    #     # Check for type errors (because this function requires lists)
+    #     if (type(box_locations) != list): box_locations = list(box_locations)
+    #     if (type(box_values) != list):    box_values = list(box_values)
+    #     # Convert x and y to double array format if not provided that way
+    #     try: len(box_values[0])
+    #     except: box_values = [box_values]
+    #     try: len(box_locations[0])
+    #     except: box_locations = [box_locations]
+    #     # Check for type errors (because this function requires lists)
+    #     if (type(box_locations[0]) != list): box_locations = [list(l) for l in box_locations]
+    #     if (type(box_values[0]) != list): box_values = [list(l) for l in box_values]
+    #     # Handle the creation of appropriate x and y arrays for box
+    #     # plots depending on the orientation that the user wants.
+    #     if (orientation == "v"):
+    #         box_locations = [x*len(y) for (x,y) in zip(box_locations,box_values)]
+    #         # Flatten the lists 
+    #         y_values = sum(y_values, [])
+    #         box_locations = sum(box_locations, [])
+    #     elif (orientation = "h"):
+    #         y_values = [y*len(x) for (x,y) in zip(x_values,y_values)]
+    #         # Flatten the lists 
+    #         x_values = sum(x_values, [])
+    #         y_values = sum(y_values, [])
+    #     else:
+    #         raise(Exception("ERROR: Only 'v' and 'h' are permissable box orientations."))
+    #     self.add(name, x_values, y_values, plot_type="box",
+    #              mode="lines", orientation=orientation)
+
     # Primary function for simplifying the interface to plotly
     # plotting. This single generic function can be used as a
     # full-fledged interface for generating standard plotly "data"
