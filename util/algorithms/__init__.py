@@ -87,8 +87,8 @@ class MLPRegressor(Approximator):
 # ==================================
 class SVR(Approximator):
     from sklearn.svm import SVR
-    def __init__(self, *args, **kwargs):
-        # kwargs.update(dict())
+    def __init__(self, *args, kernel="poly", **kwargs):
+        kwargs.update(dict(kernel=kernel))
         self.svr = SVR.SVR(*args, **kwargs)
     def fit(self, *args, **kwargs):
         return self.svr.fit(*args, **kwargs)
