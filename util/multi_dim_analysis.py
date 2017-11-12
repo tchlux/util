@@ -302,7 +302,7 @@ def make_test_data(inputs, output, name="", input_names=None,
                     print()
 
             # Skip sub-data sets that are degenerate
-            if len(points) <= 1:
+            if len(points) == 0:
                 if verbose:
                     print("     WARNING: cannot produce training and testing sets.")
                 continue
