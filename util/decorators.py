@@ -53,9 +53,9 @@ def timeout_after(allowed_seconds=1, default=None):
             else:
                 documentation = ""
         # Store the documentation and signature into the wrapped function
-        new_func.__name__ = func.__name__
-        new_func.__doc__ = documentation
+        if hasattr(func, "__name__"): new_func.__name__ = func.__name__
         new_func.__signature__ = inspect.signature(func)
+        new_func.__doc__ = documentation
         return new_func
     # Check which type of usage is being implemented
     if type(allowed_seconds) == type(lambda:None):
@@ -203,9 +203,9 @@ def type_check(*types, **types_by_name):
             else:
                 documentation = ""
         # Store the documentation and signature into the wrapped function
-        new_func.__name__ = func.__name__
-        new_func.__doc__ = documentation
+        if hasattr(func, "__name__"): new_func.__name__ = func.__name__
         new_func.__signature__ = inspect.signature(func)
+        new_func.__doc__ = documentation
         return new_func
     # Return the function that will return the decorated function
     return decorator_handler
