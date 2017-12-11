@@ -162,11 +162,11 @@ def get_rand_sets_of_points(points, set_size, num_sets, data=None,
             sets_of_points.add(new_set)
         if len(sets_of_points) == num_sets: break
     else:
-        print(("     WARNING: After %i iterations, could not generate"+
-               " %i unique\n              random sets of size %i from"+
-               " %i points.")%(i+1,num_sets,set_size,len(points)))
-        print("              Returning %i sets of unique points instead."%
-              len(sets_of_points))
+        print(("     WARNING: After %i iterations, could not generate %i unique\n"+
+               "              random sets of size %i from %i points.")%(
+                   i+1,num_sets,set_size,len(points)))
+        print(("              Returning %i sets of unique points instead.")%(
+            len(sets_of_points)))
     # Return the sets of points in a sorted order
     return sorted(sets_of_points)
 
@@ -346,7 +346,7 @@ def make_test_data(inputs, output, name="", input_names=None,
 
                 # Based on how many unique sets can be produced, either
                 # use randomness, or cycle all possible combinations.
-                if choose(len(points),train_size) < num_sets:
+                if choose(len(points),train_size) <= num_sets:
                     if verbose:
                         print(" using %i (determined) unique combinations."%(
                             choose(len(points),train_size)))

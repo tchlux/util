@@ -208,6 +208,11 @@ class Plot:
                     d['marker'].pop('symbol','')
                     d['marker'].pop('size','')
                     d['marker']['color'] = d.pop('fillcolor','')
+                if d['type'] == 'box':
+                    d['line'].pop('dash','')
+                    d.pop('mode','')
+                    d.pop('fill','')
+                    d.pop('layout','')
         else:
             # 3D PLOT SETUP
             for ind,d in enumerate(data):
@@ -521,48 +526,45 @@ class Plot:
         getattr(self, bar_spacing+"_min_max")[1] = min_max[1]
 
 
-    # # Decorated "add" function that automatically sets the options
-    # # necessary for plotting an N-bin PDF histogram of a given set of
-    # # values. By default the bars are separated along "bar_spacing"
-    # # axis, and the area of all bars together adds to 1.
-    # # 
-    # #  name -- The string name of the series being added
-    # #  box_mean -- 'sd'  -> overlays a standard deviation diamond
-    # #           -- True  -> adds a dashed line for the mean to the box
-    # #           -- False -> only shows the standard quartiles and median
-    # #  
-    # def add_box(self, name, box_values, box_locations=None, orientation="v",
-    #             box_mean=True,
-    #             **kwargs):
-    #     # By default, the x values are just the name of the box
-    #     if box_locations == None: box_locations = [name] * len(box_values)
-    #     # Check for type errors (because this function requires lists)
-    #     if (type(box_locations) != list): box_locations = list(box_locations)
-    #     if (type(box_values) != list):    box_values = list(box_values)
-    #     # Convert x and y to double array format if not provided that way
-    #     try: len(box_values[0])
-    #     except: box_values = [box_values]
-    #     try: len(box_locations[0])
-    #     except: box_locations = [box_locations]
-    #     # Check for type errors (because this function requires lists)
-    #     if (type(box_locations[0]) != list): box_locations = [list(l) for l in box_locations]
-    #     if (type(box_values[0]) != list): box_values = [list(l) for l in box_values]
-    #     # Handle the creation of appropriate x and y arrays for box
-    #     # plots depending on the orientation that the user wants.
-    #     if (orientation == "v"):
-    #         box_locations = [x*len(y) for (x,y) in zip(box_locations,box_values)]
-    #         # Flatten the lists 
-    #         y_values = sum(y_values, [])
-    #         box_locations = sum(box_locations, [])
-    #     elif (orientation = "h"):
-    #         y_values = [y*len(x) for (x,y) in zip(x_values,y_values)]
-    #         # Flatten the lists 
-    #         x_values = sum(x_values, [])
-    #         y_values = sum(y_values, [])
-    #     else:
-    #         raise(Exception("ERROR: Only 'v' and 'h' are permissable box orientations."))
-    #     self.add(name, x_values, y_values, plot_type="box",
-    #              mode="lines", orientation=orientation)
+    # Decorated "add" function that automatically sets the options
+    # necessary for plotting an N-bin PDF histogram of a given set of
+    # values. By default the bars are separated along "bar_spacing"
+    # axis, and the area of all bars together adds to 1.
+    # 
+    #  name        -- The string name of the series being added
+    #  box_mean    -- 'sd'  -> overlays a standard deviation diamond
+    #              -- True  -> adds a dashed line for the mean to the box
+    #              -- False -> only shows the standard quartiles and median
+    #  show_labels -- True  -> Show the labels for the box locations
+    #              -- False -> Hide the labels for the box locations
+    # 
+    def add_box(self, name, box_values, box_locations=None, orientation="v",
+                box_mean=True, show_labels=True, **kwargs):
+        # By default, the x values are just the name of the box
+        if box_locations == None: box_locations = [name] * len(box_values)
+        # Check for type errors (because this function requires lists)
+        if (type(box_locations) != list): box_locations = list(box_locations)
+        if (type(box_values) != list):    box_values = list(box_values)
+        # Convert x and y to double array format if not provided that way
+        if type(box_values[0]) != list:
+            box_values = [[v] for v in box_values]
+        if type(box_locations[0]) != list:
+            box_locations = [[v] for v in box_locations]
+        # Handle the creation of appropriate x and y arrays for box
+        # plots depending on the orientation that the user wants.
+        box_locations = [l*len(v) for (l,v) in zip(box_locations,box_values)]
+        if (orientation == "v"):
+            # Flatten the lists 
+            x_values = sum(box_locations, [])
+            y_values = sum(box_values, [])
+        elif (orientation == "h"):
+            # Flatten the lists 
+            x_values = sum(box_values, [])
+            y_values = sum(box_locations, [])
+        else:
+            raise(Exception("ERROR: Only 'v' and 'h' are permissable box orientations."))
+        self.add(name, x_values, y_values, plot_type="box",
+                 mode="lines", orientation=orientation, **kwargs)
 
     # Primary function for simplifying the interface to plotly
     # plotting. This single generic function can be used as a
@@ -646,14 +648,14 @@ class Plot:
         if type(x_values) != type(None):
             x_values = np.array(x_values)
             values = x_values
-            no_none = [v for v in x_values if type(v) != type(None)]
+            no_none = [v for v in x_values if isinstance(v,numbers.Number)]
             if len(no_none) != 0:
                 self.x_min_max = [min(min(no_none), self.x_min_max[0]),
                                   max(max(no_none), self.x_min_max[1])]
         if type(y_values) != type(None):
             y_values = np.array(y_values)
             values = y_values
-            no_none = [v for v in y_values if type(v) != type(None)]
+            no_none = [v for v in y_values if isinstance(v,numbers.Number)]
             if len(no_none) != 0:
                 self.y_min_max = [min(min(no_none), self.y_min_max[0]),
                                   max(max(no_none), self.y_min_max[1])]
@@ -661,13 +663,13 @@ class Plot:
             self.is_3d = True
             z_values = np.array(z_values)
             values = z_values
-            no_none = [v for v in z_values if type(v) != type(None)]
+            no_none = [v for v in z_values if isinstance(v,numbers.Number)]
             if len(no_none) != 0:
                 self.z_min_max = [min(min(no_none), self.z_min_max[0]),
                                   max(max(no_none), self.z_min_max[1])]
 
         # Make a nice pretty gradient of color
-        if use_gradient:
+        if use_gradient and (len(values) > 1):
             marker_colors = color_data(values, palatte)
 
         # Define z-values if none were given and we need them, and plot type
@@ -709,7 +711,7 @@ class Plot:
             if shade:
                 marker_colors = []
                 no_none = [v for v in values if v != None]
-                if len(no_none) > 0:
+                if len(no_none) > 1:
                     shift = min(no_none)
                     scale = max(no_none) - shift
                     if scale == 0: scale = 1.0
@@ -724,6 +726,8 @@ class Plot:
                         marker_colors.append( self.color(color=color,
                                                          brightness=brightness, 
                                                          alpha=opacity) )
+                else:
+                    marker_colors = [color]*len(values)
             else:
                 marker_colors = [color]*len(values)
 
@@ -890,8 +894,8 @@ class Plot:
     #  aspect_mode     -- For 3D plotting, standard plotly.
     #  scene_settings  -- Standard plotly, for updating the "scene"
     #                     dictionary for 3D plotting.
-    #  axis_settings   -- Controls for all of the axes. Include things
-    #                     like showgrid, zeroline, showline,
+    #  axis_settings   -- Controls for each of the axes. Include
+    #                     things like showgrid, zeroline, showline,
     #                     showticklabels (all boolean) or ticks="<str>"
     #  camera_position -- A dictionary of dictionaries of x,y,z
     #                     values, "up" is relative up vector, "center"
@@ -908,7 +912,8 @@ class Plot:
     def plot(self, title=None, x_range=None, y_range=None,
              z_range=None, xaxis={}, yaxis={}, zaxis={},
              fixed=True, show_legend=True, layout={}, 
-             aspect_mode='cube', scene_settings={}, axis_settings={},
+             aspect_mode='cube', scene_settings={}, x_axis_settings={},
+             y_axis_settings={}, z_axis_settings={},
              camera_position=DEFAULT_CAMERA_POSITION,
              html=True, file_name="temp-plot.html", show=True,
              append=False, **kwargs):
@@ -944,9 +949,9 @@ class Plot:
         self._clean_annotations(annotations)
         # Setup for the axes of the plot
         scene = dict(
-            xaxis = dict(title = self.x_title, range=x_range, **axis_settings),
-            yaxis = dict(title = self.y_title, range=y_range, **axis_settings),
-            zaxis = dict(title = self.z_title, range=z_range, **axis_settings),
+            xaxis = dict(title = self.x_title, range=x_range, **x_axis_settings),
+            yaxis = dict(title = self.y_title, range=y_range, **y_axis_settings),
+            zaxis = dict(title = self.z_title, range=z_range, **z_axis_settings),
         )
         # Setup the plot layout (different for 2D and 3D plots)
         if not self.is_3d:

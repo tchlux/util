@@ -3,6 +3,9 @@ from util import COMMON_SEPERATORS, UPDATE_RATE, \
     MAX_ERROR_PRINTOUT, NP_TYPES, PY_TYPES
 from util.classes import AtomicOpen
 
+class NoFix(Exception): pass
+class FailedFix(Exception): pass
+
 # Return the type of a string (try converting to int and float)
 def get_type(string):
     try:
@@ -100,10 +103,28 @@ def read_data_and_type(filename, sep=None, update_rate=UPDATE_RATE):
         if (update_rate != 0) and not (i % update_rate):
             print("\r%0.1f%% complete"% (100.0*i/len(raw_data)), 
                   flush=True, end="")
+
         try:
-            raw_data[i] = tuple(cast(value) for cast,value in
-                                zip(types, line.strip().split(sep)))
-        except:
+            # Holder for the cast row of data
+            raw_data[i] = tuple()
+            # Cycle through the row, casting the types
+            for c, (cast, value) in enumerate(zip(types, line.strip().split(sep))):
+                try:
+                    cast_value = cast(value)
+                except:
+                    # If the number was thought to be an int, try float instead
+                    if (cast == int):
+                        try:
+                            cast_value = float(value)
+                            types[c] = float
+                        # If trying float failed, then there's a problem
+                        except ValueError:
+                            raise(FailedFix())
+                    # If it's not an int to begin with, there's a problem
+                    else:
+                        raise(NoFix())
+                raw_data[i] += (cast_value,)
+        except (ValueError, FailedFix, NoFix):
             to_remove.append(i)
             if update_rate != 0:
                 if len(to_remove) > MAX_ERROR_PRINTOUT:
@@ -116,6 +137,10 @@ def read_data_and_type(filename, sep=None, update_rate=UPDATE_RATE):
     # Remove lines that caused trouble when casting types
     for i in to_remove[::-1]:
         raw_data.pop(i)
+    if (len(to_remove) > 0):
+        print("WARNING: Encountered potentially erroneous lines while\n"+
+              "         reading '%s'.\n"%(filename)+
+              "         Consider setting 'verbose=True' and checking errors.")
     if (update_rate != 0) and (len(to_remove) > MAX_ERROR_PRINTOUT):
         print("ERRONEOUS LINES FROM DATA:\n  %s"%to_remove)
     # Return the header, types, and raw data

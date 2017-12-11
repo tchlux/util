@@ -1,6 +1,12 @@
 import inspect
 
 # ==================================================================
+#                         SameAs Decorator
+# TODO: Decorator that copies the documentation and arguemnts of
+#       another function (specified as input)
+# ==================================================================
+
+# ==================================================================
 #                         Timeout Decorator     
 import signal
 # Function decorator that uses the "signal" module in order to ensure
@@ -85,6 +91,13 @@ def test_timeout_after(sec):
 # ==================================================================
 #                       Type Check Decorator     
 # 
+# TODO: The 'list' arg_type should do checking along each of the
+#       dimensions of the input, and should only require that the
+#       input be iterable up to D dimensions deep. Add associated
+#       errros as well.
+# TODO: Clean up the arg type function to only reference arguments by
+#       name in the error messages, no need to duplicate code.
+# 
 # Errors for type checking
 class WrongType(Exception): pass
 class WrongType_NotInSet(Exception): pass
@@ -94,7 +107,7 @@ class WrongNumberOfArguments(Exception): pass
 class WrongUsageOfTypeCheck(Exception): pass
 FUNCTION_TYPE = type(lambda:None)
 # Function decorator that checks the types of arguments and keyword
-# arguments. It's for guaranteeing proper usage (forgive me for how
+# arguments. It's for guaranteeing proper usage (forgive how
 # un-pythonic this is, but sometimes it's useful for producing better
 # error messages). Given a list of arguments that is shorter than the
 # actual list, it only checks the first N provided. Given keyword

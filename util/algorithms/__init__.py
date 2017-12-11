@@ -81,7 +81,7 @@ class MLPRegressor(Approximator):
     def predict(self, *args, **kwargs):
         return self.mlp.predict(*args, **kwargs)
 
-
+    
 # ==================================
 #      Support Vector Regressor     
 # ==================================
@@ -95,6 +95,7 @@ class SVR(Approximator):
     def predict(self, *args, **kwargs):
         return self.svr.predict(*args, **kwargs)
 
+    
 # ====================================================
 #      Simple Linear Model Implemented with Numpy     
 # ====================================================
@@ -118,60 +119,7 @@ class LinearModel(Approximator):
         x = np.concatenate((x,np.ones( (x.shape[0],1) )), axis=1)
         return np.dot(x, self.model)
 
-
-# ==============================================
-#      Arbitrary Nearest Plane Approximator     
-# ==============================================
-
-# Class for computing an interpolation between the nearest n neighbors
-class NearestPlane(Approximator):
-    def __init__(self):
-        self.points = None
-        self.values = None
-
-    # Use fortran code to compute the boxes for the given data
-    def fit(self, control_points, values):
-        # Process and store local information
-        self.points = control_points.copy()
-        self.values = values.copy()
-
-    # Use fortran code to evaluate the computed boxes
-    def predict(self, x):
-        # Use the nearest point 
-        response = []
-        for pt in x:
-            distances = np.sum((self.points - pt)**2, axis=1)
-            closest = np.argsort(distances)
-            plane_points = [closest[0], closest[1]]
-            to_try = 2
-            while ( len(plane_points) <= self.points.shape[1] ):
-                if to_try >= len(closest):
-                    raise(Exception(("ERROR: No set of %i linearly "+
-                                     "independant points in the "+
-                                     "training data.")%(self.points.shape[1]+1)))
-                new_points = plane_points + [closest[to_try]]
-                system_points = [self.points[new_points[0]] - self.points[p]
-                                 for p in new_points[1:] ]
-                U,s,V = np.linalg.svd(system_points)
-                if (min(singular_value / s[0] for singular_value in s[1:])
-                    > SMALL_NUMBER):
-                    plane_points = new_points[:]
-                else:
-                    # The new point was not linearly independent
-                    pass
-                # Increment the attempt index
-                to_try += 1
-            # Solve for the weights (hyperplane interpolation)
-            system = np.concatenate((self.points[plane_points],
-                            np.ones((len(plane_points),1))), axis=1)
-            pt = np.concatenate((pt,[1.0]))
-            weights = np.linalg.solve(system, pt)
-            value = np.dot(self.values[plane_points],weights)
-            response.append(value)
-        # Return the final response
-        return response
-
-
+    
 # ===========================================
 #      Simple Nearest Neighbor Regressor     
 # ===========================================
@@ -385,6 +333,25 @@ class Delaunay(Approximator):
         #             print("Err:    ", err)
         #         return [simp]
         # return response
+
+
+# ======================
+#      Voronoi Mesh     
+# ======================
+class VoronoiMesh(Approximator):
+    from .voronoi_mesh import voronoi_mesh
+    # Fit a set of points
+    def fit(self, points, values):
+        self.points = np.asarray(points.T.copy(), order="F")
+        self.values = np.asarray(values.copy(), order="F")
+
+    # Generate a prediction for a new point
+    def predict(self, xs):
+        to_predict = np.asarray(xs.T, order="F")
+        predictions = np.ones( (len(xs),) )
+        VoronoiMesh.voronoi_mesh(self.points, self.values, to_predict,
+                                 predictions)
+        return predictions
 
 
 # ==============================
@@ -761,273 +728,236 @@ class MaxBoxMesh(Approximator):
             raise(Exception("ERROR: Could not compute boxes for these x points."))
         return response
 
+try:
+    import rpy2
 
-# ===============================
-#      BayesTree (R) Wrapper     
-# ===============================
+    # ===============================
+    #      BayesTree (R) Wrapper     
+    # ===============================
 
-class BayesTree(Approximator):
-    def fit(self, control_points, values, num_trees=BT_NUM_TREES):
-        print("BayesTree not implemented.")
-        pass
+    class BayesTree(Approximator):
+        # For managing and executing R codes, as well as importing packages
+        from rpy2.robjects.vectors import FloatVector
+        from rpy2.robjects.packages import importr
+        from rpy2.rinterface import RRuntimeError
+        from rpy2.robjects import r
+        from rpy2.robjects.numpy2ri import numpy2ri
 
-    def predict(self, x):
-        print("BayesTree not implemented.")
-        pass
+        def __init__(self):
+            self.train_x = None
+            self.train_y = None
+            self.BayesTree = None
+            self.ntree = None
 
-# class BayesTree(Approximator):
-#     # For managing and executing R codes, as well as importing packages
-#     from rpy2.robjects.vectors import FloatVector
-#     from rpy2.robjects.packages import importr
-#     from rpy2.rinterface import RRuntimeError
-#     from rpy2.robjects import r
-#     from rpy2.robjects.numpy2ri import numpy2ri
+        # Simply store the data for later evaluation
+        def fit(self, control_points, values, num_trees=BT_NUM_TREES):
+            # Local operations
+            self.train_x = BayesTree.r.matrix(BayesTree.numpy2ri(control_points),
+                                              nrow=control_points.shape[0],
+                                              ncol=control_points.shape[1])
+            self.train_y = BayesTree.FloatVector(values)
+            self.BayesTree = BayesTree.importr('BayesTree')
+            self.ntree = num_trees
 
+        # Fit the training data and get the returned values
+        def predict(self, x):
+            extra = False
+            # BayesTree cannot handle single test points, for some reason
+            # there must be at least 2 points. This adds an extra null point.
+            if x.shape[0] == 1:
+                extra = True
+                x = np.concatenate((np.ones(shape=(1,x.shape[1])),x))
+            # Convert the x input to an R data type
+            x = BayesTree.r.matrix(BayesTree.numpy2ri(x),
+                                   nrow=x.shape[0], ncol=x.shape[1])
+            # Calculate the response for the given x with R
+            try:
+                response = self.BayesTree.bart(self.train_x, self.train_y, x,
+                                               verbose=False, ntree=self.ntree)
+                # The 7th return value is the estimated response
+                response = np.asarray(response[7], dtype=float)
+                # except:
+                #     response = np.array([DEFAULT_RESPONSE] * x.dim[0])
+            except BayesTree.RRuntimeError:
+                response = [DEFAULT_RESPONSE] * x.dim[0]
+            # Remove the extra point if it was added
+            if extra: response = response[-1:]
+            return response
+
+    # WARNING: Example test data that fails
+    # train_x = [[0, 0],
+    #            [0, 1],
+    #            [1, 1]]
+    # train_y = [<any 3 vector>]
+    # test_x = [[0.2, 0.0],
+    #           [0.2, 0.2],
+    #           [1.0, 0.2]]
+
+    # I have not found a way around this bug, return DEFAULT_RESPONSE instead
+
+
+    # ==============================
+    #      dynaTree (R) Wrapper     
+    # ==============================
+
+    class dynaTree(Approximator):
+        # For managing and executing R codes, as well as importing packages
+        from rpy2.robjects.vectors import FloatVector
+        from rpy2.robjects.packages import importr
+        from rpy2.robjects import r
+
+        def __init__(self):
+            self.dT = None
+            self.dynaTree = None
+
+        # Simply store the data for later evaluation
+        def fit(self, control_points, values, num_parts=DT_NUM_PARTS, model=DT_MODEL):
+            # Local operations
+            X = dynaTree.r.matrix(control_points,
+                                  nrow=control_points.shape[0],
+                                  ncol=control_points.shape[1])
+            y = dynaTree.FloatVector(values)
+            self.dT = dynaTree.importr('dynaTree')
+            self.dynaTree = self.dT.dynaTree(X,y,N=num_parts, model=model,
+                                             verb=0, minp=len(y)//2)
+
+        # Fit the training data and get the returned values
+        def predict(self, x):
+            # Convert the x input to an R data type
+            x = dynaTree.r.matrix(x, nrow=x.shape[0], ncol=x.shape[1])
+            # Calculate the response for the given x with R
+            response = self.dT.predict_dynaTree(self.dynaTree, x)
+            # The 12th return value is the estimated response
+            response = np.asarray(response[12], dtype=float)
+            # Return the response value(s)
+            return response
+
+
+    # =========================
+    #      tgp (R) Wrapper     
+    # =========================
+
+    class tgp(Approximator):
+        # For managing and executing R codes, as well as importing packages
+        from rpy2.robjects.vectors import FloatVector
+        from rpy2.robjects.packages import importr
+        from rpy2.robjects import r
+
+        def __init__(self):
+            self.train_x = None
+            self.train_y = None
+            self.tgp = None
+            self.bte = None
+
+        # Simply store the data for later evaluation
+        def fit(self, control_points, values, bte=TGP_BURNIN_TOTAL_ENERGY):
+            # Local operations
+            self.train_x = tgp.r.matrix(control_points,
+                                        nrow=control_points.shape[0],
+                                        ncol=control_points.shape[1])
+            self.train_y = tgp.FloatVector(values)
+            self.tgp = importr('tgp')
+            self.bte = bte
+            self.step = 0
+
+        # Fit the training data and get the returned values
+        def predict(self, x):
+            # Convert the x input to an R data type
+            x = tgp.r.matrix(x, nrow=x.shape[0], ncol=x.shape[1])
+            # Calculate the response for the given x with R
+            bte = tgp.FloatVector(self.bte)
+            response = self.tgp.btgp(self.train_x, self.train_y, x,
+                                     BTE=bte, verb=0)
+            # response = self.tgp.btlm(self.train_x, self.train_y, x,
+            #                          BTE=bte, verb=0)
+            # response = self.tgp.bcart(self.train_x, self.train_y, x,
+            #                           BTE=bte, verb=0)
+
+            # The 15th return value is the estimated response
+            return np.asarray(response[15], dtype=float)
+
+except:
+    class tgp(Approximator):
+        def fit(self, control_points, values, num_trees=BT_NUM_TREES):
+            print("tgp not implemented.")
+            pass
+
+        def predict(self, x):
+            print("tgp not implemented.")
+            pass
+
+
+    class BayesTree(Approximator):
+        def fit(self, control_points, values, num_trees=BT_NUM_TREES):
+            print("BayesTree not implemented.")
+            pass
+
+        def predict(self, x):
+            print("BayesTree not implemented.")
+            pass
+
+    class dynaTree(Approximator):
+        def fit(self, control_points, values, num_trees=BT_NUM_TREES):
+            print("dynaTree not implemented.")
+            pass
+
+        def predict(self, x):
+            print("dynaTree not implemented.")
+            pass
+
+
+
+# # ==============================================
+# #      Arbitrary Nearest Plane Approximator     
+# # ==============================================
+
+# # Class for computing an interpolation between the nearest n neighbors
+# class NearestPlane(Approximator):
 #     def __init__(self):
-#         self.train_x = None
-#         self.train_y = None
-#         self.BayesTree = None
-#         self.ntree = None
+#         self.points = None
+#         self.values = None
 
-#     # Simply store the data for later evaluation
-#     def fit(self, control_points, values, num_trees=BT_NUM_TREES):
-#         # Local operations
-#         self.train_x = BayesTree.r.matrix(BayesTree.numpy2ri(control_points),
-#                                           nrow=control_points.shape[0],
-#                                           ncol=control_points.shape[1])
-#         self.train_y = BayesTree.FloatVector(values)
-#         self.BayesTree = BayesTree.importr('BayesTree')
-#         self.ntree = num_trees
+#     # Use fortran code to compute the boxes for the given data
+#     def fit(self, control_points, values):
+#         # Process and store local information
+#         self.points = control_points.copy()
+#         self.values = values.copy()
 
-#     # Fit the training data and get the returned values
+#     # Use fortran code to evaluate the computed boxes
 #     def predict(self, x):
-#         extra = False
-#         # BayesTree cannot handle single test points, for some reason
-#         # there must be at least 2 points. This adds an extra null point.
-#         if x.shape[0] == 1:
-#             extra = True
-#             x = np.concatenate((np.ones(shape=(1,x.shape[1])),x))
-#         # Convert the x input to an R data type
-#         x = BayesTree.r.matrix(BayesTree.numpy2ri(x),
-#                                nrow=x.shape[0], ncol=x.shape[1])
-#         # Calculate the response for the given x with R
-#         try:
-#             response = self.BayesTree.bart(self.train_x, self.train_y, x,
-#                                            verbose=False, ntree=self.ntree)
-#             # The 7th return value is the estimated response
-#             response = np.asarray(response[7], dtype=float)
-#             # except:
-#             #     response = np.array([DEFAULT_RESPONSE] * x.dim[0])
-#         except BayesTree.RRuntimeError:
-#             response = [DEFAULT_RESPONSE] * x.dim[0]
-#         # Remove the extra point if it was added
-#         if extra: response = response[-1:]
+#         # Use the nearest point 
+#         response = []
+#         for pt in x:
+#             distances = np.sum((self.points - pt)**2, axis=1)
+#             closest = np.argsort(distances)
+#             plane_points = [closest[0], closest[1]]
+#             to_try = 2
+#             while ( len(plane_points) <= self.points.shape[1] ):
+#                 if to_try >= len(closest):
+#                     raise(Exception(("ERROR: No set of %i linearly "+
+#                                      "independant points in the "+
+#                                      "training data.")%(self.points.shape[1]+1)))
+#                 new_points = plane_points + [closest[to_try]]
+#                 system_points = [self.points[new_points[0]] - self.points[p]
+#                                  for p in new_points[1:] ]
+#                 U,s,V = np.linalg.svd(system_points)
+#                 if (min(singular_value / s[0] for singular_value in s[1:])
+#                     > SMALL_NUMBER):
+#                     plane_points = new_points[:]
+#                 else:
+#                     # The new point was not linearly independent
+#                     pass
+#                 # Increment the attempt index
+#                 to_try += 1
+#             # Solve for the weights (hyperplane interpolation)
+#             system = np.concatenate((self.points[plane_points],
+#                             np.ones((len(plane_points),1))), axis=1)
+#             pt = np.concatenate((pt,[1.0]))
+#             weights = np.linalg.solve(system, pt)
+#             value = np.dot(self.values[plane_points],weights)
+#             response.append(value)
+#         # Return the final response
 #         return response
 
-# WARNING: Example test data that fails
-# train_x = [[0, 0],
-#            [0, 1],
-#            [1, 1]]
-# train_y = [<any 3 vector>]
-# test_x = [[0.2, 0.0],
-#           [0.2, 0.2],
-#           [1.0, 0.2]]
 
-# I have not found a way around this bug, return DEFAULT_RESPONSE instead
-
-
-# ==============================
-#      dynaTree (R) Wrapper     
-# ==============================
-
-class dynaTree(Approximator):
-    def fit(self, control_points, values, num_trees=BT_NUM_TREES):
-        print("dynaTree not implemented.")
-        pass
-
-    def predict(self, x):
-        print("dynaTree not implemented.")
-        pass
-
-# class dynaTree(Approximator):
-#     # For managing and executing R codes, as well as importing packages
-#     from rpy2.robjects.vectors import FloatVector
-#     from rpy2.robjects.packages import importr
-#     from rpy2.robjects import r
-
-#     def __init__(self):
-#         self.dT = None
-#         self.dynaTree = None
-
-#     # Simply store the data for later evaluation
-#     def fit(self, control_points, values, num_parts=DT_NUM_PARTS, model=DT_MODEL):
-#         # Local operations
-#         X = dynaTree.r.matrix(control_points,
-#                               nrow=control_points.shape[0],
-#                               ncol=control_points.shape[1])
-#         y = dynaTree.FloatVector(values)
-#         self.dT = dynaTree.importr('dynaTree')
-#         self.dynaTree = self.dT.dynaTree(X,y,N=num_parts, model=model,
-#                                          verb=0, minp=len(y)//2)
-
-#     # Fit the training data and get the returned values
-#     def predict(self, x):
-#         # Convert the x input to an R data type
-#         x = dynaTree.r.matrix(x, nrow=x.shape[0], ncol=x.shape[1])
-#         # Calculate the response for the given x with R
-#         response = self.dT.predict_dynaTree(self.dynaTree, x)
-#         # The 12th return value is the estimated response
-#         response = np.asarray(response[12], dtype=float)
-#         # Return the response value(s)
-#         return response
-
-
-# =========================
-#      tgp (R) Wrapper     
-# =========================
-
-class tgp(Approximator):
-    def fit(self, control_points, values, num_trees=BT_NUM_TREES):
-        print("tgp not implemented.")
-        pass
-
-    def predict(self, x):
-        print("tgp not implemented.")
-        pass
-
-# class tgp(Approximator):
-#     # For managing and executing R codes, as well as importing packages
-#     from rpy2.robjects.vectors import FloatVector
-#     from rpy2.robjects.packages import importr
-#     from rpy2.robjects import r
-
-#     def __init__(self):
-#         self.train_x = None
-#         self.train_y = None
-#         self.tgp = None
-#         self.bte = None
-
-#     # Simply store the data for later evaluation
-#     def fit(self, control_points, values, bte=TGP_BURNIN_TOTAL_ENERGY):
-#         # Local operations
-#         self.train_x = tgp.r.matrix(control_points,
-#                                     nrow=control_points.shape[0],
-#                                     ncol=control_points.shape[1])
-#         self.train_y = tgp.FloatVector(values)
-#         self.tgp = importr('tgp')
-#         self.bte = bte
-#         self.step = 0
-
-#     # Fit the training data and get the returned values
-#     def predict(self, x):
-#         # Convert the x input to an R data type
-#         x = tgp.r.matrix(x, nrow=x.shape[0], ncol=x.shape[1])
-#         # Calculate the response for the given x with R
-#         bte = tgp.FloatVector(self.bte)
-#         response = self.tgp.btgp(self.train_x, self.train_y, x,
-#                                  BTE=bte, verb=0)
-#         # response = self.tgp.btlm(self.train_x, self.train_y, x,
-#         #                          BTE=bte, verb=0)
-#         # response = self.tgp.bcart(self.train_x, self.train_y, x,
-#         #                           BTE=bte, verb=0)
-
-#         # The 15th return value is the estimated response
-#         return np.asarray(response[15], dtype=float)
-
-
-# =================================================
-#           Optimization and Minimization          
-# =================================================
-
-
-DEFAULT_SEARCH_SIZE = 2.0**10
-DEFAULT_MAX_TIME_SEC = 5
-DEFAULT_MIN_STEPS = 10
-DEFAULT_MIN_IMPROVEMENT = 0.0001
-
-import time
-from .DiRect import DiRect as optimize
-
-# Class for tracking convergence of optimization algorithm
-class Tracker:
-    # Initialization of storage attributes
-    def __init__(self, objective, max_time=DEFAULT_MAX_TIME_SEC,
-                 min_steps=DEFAULT_MIN_STEPS, 
-                 min_improvement=DEFAULT_MIN_IMPROVEMENT, display=False):
-        self.max_time = max_time
-        self.min_steps = min_steps
-        self.min_change = min_improvement
-        self.display = display
-        self.obj = objective
-        self.max_obj = -float('inf')
-        self.min_obj = float('inf')
-        self.best_sol = None
-        self.record = []
-        self.tries = 0
-        self.start = None
-
-    # Wrapper for the objective function that tracks progress
-    def check(self,sol):
-        # Initialize starting time if it hasn't been done
-        if self.start == None: self.start = time.time()
-        # Don't execute the objective function if time has been exceeded
-        if time.time() - self.start > DEFAULT_MAX_TIME_SEC: return float('inf')
-        # Calculate the new objective value
-        new_obj = self.obj(sol)
-        self.tries += 1
-        if new_obj > self.max_obj: self.max_obj = new_obj
-        if new_obj <= self.min_obj:
-            self.record.append(new_obj)
-            self.min_obj = new_obj
-            self.best_sol = sol
-            if self.display: print(new_obj, sol)
-        return new_obj
-
-    # Function that returns "True" when optimization is over
-    def done(self):
-        # Most importantly, check for time
-        time_done = (time.time() - self.start > self.max_time)
-        if time_done: return time_done
-        # Next, check for convergence
-        converged = False
-        if len(self.record) > self.min_steps:
-            change = [abs(v - self.min_obj) for v in self.record[-self.min_steps:]]
-            divisor = max(self.record) - min(self.record)
-            if divisor == 0: 
-                converged = False
-            else:
-                converged = max(change) / divisor < self.min_change
-        return converged
-
-# Minimization function
-def minimize(objective, solution, bounds=None,
-             max_time=DEFAULT_MAX_TIME_SEC,
-             min_steps=DEFAULT_MIN_STEPS,
-             min_improvement=DEFAULT_MIN_IMPROVEMENT, plot=False):
-    solution = np.array(list(map(float,solution)))
-
-    # Generate some arbitrary bounds
-    if type(bounds) == type(None):
-        upper = solution + np.array([DEFAULT_SEARCH_SIZE]*len(solution))
-        lower = solution - np.array([DEFAULT_SEARCH_SIZE]*len(solution))
-        bounds = list(zip(lower, upper))
-
-    # Initialize a tracker for halting the optimization
-    t = Tracker(objective, max_time, min_steps, min_improvement, plot)
-
-    # Call the optimization function and get the best solution
-    optimize(t.check, t.done, bounds, solution)
-
-    if plot:
-        import pygal
-        CUSTOM_CSS_FILE = 'file://'+os.path.expanduser("~")+'/Git_Analytics/Analytics-Vis/Code/ViewData/Value_Distribution/no_dot.css'
-        config = pygal.Config()
-
-        config.css.append(CUSTOM_CSS_FILE)
-        plot = pygal.XY(config)
-        plot.add("Objective", list(zip(range(len(t.record)),t.record)))
-        plot.render_in_browser()
-        
-
-    return t.best_sol
 
