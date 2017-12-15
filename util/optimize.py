@@ -281,7 +281,7 @@ class Tracker:
                 if (len(self.record) == 1): delay = self.tries
                 else: delay = self.tries - self.record[-2][1]
                 formatted_sol = ", ".join(list(map(lambda f:"%.2e"%f,sol)))
-                print("","%i (%i): \t%.3e with\n\t[%s]"%(delay, self.tries, new_obj, list(sol)))
+                print("","%i (%i): \t%.1e with\n\t[%s]"%(delay, self.tries, new_obj, formatted_sol))
         return new_obj
 
     # Function that returns "True" when optimization is over
