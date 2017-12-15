@@ -251,7 +251,7 @@ class Tracker:
         self.obj = objective
         self.max_obj = -float('inf')
         self.min_obj = float('inf')
-        self.best_sol = None
+        self.best_sol = []
         self.record = []
         self.tries = 0
         self.start = None
