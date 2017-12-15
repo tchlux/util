@@ -280,7 +280,7 @@ class Tracker:
                     print()
                 if (len(self.record) == 1): delay = self.tries
                 else: delay = self.tries - self.record[-2][1]
-                formatted_sol = ", ".join(list(map(lambda f:"%.2e"%f),sol))
+                formatted_sol = ", ".join(list(map(lambda f:"%.2e"%f,sol)))
                 print("","%i (%i): \t%.3e with\n\t[%s]"%(delay, self.tries, new_obj, list(sol)))
         return new_obj
 
