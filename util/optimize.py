@@ -267,7 +267,9 @@ class Tracker:
         new_obj = self.obj(sol, *args, **kwargs)
         # Record relevant statistics
         if new_obj > self.max_obj: self.max_obj = new_obj
-        if new_obj <= self.min_obj:
+        # Only record the new best solution if it is (<= best) and unique
+        if (new_obj <= self.min_obj) and not all(
+                ns == bs for (ns,bs) in zip(sol, self.best_sol)):
             self.record.append((new_obj, self.tries, sol))
             self.min_obj = new_obj
             self.best_sol = sol
@@ -279,7 +281,8 @@ class Tracker:
                     print()
                 if (len(self.record) == 1): delay = self.tries
                 else: delay = self.tries - self.record[-2][1]
-                print("","%i (%i): \t%.3e with %s"%(delay, self.tries, new_obj, list(sol)))
+                formatted_sol = ", ".join(list(map(lambda f:"%.2e"%f),sol))
+                print("","%i (%i): \t%.3e with\n\t[%s]"%(delay, self.tries, new_obj, list(sol)))
         return new_obj
 
     # Function that returns "True" when optimization is over
