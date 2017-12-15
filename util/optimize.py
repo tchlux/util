@@ -251,7 +251,7 @@ class Tracker:
         self.obj = objective
         self.max_obj = -float('inf')
         self.min_obj = float('inf')
-        self.best_sol = []
+        self.best_sol = None
         self.record = []
         self.tries = 0
         self.start = None
@@ -268,8 +268,7 @@ class Tracker:
         # Record relevant statistics
         if new_obj > self.max_obj: self.max_obj = new_obj
         # Only record the new best solution if it is (<= best) and unique
-        if (new_obj <= self.min_obj) and not all(
-                ns == bs for (ns,bs) in zip(sol, self.best_sol)):
+        if (new_obj <= self.min_obj):
             self.record.append((new_obj, self.tries, sol))
             self.min_obj = new_obj
             self.best_sol = sol
