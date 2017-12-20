@@ -2,6 +2,8 @@ import time, random
 import numpy as np
 from scipy.optimize import minimize as scipy_minimize
 
+CHECKPOINT_FILE = "optimization_checkpoint.py"
+
 # ====================================================================
 #                  DEFINITION OF AMPGO MINIMIZER     
 # 
@@ -243,7 +245,9 @@ class Tracker:
     # Initialization of storage attributes
     def __init__(self, objective, max_time=DEFAULT_MAX_TIME_SEC,
                  min_steps=DEFAULT_MIN_STEPS, 
-                 min_improvement=DEFAULT_MIN_IMPROVEMENT, display=False):
+                 min_improvement=DEFAULT_MIN_IMPROVEMENT,
+                 display=False, checkpoint=True,
+                 checkpoint_file=CHECKPOINT_FILE):
         self.max_time = max_time
         self.min_steps = min_steps
         self.min_change = min_improvement
@@ -255,6 +259,8 @@ class Tracker:
         self.record = []
         self.tries = 0
         self.start = None
+        self.checkpoint = checkpoint
+        self.checkpoint_file = checkpoint_file
 
     # Wrapper for the objective function that tracks progress
     def check(self, sol, *args, **kwargs):
@@ -269,19 +275,28 @@ class Tracker:
         if new_obj > self.max_obj: self.max_obj = new_obj
         # Only record the new best solution if it is (<= best) and unique
         if (new_obj <= self.min_obj):
+            # Checkpointing and displaying solution progression should
+            # only happen if the new solution is actually better.
+            if (new_obj < self.min_obj): 
+                # Checkpoints for progression (always save the best solutions)
+                if self.checkpoint:
+                    formatted_sol = ", ".join(list(map(lambda f:"%e"%f,sol)))
+                    with open(self.checkpoint_file, "a") as f:
+                        print("sol_%i = [%s]"%(self.tries, formatted_sol),file=f)
+                # Display progress to the user
+                if self.display:
+                    if (self.tries == 1): 
+                        print()
+                        print("Formatted convergence printout:")
+                        print("","[delay] ([attempts]):\t[obj] with numbered solutions saved in %s"%self.checkpoint_file)
+                        print()
+                    if (len(self.record) == 1): delay = self.tries
+                    else: delay = self.tries - self.record[-2][1]
+                    print("","%i (%i): \t%.1e"%(delay, self.tries, new_obj))
+            # Recording the new solutions (record ones that are just as good as others)
             self.record.append((new_obj, self.tries, sol))
             self.min_obj = new_obj
             self.best_sol = sol
-            if self.display: 
-                if (self.tries == 1): 
-                    print()
-                    print("Formatted convergence printout:")
-                    print("","[delay] ([attempts]):\t[obj] with [solution]")
-                    print()
-                if (len(self.record) == 1): delay = self.tries
-                else: delay = self.tries - self.record[-2][1]
-                formatted_sol = ", ".join(list(map(lambda f:"%.2e"%f,sol)))
-                print("","%i (%i): \t%.1e with\n\t[%s]"%(delay, self.tries, new_obj, formatted_sol))
         return new_obj
 
     # Function that returns "True" when optimization is over
@@ -339,6 +354,9 @@ class Tracker:
 #                         best for noisy multi-min spaces
 #       Random          - Pure random baseline for comparison, best for
 #                         discontinuous and noisy spaces.
+#   checkpoint      -- Boolean indicating whether or not a checkpoint
+#                      file should be saved with intermediate best solutions
+#   checkpoint_file -- String name of the file to save for checkpointing
 # 
 # OUTPUT:
 #   solution        -- The best solution identified by the minimizer provided
@@ -347,7 +365,8 @@ def minimize(objective, solution, bounds=None, args=tuple(),
              max_time=DEFAULT_MAX_TIME_SEC,
              min_steps=DEFAULT_MIN_STEPS,
              min_improvement=DEFAULT_MIN_IMPROVEMENT, display=False,
-             method=AMPGO):
+             method=AdaptiveNormal, checkpoint=True,
+             checkpoint_file=CHECKPOINT_FILE):
     # Convert the solution into a float array (if it's not already)
     solution = np.asarray(solution, dtype=float)
 
@@ -358,7 +377,8 @@ def minimize(objective, solution, bounds=None, args=tuple(),
         bounds = list(zip(lower, upper))
 
     # Initialize a tracker for halting the optimization
-    t = Tracker(objective, max_time, min_steps, min_improvement, display)
+    t = Tracker(objective, max_time, min_steps, min_improvement,
+                display, checkpoint, checkpoint_file)
 
     # Call the optimization function and get the best solution
 
