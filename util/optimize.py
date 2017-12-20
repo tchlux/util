@@ -273,6 +273,9 @@ class Tracker:
         new_obj = self.obj(sol, *args, **kwargs)
         # Record relevant statistics
         if new_obj > self.max_obj: self.max_obj = new_obj
+        # Default to having displays be inline updates, only changed
+        # for when new best solutions are discovered
+        display_end = "\r"
         # Only record the new best solution if it is (<= best) and unique
         if (new_obj <= self.min_obj):
             old_min_obj = self.min_obj
@@ -289,22 +292,17 @@ class Tracker:
                     with open(self.checkpoint_file, "w") as f:
                         print("solution = [%s]"%(formatted_sol), file=f)
                         print("obj_value = %s"%(self.min_obj), file=f)
-                # Display progress to the user
-                if self.display:
-                    if (self.tries == 1): 
-                        print()
-                        print("Formatted convergence printout:")
-                        print("","[delay] ([attempts]):\t[obj] with numbered solutions saved in %s"%self.checkpoint_file)
-                        print()
-                    if (len(self.record) == 1): delay = self.tries
-                    else: delay = self.tries - self.record[-2][1]
-                    print("","%i (%i): \t%.1e"%(delay, self.tries, new_obj))
-        elif self.display:
-            # Otherwise just print an update that will be overwritten
-            # so the user knows that progress is in fact being made
-            # (and at what pace progress is being made)
-            delay = self.tries - self.record[-2][1]
-            print("%i (%i):\t%.1e"%(delay, self.tries, new_obj),end="\r")
+                display_end = "\n"
+        # Display progress to the user
+        if self.display:
+            if (self.tries == 1): 
+                print()
+                print("Formatted convergence printout:")
+                print("","[delay] ([attempts]):\t[obj] with numbered solutions saved in %s"%self.checkpoint_file)
+                print()
+            if (len(self.record) == 1): delay = self.tries
+            else: delay = self.tries - self.record[-2][1]
+            print("","%i (%i): \t%.1e"%(delay, self.tries, new_obj), end=display_end)
         return new_obj
 
     # Function that returns "True" when optimization is over
