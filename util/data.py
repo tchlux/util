@@ -163,7 +163,15 @@ def read_struct(file_name, sep=None, verbose=False):
         raise(Exception("DATA ERROR: "+msg))
     # Convert the data into numpy form
     if verbose: print("Converting the data into numpy format...")
-    dtypes = np.dtype([(h,)+NP_TYPES[t] for h,t in zip(header,types)])
+    dtypes = []
+    for i,(h,t) in enumerate(zip(header,types)):
+        if (t != str):
+            pair = (h,) + NP_TYPES[t]
+        else:
+            max_len = max(len(row[i]) for row in data)
+            pair = (h,) + NP_TYPES[t][:1]+(max_len,)
+        dtypes.append(pair)
+    dtypes = np.dtype(dtypes)
     if verbose: print("Data types:",dtypes)
     data = np.array(data, dtype=dtypes)
     return data

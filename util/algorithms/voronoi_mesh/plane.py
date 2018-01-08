@@ -59,6 +59,8 @@ class Linn:
                 boundary = (float('inf'),)
                 # Get the nearest point
                 nearest = self.points[nearest_ind]
+                vector = (x - nearest)
+                # dist_to_x = self.length(vector)
                 # Calculate the vectors defining separating planes for
                 # all other training points, use the closest one in
                 # the direction of 'vector' as the boundary.
@@ -73,18 +75,18 @@ class Linn:
                     # nearest as other is.
                     sign = (other_to_divide - nearest_to_divide) * (x_to_divide - nearest_to_divide)
                     if (sign > 0):
-                        # Identify the midpoint between (nearest + other)
-                        middle = (nearest_to_divide + other_to_divide) / 2
-                        # Identify how much farther x is than the midpoint
-                        ratio = (x_to_divide-nearest_to_divide) / (middle-nearest_to_divide)
+                        # # Identify the midpoint between (nearest + other)
+                        # middle = (nearest_to_divide + other_to_divide) / 2
+                        # # Identify how much farther x is than the midpoint
+                        # ratio = (x_to_divide-nearest_to_divide) / (middle-nearest_to_divide)
+                        ratio = 2*(x_to_divide-nearest_to_divide)/(other_to_divide-nearest_to_divide)
                         # Calculate the distance to the boundary
                         # (using the known distance to the point)
-                        vector = (x - nearest)
-                        dist_to_x = self.length(vector)
-                        dist_to_boundary = self.length(vector/ratio)
+                        # dist_to_boundary = ratio
+                        dist_to_boundary = self.length(vector)/ratio
                         if (dist_to_boundary < boundary[0]):
                             # ratio = dist_to_x / dist_to_boundary
-                            boundary = (dist_to_boundary, dist_to_x)
+                            boundary = (dist_to_boundary, ratio)
                     else:
                         # We know that 'other' is blocked from
                         # reaching x by 'nearest' and should not check
@@ -102,8 +104,10 @@ class Linn:
                         # new boundary that would be defined by x)
                         weights.append( max(0,boundary[0] - boundary[1]/2) )
                     else:
+                        # boundary = (self.length(vector/boundary[0]), boundary[1])
+
                         # Calculate the weight of this training point response
-                        ratio = boundary[1] / boundary[0]
+                        ratio = boundary[1]
                         weights.append( self.radius(ratio / self.basis_size) )
                 
             if sum(weights) > 0:
@@ -126,7 +130,7 @@ if __name__ == "__main__":
     upp = 1
     dim = 2
     plot_points = 2000
-    N = 36
+    N = 4
     random = True
     if random:
         x = np.random.random(size=(N,dim))
