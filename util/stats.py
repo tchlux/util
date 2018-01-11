@@ -3,7 +3,7 @@ import numpy as np
 from scipy.interpolate import PchipInterpolator, splrep, splev
 from scipy.integrate import quad as integrate
 from scipy.stats import kstest
-from util.algorithms import minimize
+from util.optimize import minimize
 
 
 #      Functional Representations of Data     
@@ -199,29 +199,33 @@ def normal_cdf_func(data):
 # compared, return the largest confidence with which the two
 # distributions can be said to be the same.
 def ks_same_confidence(ks_stat, n1, n2=float('inf')):
-    # By definition of the KS-test:
+    # By definition of the KS-test: 
+    # 
+    #    KS > c(a) (1/n1 + 1/n2)^(1/2)
+    # 
+    #   where KS is the KS statistic, n1 and n2 are the respective
+    #   sample sizes for each distribution and c(a) is defined as
     # 
     #    c(a) = ( -ln(a/2)/2 )^(1/2)
     # 
-    #   The standard test for if two distributions come from the same
-    #   underlying distribution with "a" confidence. AKA, if you want
-    #   the distributions to be the same, you want this test to pass
-    #   with the largest "a" possible.
+    #   is the standard for testing if two distributions come from the
+    #   same underlying distribution with "a" confidence. If we want
+    #   the distributions to be the same, we want the KS test to pass
+    #   with the largest "a" possible. The above check can be reversed
+    #   to compute the largest "a" with which the KS test states the
+    #   two distributions are certainly the same.
     # 
-    #    KS > c(a) x (1/n1 + 1/n2)^(1/2)
-    # 
-    #   where n1 and n2 are the respective sample sizes for each
-    #   distribution. The above check can be reversed to compute the
-    #   largest "a" with which the KS test states the two
-    #   distributions are certainly the same. (technically 1 above)
-    # 
-    #    c^-1(b) = 2 x e^(-2 x b^2)
+    #    c^-1(b) = 2 e^(-2 b^2)
     # 
     #    a = c^-1 ( (KS / (1/n1 + 1/n2)^(1/2)) )
-    #      = e^( (KS / (1/n1 + 1/n2)^(1/2))^2 x -2 ) x 2
-    #      = 2 x e^( -2 x KS^2 / |1/n1 + 1/n2| )
+    #      = 2 e^( -2 (KS / (1/n1 + 1/n2)^(1/2))^2 )
+    #      = 2 e^( -2 KS^2 / |1/n1 + 1/n2| )
+    #    
+    #    and "a" cannot be larger than 1. Therefore, finally we have
     # 
-    return 2 * np.exp( -2 * ( ks_stat**2 / abs((1/n1) + (1/n2)) ))
+    #    a = min(1, 2 e^( -2 KS^2 / |1/n1 + 1/n2| ))
+    #                                                                 
+    return min(1.0, 2 * np.exp( -2 * ( ks_stat**2 / abs((1/n1) + (1/n2)) )))
 
 def normal_confidence(distribution):
     # # Make the distribution 0 mean and unit variance (unit standard deviation)
@@ -233,34 +237,45 @@ def normal_confidence(distribution):
     
 
 # Calculate the maximum difference between two CDF functions (two sample)
-def ks_diff(test_func, true_func):
+def ks_diff(test_func, true_func, method="util"):
     # Cycle through the functions to find the min and max of all ranges
     min_pt, max_pt = true_func()
+    if method in {"scipy", "util"}:
+        diff_func = lambda x: -abs(test_func(x) - true_func(x))
+        if method == "scipy":
+            # METHOD 1:
+            #  Use scipy to maximize the difference function between
+            #  the two cdfs in order to find the greatest difference.
+            sol = minimize(diff_func, [(max_pt - min_pt) / 2],
+                           bounds=[(min_pt,max_pt)], method='L-BFGS-B').x
+        elif method == "util":
+            # METHOD 2 (default):
+            #  Use the default minimizer in "optimize" to maximize the
+            #  difference function between the two cdfs in order to
+            #  find the greatest difference.
+            sol = minimize(diff_func, [(max_pt - min_pt) / 2],
+                           bounds=[(min_pt,max_pt)])
+        greatest_diff = abs(test_func(sol) - true_func(sol))
+    else:
+        # METHOD 3:
+        #  Generate a large set of x-points and find the difference
+        #  between the functions at all of those points. Generate a
+        #  grid of points and "zoom in" around the greatest difference
+        #  points to identify the spot with largest gap.
+        x_points = np.linspace(min_pt, max_pt, 1000)
+        diff = abs(test_func(x_points) - true_func(x_points))
 
-    diff_func = lambda x: -abs(test_func(x) - true_func(x))
-    # Use scipy minimize to find the greatest difference between the functions
-    
-    # sol = minimize(diff_func, [(max_pt - min_pt) / 2],
-    #                bounds=[(min_pt,max_pt)], method='L-BFGS-B').x
-    sol = minimize(diff_func, [(max_pt - min_pt) / 2],
-                   bounds=[(min_pt,max_pt)])
-    greatest_diff = abs(test_func(sol) - true_func(sol))
-    # # Generate a large set of x-points (for a smooth plot)
-    # x_points = np.linspace(min_pt, max_pt, 1000)
-    # diff = abs(test_func(x_points) - true_func(x_points))
-
-    # greatest_diff = -float('inf')
-    # while (diff[np.argmax(diff)] > greatest_diff):
-    #     lower = np.argmax(diff) - 1
-    #     upper = np.argmax(diff) + 1
-    #     min_pt = x_points[max(lower, 0)] - (
-    #         1 if lower < 0 else 0)
-    #     max_pt = x_points[min(upper,len(x_points)-1)] + (
-    #         1 if upper >= len(x_points) else 0)
-    #     x_points = np.linspace(min_pt, max_pt, 1000)
-    #     diff = abs(test_func(x_points) - true_func(x_points))
-    #     greatest_diff = max(max(diff), greatest_diff)
-
+        greatest_diff = -float('inf')
+        while (diff[np.argmax(diff)] > greatest_diff):
+            lower = np.argmax(diff) - 1
+            upper = np.argmax(diff) + 1
+            min_pt = x_points[max(lower, 0)] - (
+                1 if lower < 0 else 0)
+            max_pt = x_points[min(upper,len(x_points)-1)] + (
+                1 if upper >= len(x_points) else 0)
+            x_points = np.linspace(min_pt, max_pt, 1000)
+            diff = abs(test_func(x_points) - true_func(x_points))
+            greatest_diff = max(max(diff), greatest_diff)
     return greatest_diff
 
 # Subsample a set of data "subsamples" times with each sample of size
@@ -417,7 +432,4 @@ if __name__ == "__main__":
     ], shared_x=True)
     
     exit()
-
-
-
 

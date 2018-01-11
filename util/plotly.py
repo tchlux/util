@@ -476,6 +476,8 @@ class Plot:
     #                 probabilities, "y" for transposing the setup.
     #  num_bins    -- The number of evenly spaced bins to use when
     #                 generating the histogram.
+    #  start       -- The (inclusive) lower bound for the bins.
+    #  end         -- The (exclusive) upper bound for the bins.
     #  padding     -- The amount of spacing on the min and max sides
     #                 of the histogram that is produced.
     #  histnorm    -- Standard plotly "histnorm" argument, can be
@@ -485,8 +487,9 @@ class Plot:
     #                 multi-series histograms will be non-overlapping.
     #                 When set "overlay", histogram series can overlap.
     #  opacity     -- See "add" function.
-    def add_histogram(self, name, values, bar_spacing="x", num_bins=100,
-                      padding=0.03, opacity=0.7, histnorm='probability',
+    def add_histogram(self, name, values, bar_spacing="x",
+                      num_bins=100, start=None, end=None,
+                      padding=0.03, opacity=0.7, histnorm='count',
                       barmode='overlay', **kwargs):
         # Check for errors in usage.
         if bar_spacing not in ("x", "y"):
@@ -503,6 +506,8 @@ class Plot:
         hist_value_range = max(values) - min(values)
         hist_start_val = min(values) - hist_value_range * padding
         hist_end_val   = max(values) + hist_value_range * padding
+        if type(start) != type(None): hist_start_val = start
+        if type(end) != type(None):   hist_end_val   = end
         # Provide necessary keyword arguments (that the user has not already)
         if (values_name not in kwargs):
             kwargs[values_name] = values
@@ -1009,6 +1014,7 @@ def create_html(fig, file_name="temp-plot.html", show=True,
     if (append and os.path.exists(file_name)):
         with open(file_name) as f:
             old_contents = f.read()
+    else:   old_contents = ""
     # Generate the plot offline 
     plotly.offline.plot(fig, auto_open=False, filename=file_name,
                         show_link=False, **kwargs)

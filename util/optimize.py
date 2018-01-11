@@ -391,5 +391,7 @@ def minimize(objective, solution, bounds=None, args=tuple(),
     method(t.check, t.done, bounds, solution, args=args)
 
     if display: print()
+    # Remove the checkpoint file
+    if os.path.exists(checkpoint_file): os.remove(checkpoint_file)
     return t.best_sol
 
