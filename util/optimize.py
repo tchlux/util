@@ -1,4 +1,4 @@
-import time, random
+import time, random, os
 import numpy as np
 from scipy.optimize import minimize as scipy_minimize
 
@@ -327,9 +327,9 @@ class Tracker:
 # ====================================================================
 
 
-# Minimize arbitrary objective function, optionally given an initial
-# solution, bounds, max computation time, minimum number of steps, or
-# a minimum improvement stopping criteria.
+# Minimize arbitrary objective function given an initial solution and
+# optionally given bounds, max computation time, minimum number of
+# steps, or a minimum improvement stopping criteria.
 # 
 # INPUT:
 #   objective -- A callable function that takes a numpy array of
@@ -354,10 +354,10 @@ class Tracker:
 #                      function , bounds, initial solution, obj args)
 #                      and will find a candidate minimum solution.
 #      This file provides the methods:
-#       AMPGO (default) - BFGS with tunneling away from prior solutions,
-#                         best for smooth locally convex multi-min spaces
 #       AdaptiveNormal  - Quasi simulated annealing with exhaustion,
-#                         best for noisy multi-min spaces
+#            (default)    best for noisy multi-min spaces
+#       AMPGO           - BFGS with tunneling away from prior solutions,
+#                         best for smooth locally convex multi-min spaces
 #       Random          - Pure random baseline for comparison, best for
 #                         discontinuous and noisy spaces.
 #   checkpoint      -- Boolean indicating whether or not a checkpoint

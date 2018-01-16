@@ -1,10 +1,8 @@
 import numpy as np
-# from scipy.optimize import minimize
-from scipy.interpolate import PchipInterpolator, splrep, splev
+from scipy.interpolate import splrep, splev
+from scipy.interpolate import PchipInterpolator
 from scipy.integrate import quad as integrate
 from scipy.stats import kstest
-from util.optimize import minimize
-
 
 #      Functional Representations of Data     
 # ============================================
@@ -80,10 +78,9 @@ def cdf_second_diff(data):
         
         
 # Linearly interpolate to guess y values for x between provided data
-def linear_fit_func(x_points, y_points, min_max=None):
-    # Generate the 'range' of the function if it is not provided
-    if type(min_max) == type(None):
-        min_max = (min(x_points), max(x_points))
+def linear_fit_func(x_points, y_points):
+    # Generate the 'range' of the function
+    min_max = (min(x_points), max(x_points))
 
     # Fit the data with degree 1 splines (linear interpolation)
     fit = splrep(x_points, y_points, k=1)
@@ -94,8 +91,13 @@ def linear_fit_func(x_points, y_points, min_max=None):
         if type(x_val) == type(None):
             return min_max
         else:
+            # ext 0 -> extrapolate   ext 1 -> return 0
+            # ext 2 -> raise errror  ext 3 -> return boundary value
             return splev(x_val, fit, ext=3)
     def deriv(x_val, fit=fit):
+        # der 1 -> compute the 1st order derivative
+        # ext 0 -> extrapolate   ext 1 -> return 0
+        # ext 2 -> raise errror  ext 3 -> return boundary value
         return splev(x_val, fit, der=1, ext=3)
 
     # Make the attribute "derivative" return a function for the derivative
@@ -107,8 +109,8 @@ def linear_fit_func(x_points, y_points, min_max=None):
 
 # Returns the CDF function value for any given x-value
 def cdf_fit_func(data, cubic=False):
-    # Sort the data and get the min and max
-    data.sort()
+    # Sort the data (without changing it) and get the min and max
+    data = sorted(data)
     min_pt = data[0]
     max_pt = data[-1]
 
@@ -173,8 +175,7 @@ def pdf_fit_func(data=None):
 
 # The normal pdf function at a given x
 def normal_pdf(x, mean=0, stdev=1):
-    return (1 / (np.sqrt(2*np.pi)*stdev)) * np.exp(
-        - (x - mean)**2 / (2 * stdev**2) )
+    return np.exp(-((x - mean)**2 / (2 * stdev**2)) ) / (np.sqrt(2*np.pi)*stdev)
 
 # The normal cdf function at a given x
 def normal_cdf(data, mean=0, stdev=1):
@@ -198,7 +199,7 @@ def normal_cdf_func(data):
 # Given a ks-statistic and the sample sizes of the two distributions
 # compared, return the largest confidence with which the two
 # distributions can be said to be the same.
-def ks_same_confidence(ks_stat, n1, n2=float('inf')):
+def ks_p_value(ks_stat, n1, n2=float('inf')):
     # By definition of the KS-test: 
     # 
     #    KS > c(a) (1/n1 + 1/n2)^(1/2)
@@ -208,12 +209,13 @@ def ks_same_confidence(ks_stat, n1, n2=float('inf')):
     # 
     #    c(a) = ( -ln(a/2)/2 )^(1/2)
     # 
-    #   is the standard for testing if two distributions come from the
-    #   same underlying distribution with "a" confidence. If we want
-    #   the distributions to be the same, we want the KS test to pass
-    #   with the largest "a" possible. The above check can be reversed
-    #   to compute the largest "a" with which the KS test states the
-    #   two distributions are certainly the same.
+    #   is the standard for testing the probability with which two
+    #   distributions come from different underlying distributions. If
+    #   we want the distributions to be the same, we want the KS test
+    #   to only pass with large values for "a" (large 'p-value'). The
+    #   above check can be reversed to compute "a", which provides the
+    #   largest p-value for which the KS test states the two
+    #   distributions are not certainly different.
     # 
     #    c^-1(b) = 2 e^(-2 b^2)
     # 
@@ -227,17 +229,42 @@ def ks_same_confidence(ks_stat, n1, n2=float('inf')):
     #                                                                 
     return min(1.0, 2 * np.exp( -2 * ( ks_stat**2 / abs((1/n1) + (1/n2)) )))
 
+# Provides the probability that you would see a difference in CDFs as
+# large as "ks" if the two underlying distributions are the same. This
+# test makes no assumptions about where in the distribution the
+# distance metric was found.
+def same_prob(ks, n1, n2):
+    # The probability of the two distributions taking on necessary values
+    prob_val = lambda val,truth: (normal_pdf(val,truth,truth*(1-truth)) * 
+                                  normal_pdf(val+ks,truth,truth*(1-truth)))
+    prob_truth = lambda truth: integrate(lambda v: prob_val(v,truth), 0, 1-ks)[0]
+    return 2 * (integrate(prob_truth, 0, 1)[0]) / (n1*n2)**(1/2)
+
+def avg_same_prob(pts1, pts2):
+    # get the EDF points for pts1 and pts2
+    # get the differences at all known points
+    # get the average probability that pts1 and pts2 are the same
+    pass
+
+def other(ks, n1, n2=float('inf')):
+    # The probability of the two distributions taking on necessary values
+    prob_val = lambda val,truth: (normal_pdf(val,truth,truth*(1-truth)) * 
+                                  normal_pdf(val+ks,truth,truth*(1-truth)))
+    prob_truth = lambda truth: integrate(lambda v: prob_val(v,truth), 0, 1-ks)[0]
+    return 2 * prob_val(.5-(ks/2),.5) / np.sqrt(n1*n2)
+
 def normal_confidence(distribution):
     # # Make the distribution 0 mean and unit variance (unit standard deviation)
     # new_distribution = (distribution - np.mean(distribution)) / np.var(distribution)
     # Compare the distribution with a normal distribution
     new_distribution = distribution
     ks_statistic = kstest(new_distribution, "norm").statistic
-    return ks_same_confidence(ks_statistic, len(distribution))
+    return ks_p_value(ks_statistic, len(distribution))
     
 
 # Calculate the maximum difference between two CDF functions (two sample)
 def ks_diff(test_func, true_func, method="util"):
+    from util.optimize import minimize
     # Cycle through the functions to find the min and max of all ranges
     min_pt, max_pt = true_func()
     if method in {"scipy", "util"}:
@@ -278,97 +305,109 @@ def ks_diff(test_func, true_func, method="util"):
             greatest_diff = max(max(diff), greatest_diff)
     return greatest_diff
 
-# Subsample a set of data "subsamples" times with each sample of size
-# "subsample_size" and then generate a list of fit-functions for each
-# of the percentiles in "percentiles". Return list of fit functions.
-def percentile_funcs(x_points, y_points, percentiles, min_max):
+# Given a (N,) array x_points, and a (N,M) array of y_points, generate
+# a list of (M,) linear functions that represent the "percentiles" of
+# y_points at each point in x_points.
+def percentile_funcs(x_points, y_points, percentiles):
     # Generate the points for the percentile CDF's
-    perc_points = []    
-    for p in percentiles:
-        perc_points.append(
-            [np.percentile(y_points[:,i], p) for i in range(len(x_points))]
-        )
-    perc_points = np.array(perc_points)
+    perc_points = np.array([
+        [np.percentile(y_points[i,:], p) for i in range(len(x_points))]
+        for p in percentiles ])
+    # Generate the CDF functions for each percentile and
+    # return the fit functions for each of the percentiles
+    return [linear_fit_func(x_points, pts) for pts in perc_points]
 
-    # Generate the CDF functions for each percentile
-    funcs = []
-    for pts in perc_points:
-        # Generate a linear fit function over each set of percentile points
-        func = linear_fit_func(x_points, pts)
-        funcs.append(func)
-
-    # Return the fit functions for each of the percentiles
-    return funcs
-
-
-# Given a plot, this will add the 'percentiles' cloud
-def plot_percentiles(plot, name, funcs, percentiles, min_max_x,
-                     center_color = np.array([255,70,0,0.6]),
-                     outer_color = np.array([255,150,50,0.3])):
-    group_id = str(np.random.randint(1000000))
+# Given a plot, this will add the 'percentiles' cloud given a (N,)
+# array x_points, and a (N,M) array of y_points, generate a list of
+# (M,) linear functions that represent the "percentiles" of y_points
+# at each point in x_points.
+def plot_percentiles(plot, name, x_points, y_points, 
+                     percentiles=[0,20,40,60,80,100],
+                     # center_color = np.array([255,70,0,0.6]),
+                     # outer_color = np.array([255,150,50,0.3])):
+                     center_color=None, outer_color=None, **kwargs):
+    from util.plotly import color_string_to_array
+    # Generate the color spectrum if necessary
+    color = color_string_to_array(plot.color())
+    if type(center_color) == type(None):
+        center_color = color.copy()
+        center_color[-1] = center_color[-1]*0.6
+    if type(outer_color) == type(None):
+        outer_color = color.copy()
+        outer_color[:-1] = outer_color[:-1]*1.5 + 50
+        outer_color[-1] = outer_color[-1]*0.3
+    # Generate a group ID for the percentiles and ensure the
+    # percentiles are sorted (for calculating gaps and colors)
+    group_id = name + "_percentiles"
     percentiles.sort() # Ensure they are sorted
+    # Find the min and max values and generate functions
+    min_max_x = (min(x_points), max(x_points))
+    funcs = percentile_funcs(x_points, y_points, percentiles)
+    # Identify the width of gaps between percentiles (for coloring)
     gaps = [percentiles[i] - percentiles[i-1] for i in range(1,len(percentiles))]
-    textfont = dict(color='rgb(40,40,40)')
-    for f,p,g in zip(funcs[:-1], percentiles[:-1], gaps):
-        ratio = abs((50 - p - g/2)/50)
-        color = center_color * abs(1.0 - ratio) + \
-                outer_color  * ratio
-        color = 'rgba(%i,%i,%i,%f)'%tuple(color)
-        plot.add_func("%ith percentile"%p, f, min_max_x, fill='tonexty',
-                      fill_color=color, mode='none', group=group_id,
-                      show_in_legend=False, textfont=textfont)
-
+    text_color = 'rgb(100,100,100)'
+    textfont = dict(color=text_color)
     # Add the last function (bounding the set)
-    plot.add_func("%ith percentile"%percentiles[-1], funcs[-1],
-                  min_max_x, mode='lines', line_width=0,
-                  group=group_id, show_in_legend=False, color=color,
-                  textfont=textfont)
+    plot.add_func("%ith percentile"%percentiles[0], funcs[0],
+                  min_max_x, color=text_color, line_width=0,
+                  group=group_id, show_in_legend=False,
+                  textfont=textfont, **kwargs)
+    for f,p,g in zip(funcs[1:], percentiles[1:], gaps):
+        ratio = abs((50 - (p - g/2))/50)
+        color = center_color * abs(1.0 - ratio) + outer_color * ratio
+        color = 'rgba(%i,%i,%i,%f)'%tuple(color)
+        plot.add_func("%ith percentile"%p, f, min_max_x, line_width=0,
+                      fill='toprevy', color=text_color,
+                      fill_color=color, group=group_id,
+                      show_in_legend=False, textfont=textfont, **kwargs)
 
     # Add a master legend entry
     x_val = (min_max_x[1] - min_max_x[0])/2
     y_val = funcs[len(funcs)//2](x_val)
-    plot.add(name + " Percentiles", [x_val], [y_val], mode='lines',
+    plot.add(name + " Percentiles", [None], [None],
              color='rgba(%i,%i,%i,%f)'%tuple(center_color),
-             group=group_id)
-
+             group=group_id, **kwargs)
     return plot
 
 
 
 if __name__ == "__main__":
     from util.plotly import Plot
+    import pickle, os
+
+    # num_distrs = 1000
+    # for n in range(10,101,10):
 
     # p = Plot()
     # def c(a):
     #     return (-np.log(a/2)/2)**(1/2)
     # def f(n):
-    #     return ks_same_confidence(.1, n)
+    #     return ks_p_value(.1, n)
     # def g(ks):
-    #     return ks_same_confidence(ks, 1000)
+    #     return ks_p_value(ks, 1000)
     # p.add_func("c(a) changing a", c, [0.0001,.9999])
     # p.add_func("KS=.1 changing N", f, [10,1000])
     # p.add_func("N=1000 changing KS", g, [0,1])
     # p.plot(fixed=False)
     # exit()
 
-    p = Plot()
-    step_size = 1000
-    steps = 10
-    dist = []
-    mean = 10.0
-    std = 10.0
-    for size in range(step_size,step_size*steps+1,step_size):
-        dist += list(np.random.normal(mean, std, size=(step_size,)))
-        # dist += list(np.random.random(size=(step_size,)))
-        new_dist = np.array(dist)
-        new_dist = (new_dist - mean) / std
-        func = cdf_fit_func(dist, cubic=False)
-        p.add_func("%i"%(len(dist)),func, [min(dist), max(dist)], group=str(len(dist)))
-        print( ("%i "+"%.2f "*3)%
-               (size, normal_confidence(dist), np.mean(dist), np.std(dist)) )
-    p.plot()
-    exit()
-
+    # p = Plot()
+    # step_size = 1000
+    # steps = 10
+    # dist = []
+    # mean = 10.0
+    # std = 10.0
+    # for size in range(step_size,step_size*steps+1,step_size):
+    #     dist += list(np.random.normal(mean, std, size=(step_size,)))
+    #     # dist += list(np.random.random(size=(step_size,)))
+    #     new_dist = np.array(dist)
+    #     new_dist = (new_dist - mean) / std
+    #     func = cdf_fit_func(dist, cubic=False)
+    #     p.add_func("%i"%(len(dist)),func, [min(dist), max(dist)], group=str(len(dist)))
+    #     print( ("%i "+"%.2f "*3)%
+    #            (size, normal_confidence(dist), np.mean(dist), np.std(dist)) )
+    # p.plot()
+    # exit()
 
     from util.plotly import Plot, multiplot
 

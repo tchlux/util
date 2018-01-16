@@ -3,8 +3,11 @@ import os
 import numpy as np
 import fmodpy
 
+# This directory
+CWD = os.path.dirname(os.path.abspath(__file__))
+
 # Get the name of a class as listed in python source file.
-CLASS_NAME = lambda obj: (repr(obj)[1:].split(" ")[0]).split(".")[-1]
+CLASS_NAME = lambda obj: (repr(obj)[1:-2].split(".")[-1])
 CLEAN_ARRAY_STRING = lambda arr: " "+str(arr).replace(",","").replace("[","").replace("]","")
 DEFAULT_RESPONSE = -1 #None
 SMALL_NUMBER = 1.4901161193847656*10**(-8) 
@@ -53,6 +56,9 @@ TGP_BURNIN_TOTAL_ENERGY = (20, 120, 1)
 class Approximator:
     def __init__(self):
         pass
+
+    def __str__(self):
+        return CLASS_NAME(self)
 
     def fit(self, x:np.ndarray, y:np.ndarray):
         pass
@@ -245,7 +251,8 @@ class qHullDelaunay(Approximator):
 class Delaunay(Approximator):
     def __init__(self):
         self.delaunayp = fmodpy.fimport(
-            os.path.join("VTdelaunay","VTdelaunay.f90")).delaunayp
+            os.path.join(CWD,"VTdelaunay","VTdelaunay.f90"),
+            output_directory=CWD).delaunayp
         self.pts = None
         self.values = None
         self.errs = {}
@@ -283,11 +290,23 @@ class Delaunay(Approximator):
         self.delaunayp(self.pts.shape[0], self.pts, p_in, work_in,
                        simp_out, weights_out, error_out, 
                        extrap_opt=1000)
+        error_out = np.where(error_out != 1, error_out, 0)
+        # Handle any errors that may have occurred.
         if (sum(error_out) != 0):
-            print("Delaunay error:\n","",error_out)
-
-        # Convert the lists of points and weights into numpy arrays
-        points = simp_out.T - 1
+            unique_errors = sorted(np.unique(error_out))
+            print(" [Delaunay errors:",end="")
+            for e in unique_errors:
+                if (e in {0,1}): continue
+                print(" %3i"%e,"at",""+",".join(tuple(
+                    str(i) for i in range(len(error_out))
+                    if (error_out[i] == e)))+"}", end=";")
+            print("] ",end="")
+            # Reset the errors to simplex of 1s (to be 0) and weights of 0s.
+            bad_indices = (error_out > 1)
+            simp_out[:,bad_indices] = 1
+            weights_out[:,bad_indices] = 0
+        # Adjust the output simplices and weights to be expected shape
+        points  = simp_out.T - 1
         weights = weights_out.T
         # Return the appropriate shaped pair of points and weights
         return (points[0], weights[0]) if single_response else (points, weights)
@@ -332,7 +351,9 @@ class Delaunay(Approximator):
 # ======================
 class VoronoiMesh(Approximator):
     def __init__(self):
-        self.voronoi_mesh = fmodpy.fimport(os.path.join("voronoi_mesh","voronoi_mesh.f90"))
+        self.voronoi_mesh = fmodpy.fimport(
+            os.path.join(CWD,"voronoi_mesh","voronoi_mesh.f90"),
+            output_directory=CWD)
         self.points = None
         self.values = None
 
@@ -359,8 +380,9 @@ class VoronoiMesh(Approximator):
         self.voronoi_mesh.predict_vm(self.points, self.dots,
                                             x, weights)
 
+        points = np.zeros(weights.shape, dtype=int) + np.arange(self.points.shape[1])
         # Return the appropriate shaped pair of points and weights
-        return weights
+        return points, weights
 
     # Generate a prediction for a new point
     def predict(self, xs):
@@ -376,7 +398,8 @@ class VoronoiMesh(Approximator):
 class MaxBoxMesh(Approximator):
     def __init__(self):
         self.max_box_mesh = fmodpy.fimport(
-            os.path.join("max_box_mesh","max_box_mesh.f90"))
+            os.path.join(CWD,"max_box_mesh","max_box_mesh.f90"),
+            output_directory=CWD)
         self.points = None
         self.values = None
 
@@ -404,10 +427,13 @@ class MaxBoxMesh(Approximator):
                           dtype=np.float64, order="F")
         self.max_box_mesh.eval_box_mesh(self.points, self.shapes,
                                         x, weights)
+
         # Make all weights convex
-        weights /= np.sum(weights,axis=1)
+        for i,w in enumerate(np.sum(weights,axis=1)):
+            weights[i,:] /= w
+        points = np.zeros(weights.shape, dtype=int) + np.arange(self.points.shape[1])
         # Return the appropriate shaped pair of points and weights
-        return weights
+        return points, weights
 
     # Generate a prediction for a new point
     def predict(self, xs):
@@ -467,7 +493,8 @@ class MARS(Approximator):
 class LSHEP(Approximator):
     def __init__(self):
         self.linear_shepard = fmodpy.fimport(
-            os.path.join("linear_shepard","linear_shepard.f95"))
+            os.path.join(CWD,"linear_shepard","linear_shepard.f95"),
+            output_directory=CWD)
         self.lshep = self.linear_shepard.lshep
         self.lshepval = self.linear_shepard.lshepval
         self.ierrors = {}
@@ -682,9 +709,11 @@ class tgp(Approximator):
 
 if __name__ == "__main__":
     np.random.seed(0)
+
     import time
     print("Starting")
     for n in range(10, 20011, 1000):
+        n = 8000
         # for d in range(20,21,10):
         d = 5
         print("%6s"%n, "%3s"%d)
@@ -696,16 +725,17 @@ if __name__ == "__main__":
         # model = LSHEP()
         # model = MLPRegressor()
         # model = VoronoiMesh()
-        # model = Delaunay()
-        model = MaxBoxMesh()
+        model = Delaunay()
+        # model = MaxBoxMesh()
         # model = qHullDelaunay()
         start = time.time()
         model.fit(x, y)
         print("%5.2f"%(time.time() - start),end=" ")
         start = time.time()
         model(x[0])
-        print("%3.2f"%(time.time() - start))
+        print("%3.2f"%((time.time() - start)*10000))
         print()
+        exit()
     exit()
 
     from util.plotly import Plot
@@ -717,7 +747,7 @@ if __name__ == "__main__":
     dim = 2
     plot_points = 2000
     N = 20
-    random = False
+    random = True
     if random:
         x = np.random.random(size=(N,dim))
     else:
@@ -726,7 +756,8 @@ if __name__ == "__main__":
     y = np.array([fun(v) for v in x])
     p.add("Training Points", *x.T, y)
     
-    surf = MaxBoxMesh()
+    surf = Delaunay()
+    # surf = MaxBoxMesh()
     # surf = VoronoiMesh()
     surf.fit(x,y)
     p.add_func("VMesh", surf, *([(low,upp)]*dim), plot_points=plot_points)

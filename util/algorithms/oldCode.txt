@@ -1,0 +1,25 @@
+DELAUNAY_SUBSET_SIZE = 10
+
+
+
+
+        # points = None
+        # weights = None
+        # # Break up the interpolation points into subsets in order to
+        # # save memory (delaunay fails when the size of points is 900).
+        # num_subsets = round(.5 + len(all_x) / DELAUNAY_SUBSET_SIZE)
+        # for subset in range(num_subsets):
+            # x = all_x[subset*DELAUNAY_SUBSET_SIZE:
+            #           (subset+1)*DELAUNAY_SUBSET_SIZE]
+            # if (subset == 1): print("Delaunay using %i subsets to save memory."%num_subsets)
+
+
+            # if type(points) == type(None):
+            #     # Convert the lists of points and weights into numpy arrays
+            #     points = simp_out.T - 1
+            #     weights = weights_out.T
+            # else:
+            #     points  = np.concatenate((points, simp_out.T - 1))
+            #     weights = np.concatenate((weights, weights_out.T))
+
+

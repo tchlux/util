@@ -5,10 +5,9 @@
 # numerical axes, histograms, subplots (with varying numbers of plots
 # in each row), and plot annotations.
 
-import random, numbers, os, webbrowser, imp, sys
+import random, numbers, os, webbrowser, imp, sys, re
 import numpy as np
 import colorlover as cl
-from scipy.spatial import Delaunay, ConvexHull
 from scipy.spatial.qhull import QhullError
 
 # Importer function to make sure that the a local file name doesn't
@@ -22,9 +21,6 @@ def import_package(name, custom_name=None):
     # Load the module
     module = imp.load_module(custom_name, f, pathname, desc)
     return module
-
-# Load the pypi package "plotly" that interfaces with plotly.js
-plotly = import_package("plotly")
 
 PLOT_POINTS = 1000
 BRIGHTNESS_RANGE = 0.6
@@ -85,6 +81,14 @@ def color_data(values, palatte=DEFAULT_GRADIENT, opacity=1.0):
         return 'rgba(%i,%i,%i,%f)'%(c+(opacity,))
     return list(map(color, values))
 
+# Given a color string, convert it into an array of numbers
+def color_string_to_array(color_string):
+    colors = color_string[color_string.index('(')+1:
+                          color_string.index(')')].split(',')
+    color = list(map(float,colors))
+    if len(color) == 3: color += [1.0]
+    if len(color) != 4: raise(Exception("Bad number of elements in color string."))
+    return np.array(color)
 
 
 #      Class for building a plotly plot     
@@ -188,6 +192,10 @@ class Plot:
     # be stable if called multiple times, but this code is still in
     # development stage.
     def _clean_data(self, data):
+        from scipy.spatial import Delaunay
+        # Remove the extra color attribute stored for easy access
+        for d in data:
+            d.pop("color")
         # Remove all references to 3D layout if this is a 2D plot
         if not self.is_3d:
             # 2D PLOT SETUP
@@ -282,6 +290,10 @@ class Plot:
             data[start:end] = data[start:end][::-1]
 
         self.to_reverse = [False] * len(data)
+        # Fix the fills that should be left alone
+        for d in data:
+            if ("toprev" in str(d.get("fill",""))): 
+                d["fill"] = d["fill"].replace("toprev","tonext")
 
     # ===================================
     #      User accessible functions     
@@ -304,7 +316,7 @@ class Plot:
     #                         list, tuple, or numpy array meant to be
     #                         converted into the standard rgba string.
     def color(self, number=None, brightness=1.0, alpha=None, color=None):
-        if color == None:
+        if type(color) == type(None):
             if (number == None): number = self.color_num
             if (number < len(self.palatte)):
                 # If we have fewer entries than the palette size
@@ -361,6 +373,7 @@ class Plot:
     def add_region(self, name, func, min_max_x=None, min_max_y=None,
                    plot_points=PLOT_POINTS, mode="lines", opacity=0.1,
                    fill="toself", line_width=0, **kwargs):
+        from scipy.spatial import ConvexHull
         if self.is_3d: raise(Exception("ERROR: Regions only work for 2D plots."))
         if type(min_max_x) == type(None):
             min_max_x = self.x_min_max.copy()
@@ -532,16 +545,19 @@ class Plot:
 
 
     # Decorated "add" function that automatically sets the options
-    # necessary for plotting an N-bin PDF histogram of a given set of
-    # values. By default the bars are separated along "bar_spacing"
-    # axis, and the area of all bars together adds to 1.
+    # necessary for plotting a series of box plots of a given set of
+    # values.
     # 
-    #  name        -- The string name of the series being added
-    #  box_mean    -- 'sd'  -> overlays a standard deviation diamond
-    #              -- True  -> adds a dashed line for the mean to the box
-    #              -- False -> only shows the standard quartiles and median
-    #  show_labels -- True  -> Show the labels for the box locations
-    #              -- False -> Hide the labels for the box locations
+    #  name          -- The string name of the series being added
+    #  box_values    -- The list of lists of values for each box.
+    #  box_locations -- The x (or y) location of each box.
+    #  orientation   -- 'v' -> vertical boxes
+    #                   'h' -> horizontal boxes
+    #  box_mean      -- 'sd'  -> overlays a standard deviation diamond
+    #                -- True  -> adds a dashed line for the mean to the box
+    #                -- False -> only shows the standard quartiles and median
+    #  show_labels   -- True  -> Show the labels for the box locations
+    #                -- False -> Hide the labels for the box locations
     # 
     def add_box(self, name, box_values, box_locations=None, orientation="v",
                 box_mean=True, show_labels=True, **kwargs):
@@ -646,7 +662,7 @@ class Plot:
             fill_color=None, fill_opacity=0.6, symbol='circle',
             dash=None, marker_size=None, marker_colors=None,
             marker_line_width=0, marker_line_color='rgba(50,50,50,0.8)', 
-            hoverinfo='name+text', **kwargs):
+            hoverinfo='name+text', frame=None, **kwargs):
 
         # Convert the x, y (and z) values into numpy arrays and
         # store 'values' for creating marker colors based on magnitude
@@ -701,17 +717,22 @@ class Plot:
         if type(mode) == type(None):
             mode = self.mode
         # Set the color if none was provided
-        if color == None:
-            self.color_num += 1
-            color = self.color(self.color_num, alpha=opacity)
+        if type(color) == type(None):
+            if (frame != None) and any((name == d["name"]) for d in self.data):
+                for d in self.data[::-1]:
+                    if d["name"] == name: 
+                        color = d["color"]
+            else:
+                self.color_num += 1
+                color = self.color(self.color_num, alpha=opacity)
         else:
             shade = False
-        if line_color == None:
+        if type(line_color) == type(None):
             line_color = color
-        if fill_color == None:
+        if type(fill_color) == type(None):
             fill_color = self.color(color=color, alpha=fill_opacity)
         else: 
-            fill_color = self.color(color=fill_color, alpha=fill_opacity)
+            fill_color = self.color(color=fill_color)
         if not marker_colors:
             if shade:
                 marker_colors = []
@@ -751,6 +772,7 @@ class Plot:
             z = z_values,
             hoverinfo = hoverinfo,
             text = text,
+            color = color,
             marker = dict(
                 # Generate colors based on point magnitude
                 color = color if ("lines" in mode) else marker_colors,
@@ -776,6 +798,10 @@ class Plot:
 
         # Update the newly created dictionary with any custom user settings
         self.data[-1].update(kwargs)
+        # If the user is preparing for an animation, the store the
+        # frame number associated with this data dictionary.
+        if type(frame) != type(None): 
+            self.data[-1]["frame"] = str(frame)
 
 
     # Add an annotation to the plot. These will be text boxes
@@ -913,15 +939,39 @@ class Plot:
     #  show      -- See "create_html".
     #  append    -- See "create_html".
     # 
+    # ANIMATION CONTROLS:
+    #  loop_duration       -- Length in seconds of full play cycle.
+    #  bounce              -- True if "play" should go start -> end -> start
+    #  transition          -- Type of transition for data options include:
+    #                         "linear", "cubic", "quad", "exp", "bounce"
+    #                         "elastic", "sin", (all have "-in-out" too)
+    #  data_easing         -- True if data should ease, False if not.
+    #  redraw              -- True if the plot and legend should be
+    #                         redrawn every time the frame changes.
+    #                         This will cause the slider to lock (plotly bug).
+    #  slider_transition   -- Type of transition for slider, same 
+    #                         options as "transition".
+    #  initial_frame       -- The initial frame label to display.
+    #  frame_label         -- The prefix before the frame label.
+    #  show_frame_label    -- Whether or not to show a frame label.
+    #  show_slider_labels  -- Whether or not to show labels under
+    #                         slider positions (disable for long labels)
+    # 
+    # See more details at: https://github.com/plotly/plotly.js/blob/master/src/plots/animation_attributes.js
+    # 
     #  ... <any additional plotly.offline.plot keyword arguments> ...
     def plot(self, title=None, x_range=None, y_range=None,
-             z_range=None, xaxis={}, yaxis={}, zaxis={},
-             fixed=True, show_legend=True, layout={}, 
-             aspect_mode='cube', scene_settings={}, x_axis_settings={},
+             z_range=None, xaxis={}, yaxis={}, zaxis={}, fixed=True,
+             show_legend=True, layout={}, aspect_mode='cube',
+             scene_settings={}, x_axis_settings={},
              y_axis_settings={}, z_axis_settings={},
-             camera_position=DEFAULT_CAMERA_POSITION,
-             html=True, file_name="temp-plot.html", show=True,
-             append=False, **kwargs):
+             camera_position=DEFAULT_CAMERA_POSITION, html=True,
+             file_name="temp-plot.html", show=True, append=False,
+             loop_duration=5, bounce=False, transition="linear",
+             data_easing=False, redraw=False,
+             slider_transition="cubic", initial_frame=None,
+             frame_label="Frame: ", show_frame_label=True,
+             show_play_pause=True, show_slider_labels=True, **kwargs):
         # Update title, and all plot axis ranges
         if title == None:
             title = self.title
@@ -944,7 +994,7 @@ class Plot:
         plot_layout = dict(
             title = title,
             showlegend = show_legend,
-       )
+        )
         # Set the barmode for histograms if necessary
         if (hasattr(self, 'histogram_barmode') and
             len(self.histogram_barmode) > 0):
@@ -980,10 +1030,24 @@ class Plot:
         self._clean_data(data)
         # Manage plotly reverse order bug (only happens with "tonext_")
         self._reorder_data(data)
-        # Generate the figure
-        fig = plotly.graph_objs.Figure(data=data, layout=plot_layout)
+
+        # Check for animation (if the user wanted it)
+        if any("frame" in d for d in data):
+            if any("frame" not in d for d in data):
+                raise(Exception("\n  Partial animations are not allowed.\n  Either all series must have 'frame' or none of them."))
+            # Make a call to handle generating the aniation figure
+            fig = _animate(data, plot_layout, loop_duration, bounce,
+                           transition, data_easing, redraw,
+                           slider_transition, initial_frame,
+                           frame_label, show_play_pause,
+                           show_frame_label)
+        else:
+            # Generate the figure with a standard mechanism
+            fig = dict(data=data, layout=plot_layout)
+
         # Create the html file and show in browser if appropriate
-        if html: create_html(fig, file_name, show, append, **kwargs)
+        if html: create_html(fig, file_name, show, append,
+                             show_slider_labels, **kwargs)
         # Return the figure
         return fig
 
@@ -1001,10 +1065,16 @@ class Plot:
 #  append    -- True if this HTML code should be appended to
 #               "file_name" if it already exists. This creates a
 #               scrollable page, where each plot takes a full screen.
+#  show_slider_labels -- Hack for removing the labels from the slider
+#                        bar that must be done on the HTML.
 # 
 #  ... <any additional plotly.offline.plot keyword arguments> ...
 def create_html(fig, file_name="temp-plot.html", show=True,
-                append=False, **kwargs):
+                append=False, show_slider_labels=True, **kwargs):
+    # Load the pypi package "plotly" that interfaces with plotly.js
+    # only once this is called, otherwise it slows down the import
+    plotly = import_package("plotly")
+    # Check for appending to file
     if (not append):
         print("Creating new", end=" ")
     else:
@@ -1027,6 +1097,12 @@ def create_html(fig, file_name="temp-plot.html", show=True,
         'modeBarButtonsToRemove:[]',
         'modeBarButtonsToRemove:["sendDataToCloud", "select2d", "lasso2d"]')
     file_string += "\n\n"
+    # Prevent animated plots from auto-playing
+    file_string = re.sub("\\.then\\(function\\(\\)\\{Plotly\\.animate\\(\\'[0-9a-zA-Z-]*\\'\\)\\;\\}\\)", "", file_string)
+    # Remove the slider label group if necessary by adding CSS that hides it
+    if not show_slider_labels:
+        extra_css = '<style type="text/css"> g.slider-labels { display: none; } </style>'
+        file_string += extra_css
     # If appending, put the old contents back in front of the new
     if append: file_string = old_contents + file_string
     with open(file_name, "w") as f:
@@ -1034,6 +1110,179 @@ def create_html(fig, file_name="temp-plot.html", show=True,
     # Open the plot in a webbrowser if the user wants that
     if show: webbrowser.open("file://"+os.path.abspath(file_name))
     return file_name
+
+# Private function for use only by the "plot" function. See the
+# descriptions of input arguments at "def plot".
+def _animate(data, plot_layout, loop_duration, bounce, transition,
+             data_easing, redraw, slider_transition, initial_frame,
+             frame_label, show_play_pause, show_frame_label):
+    # Get a list of all frame names
+    frame_names = []
+    for d in data: 
+        if d["frame"] not in frame_names:
+            frame_names.append(d["frame"])
+
+    transition_duration = (loop_duration / len(frame_names)) * 1000
+    # Get a list of names and their legend groups (make sure that all
+    # data series have a legend group and avoid conflicts)
+    names_and_groups = {}
+    all_groups = []
+    for d in data:
+        if d["legendgroup"] not in all_groups:
+            all_groups.append(d["legendgroup"])
+    for i,d in enumerate(data):
+        if (d["legendgroup"] == None):
+            if d["name"] not in names_and_groups:
+                group = d["name"]
+                number = 1
+                new_group = lambda: "%s %s"%(group,number)
+                while group in all_groups:
+                    name = new_group()
+                    number += 1
+                all_groups.append(group)
+                names_and_groups[d["name"]] = group
+            d["legendgroup"] = names_and_groups[d["name"]]
+
+    # Remove "None" from the list of groups
+    if None in all_groups: all_groups.remove(None)
+
+    # Construct a universal legend group for all time steps
+    details = []
+    for group in all_groups:
+        names = []
+        for d in data:
+            if (d["legendgroup"] == group) and (d["name"] not in names):
+                names.append(d["name"])
+        for d in data:
+            if(d["legendgroup"] == group) and (d["name"] in names):
+                det = d.copy()
+                # Remove all displayable data from the details
+                for val in ["x", "y", "z"]:
+                    if val in det: det[val] = [None]
+                if "text" in det: det["text"] = None
+                det.pop("frame")
+                details.append(det)
+                names.remove(d["name"])
+            if (len(names) == 0): break
+
+    # Organize all of the data by frame
+    list_data_dicts = [[d for d in data if (d["frame"] == fn)]
+                       for fn in frame_names]
+    annotations = plot_layout.pop("annotations",[])
+    non_framed = [a for a in annotations if "frame" not in a]
+    annotations = [a for a in annotations if "frame" in a]
+    plot_layout["annotations"] = non_framed
+    # Initialize a figure
+    figure = {"data":[], "layout":plot_layout, "frames":[]}
+
+    # Pick the initial value for the animation if necessary
+    if type(initial_frame) == type(None): 
+        initial_frame = frame_names[0]
+
+    # This controls what happens when values are clicked
+    slider_layout = {
+        'args': ['transition', {'duration': 400,
+                                'easing': 'cubic-in-out'}],
+        'initialValue': initial_frame,
+        'plotlycommand': 'animate',
+        'values': frame_names,
+        'visible': True
+    }
+
+    # Add the slider definition to the figure layout
+    figure['layout']['sliders'] = slider_layout
+
+    if show_play_pause:
+        # Controls the list of elements transitioned through when "Play"
+        # is pressed. {"redraw": True} causes the slider to stop working.
+        # "transition" controls the movement of data points, NOT the slider.
+        # "[None]" forces a pause, which requires 'immediate" and 0 duration.
+        slider_menu = [{
+            'buttons': [
+                {'args': [frame_names + (frame_names[::-1] if bounce else []), {'frame': {'duration': transition_duration, 'redraw': redraw},
+                                        'fromcurrent': True, 
+                                        'transition': {'duration': transition_duration if data_easing else 0,
+                                                       'easing': transition}}],
+                 'label': 'Play', 'method': 'animate'},
+                {'args': [[None], {'frame': {'duration': 0, 'redraw': redraw},
+                                   'mode': 'immediate', 
+                                   'transition': {'duration': 0}}],
+                 'label':'Pause', 'method':'animate'}],
+            'direction': 'left',
+            'pad': {'r': 10, 't': 85},
+            'showactive': True,
+            'type': 'buttons',
+            'x': 0.1, 'y': 0,
+            'xanchor': 'right',
+            'yanchor': 'top'
+        }]
+        # Initialize a holder for 'updatemenus' if it doesn't exist
+        if "updatemenus" not in figure["layout"]:
+            figure['layout']['updatemenus'] = []
+        # Add the menu to the figure layout
+        figure['layout']['updatemenus'] += slider_menu
+
+    # "transition" controls the animation of the slider.
+    sliders_dict = {
+        # 'active': 0,
+        'yanchor': 'top',
+        'xanchor': 'left',
+        'currentvalue': {
+            'font': {'size': 16},
+            'prefix': frame_label,
+            'visible': show_frame_label,
+            'xanchor': 'right'
+        }, 
+        'transition': {'duration': transition_duration, 'easing': slider_transition},
+        'pad': {'b': 10, 't': 50 if max(map(len,frame_names)) < 20 else 65},
+        'len': 0.9 if show_play_pause else 1,
+        'x': 0.1 if show_play_pause else 0,
+        'y': 0,
+        'steps': []
+    }
+
+    # make frames
+    for el,data_dicts in zip(frame_names, list_data_dicts):
+        frame = {'data': [], 'name': el}
+        # Animate a plot
+        if el == frame_names[0]:
+            for d in data_dicts:
+                f_data = d.copy()
+                f_data.pop("frame","")
+                f_data["showlegend"] = False
+                # Generate data dicts in the usual way.
+                figure['data'].append(f_data)
+            for d in details:
+                figure['data'].append(d.copy())
+
+        # Add all data dicts for this step to the frame data
+        for d in data_dicts:
+            f_data = d.copy()
+            f_data.pop("frame","")
+            f_data["showlegend"] = False
+            frame['data'].append(f_data)
+        for d in details:
+            frame['data'].append(d.copy())
+
+        layout = {"annotations":[]}        
+        for a in annotations:
+            if (a["frame"] == el):
+                layout["annotations"].append( a )
+        frame["layout"] = layout
+
+        figure['frames'].append(frame)
+        # Controls what happens when this element of the slider is
+        # clicked. The first duration is for the data, the second is
+        # for the slider.
+        slider_step = {'args': [[el],
+            {'frame': {'duration': transition_duration, 'easing':transition, 'redraw': redraw},
+             'transition': {'duration': transition_duration if data_easing else 0, 
+                            'easing': slider_transition}}
+        ], 'label': el, 'method': 'animate'}
+        sliders_dict['steps'].append(slider_step)
+
+    figure['layout']['sliders'] = [sliders_dict]
+    return figure
 
 
 # Make multiple plots fit onto one browser window, options for sharing
@@ -1062,6 +1311,9 @@ def create_html(fig, file_name="temp-plot.html", show=True,
 def multiplot(plots, x_domains=None, y_domains=None, html=True,
               show=True, append=False, specs=None, shared_y=False,
               shared_x=False, gap=0.12, **kwargs): 
+    # Load the pypi package "plotly" that interfaces with plotly.js
+    # only once this is called, otherwise it slows down the import
+    plotly = import_package("plotly")
     # Make sure the plots array is 2D
     try:    plots[0][0]
     except: plots = [plots]
@@ -1258,3 +1510,7 @@ if __name__ == "__main__":
     # Demonstrate allowing plotly to auto-scale when series are
     # activated and deactivated (try turning off Histogram Series 1)
     plot3.plot(title="'fixed=False' Plotting", fixed=False, append=True)
+
+
+
+
