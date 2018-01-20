@@ -252,7 +252,8 @@ class Delaunay(Approximator):
     def __init__(self):
         self.delaunayp = fmodpy.fimport(
             os.path.join(CWD,"VTdelaunay","VTdelaunay.f90"),
-            output_directory=CWD).delaunayp
+            module_link_args=["-lgfortran","-lblas","-llapack"], 
+            output_directory=CWD, ).delaunayp
         self.pts = None
         self.values = None
         self.errs = {}
@@ -353,6 +354,7 @@ class VoronoiMesh(Approximator):
     def __init__(self):
         self.voronoi_mesh = fmodpy.fimport(
             os.path.join(CWD,"voronoi_mesh","voronoi_mesh.f90"),
+            module_link_args=["-lgfortran","-lblas","-llapack"], 
             output_directory=CWD)
         self.points = None
         self.values = None
@@ -399,6 +401,7 @@ class MaxBoxMesh(Approximator):
     def __init__(self):
         self.max_box_mesh = fmodpy.fimport(
             os.path.join(CWD,"max_box_mesh","max_box_mesh.f90"),
+            module_link_args=["-lgfortran","-lblas","-llapack"], 
             output_directory=CWD)
         self.points = None
         self.values = None
@@ -494,6 +497,7 @@ class LSHEP(Approximator):
     def __init__(self):
         self.linear_shepard = fmodpy.fimport(
             os.path.join(CWD,"linear_shepard","linear_shepard.f95"),
+            module_link_args=["-lgfortran","-lblas","-llapack"], 
             output_directory=CWD)
         self.lshep = self.linear_shepard.lshep
         self.lshepval = self.linear_shepard.lshepval
