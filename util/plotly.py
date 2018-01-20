@@ -4,10 +4,20 @@
 # expects. This module currently supports 2D and 3D scatter plots with
 # numerical axes, histograms, subplots (with varying numbers of plots
 # in each row), and plot annotations.
+# 
+# Required packages:
+#   random, numbers, os, webbrowser, imp, sys, re
+#   numpy
+#   scipy
+# 
+# Imports nested in appropriate functions:
+#   import_package("plotly")
+#   from scipy.spatial import ConvexHull
+#   from scipy.spatial import Delaunay
+# 
 
 import random, numbers, os, webbrowser, imp, sys, re
 import numpy as np
-import colorlover as cl
 from scipy.spatial.qhull import QhullError
 
 # Importer function to make sure that the a local file name doesn't
@@ -25,13 +35,31 @@ def import_package(name, custom_name=None):
 PLOT_POINTS = 1000
 BRIGHTNESS_RANGE = 0.6
 
-PALATTE = np.array(cl.to_numeric(cl.scales['5']['qual']['Set2']))
+# PALATTE SOURCE: colorlover as cl
+# PALATTE SOURCE: np.array(cl.to_numeric(cl.scales['5']['qual']['Set2']))
+PALATTE = np.array([[ 102.,  194.,  165.],
+                    [ 252.,  141.,   98.],
+                    [ 141.,  160.,  203.],
+                    [ 231.,  138.,  195.],
+                    [ 166.,  216.,   84.]])
+
 PALATTE = PALATTE**2
 PALATTE = PALATTE / np.max(PALATTE) * 255
 # Re-order the palatte so that the colors appear better
 PALATTE = np.concatenate((PALATTE[1:], [PALATTE[0]]))
 # Save the color palatte for plotting a gradient
-DEFAULT_GRADIENT = np.array(cl.to_numeric(cl.scales['11']['div']['Spectral']))[::-1]
+# PALATTE SOURCE: np.array(cl.to_numeric(cl.scales['11']['div']['Spectral']))[::-1]
+DEFAULT_GRADIENT = np.array([[  94.,   79.,  162.],
+                             [  50.,  136.,  189.],
+                             [ 102.,  194.,  165.],
+                             [ 171.,  221.,  164.],
+                             [ 230.,  245.,  152.],
+                             [ 255.,  255.,  191.],
+                             [ 254.,  224.,  139.],
+                             [ 253.,  174.,   97.],
+                             [ 244.,  109.,   67.],
+                             [ 213.,   62.,   79.],
+                             [ 158.,    1.,   66.]])
 MIN_COLORS = 40
 
 # Expand the palatte using random combinations of existing colors
