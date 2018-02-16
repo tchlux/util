@@ -1,6 +1,6 @@
 import os, sys, subprocess
 
-MAX_FILE_SIZE_BYTES = 90*(2**20)
+MAX_FILE_SIZE_BYTES = 50*(2**20)
 CHUNK_EXT = "_(part_%i_of_%i).chunk"
 class FileTooSmall(Exception): pass
 

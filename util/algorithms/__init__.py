@@ -369,19 +369,21 @@ class VoronoiMesh(Approximator):
         self.voronoi_mesh.train_vm(self.points, self.dots)
 
     # Calculate the weights associated with a set of points
-    def points_and_weights(self, x):
+    def points_and_weights(self, x, convex=True):
         single_response = len(x.shape) == 1
         if single_response:
             x = np.array([x])
         if len(x.shape) != 2:
             raise(Exception("ERROR: Bad input shape."))
-
         x = np.array(x.T, order="F")
         weights = np.ones((x.shape[1], self.points.shape[1]), 
                           dtype=np.float64, order="F")
         self.voronoi_mesh.predict_vm(self.points, self.dots,
-                                            x, weights)
-
+                                     x, weights)
+        if convex:
+            # Make all the weights convex
+            weights = (weights.T / np.sum(weights,axis=1)).T
+        # Generate the list of point indices
         points = np.zeros(weights.shape, dtype=int) + np.arange(self.points.shape[1])
         # Return the appropriate shaped pair of points and weights
         return points, weights
@@ -391,7 +393,11 @@ class VoronoiMesh(Approximator):
         if type(self.values) == type(None):
             raise(Exception("Must provide values in order to make predicitons."))
         weights = self.points_and_weights(xs)
+        print(weights)
+        # Generate the predictions
         predictions = np.matmul(weights, self.values)
+        print(predictions)
+        exit()
         return predictions
 
 # =========================
@@ -714,33 +720,33 @@ class tgp(Approximator):
 if __name__ == "__main__":
     np.random.seed(0)
 
-    import time
-    print("Starting")
-    for n in range(10, 20011, 1000):
-        n = 8000
-        # for d in range(20,21,10):
-        d = 5
-        print("%6s"%n, "%3s"%d)
-        x = np.random.random((n,d))
-        y = np.random.random((n,))
-        # model = NearestNeighbor(2)
-        # model = LinearModel()
-        # model = MARS()
-        # model = LSHEP()
-        # model = MLPRegressor()
-        # model = VoronoiMesh()
-        model = Delaunay()
-        # model = MaxBoxMesh()
-        # model = qHullDelaunay()
-        start = time.time()
-        model.fit(x, y)
-        print("%5.2f"%(time.time() - start),end=" ")
-        start = time.time()
-        model(x[0])
-        print("%3.2f"%((time.time() - start)*10000))
-        print()
-        exit()
-    exit()
+    # import time
+    # print("Starting")
+    # for n in range(10, 20011, 1000):
+    #     n = 8000
+    #     # for d in range(20,21,10):
+    #     d = 5
+    #     print("%6s"%n, "%3s"%d)
+    #     x = np.random.random((n,d))
+    #     y = np.random.random((n,))
+    #     # model = NearestNeighbor(2)
+    #     # model = LinearModel()
+    #     # model = MARS()
+    #     # model = LSHEP()
+    #     # model = MLPRegressor()
+    #     # model = VoronoiMesh()
+    #     model = Delaunay()
+    #     # model = MaxBoxMesh()
+    #     # model = qHullDelaunay()
+    #     start = time.time()
+    #     model.fit(x, y)
+    #     print("%5.2f"%(time.time() - start),end=" ")
+    #     start = time.time()
+    #     model(x[0])
+    #     print("%3.2f"%((time.time() - start)*10000))
+    #     print()
+    #     exit()
+    # exit()
 
     from util.plotly import Plot
     mult = 5
@@ -750,7 +756,7 @@ if __name__ == "__main__":
     upp = 1
     dim = 2
     plot_points = 2000
-    N = 20
+    N = 2
     random = True
     if random:
         x = np.random.random(size=(N,dim))
@@ -760,10 +766,10 @@ if __name__ == "__main__":
     y = np.array([fun(v) for v in x])
     p.add("Training Points", *x.T, y)
     
-    surf = Delaunay()
+    # surf = Delaunay()
     # surf = MaxBoxMesh()
-    # surf = VoronoiMesh()
+    surf = VoronoiMesh()
     surf.fit(x,y)
-    p.add_func("VMesh", surf, *([(low,upp)]*dim), plot_points=plot_points)
-    p.plot(file_name="vmesh.html")
+    p.add_func(str(surf), surf, *([(low,upp)]*dim), plot_points=plot_points)
+    p.plot(file_name="test_plot.html")
 

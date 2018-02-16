@@ -61,12 +61,12 @@ CONTAINS
     ! Evaluate the voronoi mesh at all approximation points
     CALL eval_vm(control_points, approximation_points, &
          control_dots, point_dots,  approximation_weights)
-    ! Make sure the approximation weights are convex
-    DO step = 1, SIZE(approximation_points,2)
-       ! Make the weights convex
-       approximation_weights(step,:) = approximation_weights(step,:) / &
-            SUM(approximation_weights(step,:))
-    END DO
+    ! ! Make sure the approximation weights are convex
+    ! DO step = 1, SIZE(approximation_points,2)
+    !    ! Make the weights convex
+    !    approximation_weights(step,:) = approximation_weights(step,:) / &
+    !         SUM(approximation_weights(step,:))
+    ! END DO
   END SUBROUTINE predict_vm
 
   SUBROUTINE eval_vm(control_points, points, control_dots, &
@@ -94,9 +94,11 @@ CONTAINS
     eval_points : DO point_ind = 1, SIZE(points, 2)
        ignore = .FALSE.
        ! Sort a list of all cells by increasing distance from current
+       ! Sort a list of all cells by increasing distance from current
        DO control_ind = 1, SIZE(control_points,2)
-          dists(control_ind) = SUM((points(:,point_ind) - &
-               control_points(:,control_ind))**2)
+          dists(control_ind) = SUM(points(:,point_ind)**2) - &
+               2*point_dots(point_ind,control_ind) +&
+               control_dots(control_ind,control_ind)
        END DO
        CALL QSORTC(dists, indices)
        ! Start with the closest cell, work outwards (the closest cells

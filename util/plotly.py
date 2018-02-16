@@ -222,15 +222,25 @@ class Plot:
     def _clean_data(self, data):
         from scipy.spatial import Delaunay
         # Remove the extra color attribute stored for easy access
+        any_heatmaps = any(d.get("type","") == "heatmap" for d in data)
         for d in data:
             d.pop("color")
+            if d["type"] == "heatmap":
+                d.pop("marker","")
+                d.pop("mode","")
+            #     d.pop("line","")
+            #     d.pop("fill","")
+            #     d.pop("fillcolor","")
+            # if any_heatmaps:
+            #     pass
         # Remove all references to 3D layout if this is a 2D plot
         if not self.is_3d:
             # 2D PLOT SETUP
             for d in data:
                 d.pop('z','')
-                d.pop('hoverinfo','')
-                d.pop('text','')
+                # WARNING: I UNCOMMENTED THESE, NOT SURE WHY THEY'RE THERE
+                # d.pop('hoverinfo','')
+                # d.pop('text','')
                 # Special case for plotting histograms
                 if d['type'] == 'histogram':
                     if type(d.get('y','')) == type(None):
@@ -250,6 +260,7 @@ class Plot:
                     d.pop('fill','')
                     d.pop('layout','')
         else:
+            print("PROCESSING A 3D PLOT")
             # 3D PLOT SETUP
             for ind,d in enumerate(data):
                 # Add z values to all scatters that may have been added
@@ -447,7 +458,7 @@ class Plot:
     def add_func(self, name, func, min_max_x, min_max_y=[],
                  grid_lines=True, plot_points=PLOT_POINTS, mode=None, 
                  plot_type=None, **kwargs):
-        if len(min_max_y) > 0: self.is_3d = True
+        if (len(min_max_y) > 0): self.is_3d = True
         # If we have two control axes, square root the plot points
         if self.is_3d:
             plot_points = int(plot_points**(0.5) + 0.5)
@@ -740,7 +751,6 @@ class Plot:
         else:
             if plot_type == None:
                 plot_type = 'scatter'
-
         # Process mode
         if type(mode) == type(None):
             mode = self.mode
@@ -803,8 +813,8 @@ class Plot:
             color = color,
             marker = dict(
                 # Generate colors based on point magnitude
-                color = color if ("lines" in mode) else marker_colors,
-                # color = marker_colors,
+                # color = color if ("lines" in mode) else marker_colors,
+                color = marker_colors,
                 size = marker_size,
                 opacity = opacity,
                 symbol = symbol,
@@ -991,7 +1001,7 @@ class Plot:
     def plot(self, title=None, x_range=None, y_range=None,
              z_range=None, xaxis={}, yaxis={}, zaxis={}, fixed=True,
              show_legend=True, layout={}, aspect_mode='cube',
-             scene_settings={}, x_axis_settings={},
+             scene_settings={}, axis_settings={}, x_axis_settings={},
              y_axis_settings={}, z_axis_settings={},
              camera_position=DEFAULT_CAMERA_POSITION, html=True,
              file_name="temp-plot.html", show=True, append=False,
@@ -1030,6 +1040,10 @@ class Plot:
         # Clean all annotations so they are ready for plotting
         annotations = [a.copy() for a in self.annotations]
         self._clean_annotations(annotations)
+        # Update all axes with the global axis settings
+        x_axis_settings.update(axis_settings)
+        y_axis_settings.update(axis_settings)
+        z_axis_settings.update(axis_settings)
         # Setup for the axes of the plot
         scene = dict(
             xaxis = dict(title = self.x_title, range=x_range, **x_axis_settings),
@@ -1365,7 +1379,7 @@ def multiplot(plots, x_domains=None, y_domains=None, html=True,
             for c,plot in enumerate(row):
                 if type(plot) == type(None): continue
                 sample_data = plots[r][c]['data'][0]
-                specs[r][c] = {"is_3d": 'z' in sample_data}
+                specs[r][c] = {"is_3d": ('z' in sample_data)}
     # Generate the x and y domains if they are not provided by the user
     if x_domains == None:                
         x_domains = []
