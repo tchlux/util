@@ -44,7 +44,6 @@ if __name__ == "__main__":
             git_username=git_username, package=package),
         download_url = 'https://github.com/{git_username}/{package}/archive/{version}.tar.gz'.format(
             git_username=git_username, package=package, version=version),
-        scripts=["scripts/compile_fortran.py"],
         python_requires = '>=3.0',
         license='MIT',
     )
