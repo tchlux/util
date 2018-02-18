@@ -27,14 +27,14 @@ def run(command, **popen_kwargs):
         print("\n".join(stdout))
 
 
-DRY_RUN = True
+DRY_RUN = False
 CLEAN_BEFORE = True
 UPDATE_README = not DRY_RUN
 GIT_UPDATE = not DRY_RUN
 GIT_RELEASE = not DRY_RUN
 AUTO_MANIFEST = True
 MANIFEST_EXCLUSIONS = [".git", ".gitignore"]
-PYPI_BUILD = True
+PYPI_BUILD = False
 PYPI_RELEASE = not DRY_RUN
 # CLEAN_AFTER = not DRY_RUN
 CLEAN_AFTER = True
@@ -99,8 +99,6 @@ if __name__ == "__main__":
             f.write("".join(contents))
 
     if AUTO_MANIFEST:
-        #      Generate an all-inclusive manifest     
-        # ============================================
         with open("MANIFEST.in", "w") as f:
             for name in os.listdir(os.getcwd()):
                 if name not in MANIFEST_EXCLUSIONS:
@@ -120,7 +118,7 @@ if __name__ == "__main__":
         #      Upload to github with version tag     
         # ===========================================
         run(["git", "tag", "-a", version, "-m", notes])
-        run(["git", "push", "--tags"])
+        run(["git", "push", "--tags", package])
 
     if PYPI_BUILD:
         #      Setup the python package as a universal wheel     
