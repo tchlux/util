@@ -16,9 +16,10 @@
 #   from scipy.spatial import Delaunay
 # 
 
-import random, numbers, os, webbrowser, imp, sys, re
+import random, numbers, os, webbrowser, imp, sys, re, tempfile
 import numpy as np
 from scipy.spatial.qhull import QhullError
+from util.decorators import same_as
 
 # Importer function to make sure that the a local file name doesn't
 # conflict with the true installed package name
@@ -81,6 +82,8 @@ DEFAULT_CAMERA_POSITION = dict(
     center=dict(x=0, y=0, z=0),
     eye=dict(x=-1.0, y=-2.0, z=0.7)
 )
+
+PREVIOUS_FILE_NAMES = []
 
 #      Coloring Data     
 # =======================
@@ -260,7 +263,6 @@ class Plot:
                     d.pop('fill','')
                     d.pop('layout','')
         else:
-            print("PROCESSING A 3D PLOT")
             # 3D PLOT SETUP
             for ind,d in enumerate(data):
                 # Add z values to all scatters that may have been added
@@ -1004,12 +1006,12 @@ class Plot:
              scene_settings={}, axis_settings={}, x_axis_settings={},
              y_axis_settings={}, z_axis_settings={},
              camera_position=DEFAULT_CAMERA_POSITION, html=True,
-             file_name="temp-plot.html", show=True, append=False,
-             loop_duration=5, bounce=False, transition="linear",
-             data_easing=False, redraw=False,
-             slider_transition="cubic", initial_frame=None,
-             frame_label="Frame: ", show_frame_label=True,
-             show_play_pause=True, show_slider_labels=True, **kwargs):
+             file_name=None, show=True, append=False, loop_duration=5,
+             bounce=False, transition="linear", data_easing=False,
+             redraw=False, slider_transition="cubic",
+             initial_frame=None, frame_label="Frame: ",
+             show_frame_label=True, show_play_pause=True,
+             show_slider_labels=True, **kwargs):
         # Update title, and all plot axis ranges
         if title == None:
             title = self.title
@@ -1093,6 +1095,10 @@ class Plot:
         # Return the figure
         return fig
 
+    @same_as(plot, mention_usage=True)
+    def show(self, *args, **kwargs): return(self.plot(*args, **kwargs))
+
+
         
 #      Functions for manipulation produces plots     
 # ===================================================
@@ -1111,22 +1117,30 @@ class Plot:
 #                        bar that must be done on the HTML.
 # 
 #  ... <any additional plotly.offline.plot keyword arguments> ...
-def create_html(fig, file_name="temp-plot.html", show=True,
+def create_html(fig, file_name=None, show=True,
                 append=False, show_slider_labels=True, **kwargs):
+    # Handle the creation of a file
+    if (type(file_name) == type(None)):
+        if append and (len(PREVIOUS_FILE_NAMES) > 0): 
+            file_name = PREVIOUS_FILE_NAMES[-1]
+        else:
+            with tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".html", delete=False) as f:
+                file_name = f.name
+
     # Load the pypi package "plotly" that interfaces with plotly.js
     # only once this is called, otherwise it slows down the import
     plotly = import_package("plotly")
-    # Check for appending to file
-    if (not append):
-        print("Creating new", end=" ")
-    else:
-        print("Appending to", end=" ")
-    print("file named: '%s'"%file_name)
     # Store the old file contents if we are appending
     if (append and os.path.exists(file_name)):
         with open(file_name) as f:
             old_contents = f.read()
     else:   old_contents = ""
+    # Check for appending to file
+    if (not append):
+        print("Creating plot at", end=" ")
+    else:
+        print("Appending plot at", end=" ")
     # Generate the plot offline 
     plotly.offline.plot(fig, auto_open=False, filename=file_name,
                         show_link=False, **kwargs)
@@ -1147,8 +1161,13 @@ def create_html(fig, file_name="temp-plot.html", show=True,
         file_string += extra_css
     # If appending, put the old contents back in front of the new
     if append: file_string = old_contents + file_string
+    # Write the contents to the file
     with open(file_name, "w") as f:
         f.write(file_string)
+    # Update the global list of previously used file names
+    PREVIOUS_FILE_NAMES.append(file_name)
+    if len(PREVIOUS_FILE_NAMES) > 1: PREVIOUS_FILE_NAMES.pop(0)
+    print("file '%s'"%file_name)
     # Open the plot in a webbrowser if the user wants that
     if show: webbrowser.open("file://"+os.path.abspath(file_name))
     return file_name
@@ -1548,7 +1567,7 @@ if __name__ == "__main__":
     multiplot([[plot1, plot2],[plot3]], gap=0.1)
 
     # Demonstrate how to put a full-screen plot beneath the first.
-    plot2.plot(title="'append=True' Plotting",append=True)
+    plot2.plot(title="'append=True' Plotting", append=True)
     # Demonstrate allowing plotly to auto-scale when series are
     # activated and deactivated (try turning off Histogram Series 1)
     plot3.plot(title="'fixed=False' Plotting", fixed=False, append=True)

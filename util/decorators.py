@@ -19,6 +19,8 @@
 # 
 # Decorator that copies the documentation and arguemnts of another
 # function (specified as input). Useful for making decorators (:P)
+# Optional "mention_usage" updates documentation when True to disclose
+# the name of the function being wrapped (and the reuse of signature).
 # 
 # USAGE: 
 # 
@@ -30,11 +32,13 @@
 # 
 #   <function> = same_as(<func_to_copy>)(<function_to_decorate>)
 #   
-def same_as(to_copy):
+def same_as(to_copy, mention_usage=False):
     import inspect
     # Create a function that takes one argument, a function to be
     # decorated. This will be called by python when decorating.
     def decorator_handler(func):
+        if hasattr(func, "__name__"): original_name = func.__name__
+        else:                         original_name = str(func)
         # Set the documentation string for this new function
         documentation = inspect.getdoc(to_copy)
         if documentation == None: 
@@ -42,8 +46,15 @@ def same_as(to_copy):
         # Store the documentation and signature into the wrapped function
         if hasattr(to_copy, "__name__"):
             func.__name__ = to_copy.__name__
+            if mention_usage:
+                documentation = (
+                    "\nThe function '%s' has been decorated with the signature "+
+                    "of '%s'. (likely for aliasing / decoration)\n\n")%(
+                        original_name, to_copy.__name__) + documentation
+        # Try copying the signature if possible
         try:               func.__signature__ = inspect.signature(to_copy)
         except ValueError: pass
+        # Finalize by copying documentation
         func.__doc__ = documentation
         return func
     # Return the decorator handler
