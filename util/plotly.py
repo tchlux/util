@@ -121,7 +121,6 @@ def color_string_to_array(color_string):
     if len(color) != 4: raise(Exception("Bad number of elements in color string."))
     return np.array(color)
 
-
 #      Class for building a plotly plot     
 # ==========================================
 
@@ -135,7 +134,7 @@ def color_string_to_array(color_string):
 # All functionality is encapsulated in the "Plot.add" command, which
 # allows for all standard plotly options to be controlled in the
 # construction of data, along with the "Plot.plot" command, which
-# allows for all standard plotly options that controll layout.
+# allows for all standard plotly options that control layout.
 # 
 # Additional methods that are effectively decorated versions of the
 # "add" command include: 
@@ -146,20 +145,42 @@ def color_string_to_array(color_string):
 #    add_region     --  For drawing convex regions in 2D by providing 
 #                       a boolean function that is True inside the
 #                       region and False outside of the region.
-# 
-# The "add_annotation" function can be used to add text descriptions
-# with arrows over points of interest in a plot.
+#    add_annotation --  For adding text descriptions with arrows over 
+#                       points of interest in an existing plot.
 # 
 # The "plot" function is also capable of appending to existing HTML
 # files by setting the keyword argument "append=True". This is nice
 # for producing a single scrollable multi-page HTML report of plots.
 # 
-# The "multiplot" function, provided in this module and not part of
-# the class, allows for the produciton of single pages that fit
-# multiple plots. See documentation of "multiplot" for more detials.
+# The "multiplot" function, provided in this module (not part of the
+# 'Plot' class), allows for the produciton of single pages that
+# contain multiple plots. See documentation of "multiplot" for more
+# detials.
+# 
+# 
+# Initialization controls for a Plot can be changed at any point by
+# setting the named attribute of the Plot class instantiation. They are:
+# 
+# AXIS CONTROL
+#  title   -- The title of this plot.
+#  x_title -- The x-axis title for this plot.
+#  y_title -- The y-axis title for this plot.
+#  z_title -- The z-axis title for this plot.
+# 
+# PLOT CONTROL
+#  mode    -- The default plotly plot mode to be used.
+#  palatte -- A numpy array (N rows, 3 columns) of ordered plot
+#             series colors.
+# 
+# FONT CONTROL
+#  font_family -- The family of font used for axes.
+#  font_color  -- The color of the font used for axes.
+#  font_size   -- The size of the font used for axes.
+
 class Plot:
     def __init__(self, title="", x_title="x", y_title="y",
-                 z_title="z", mode="markers", palatte=PALATTE):
+                 z_title="z", mode="markers", palatte=PALATTE,
+                 font_family=None, font_color=None, font_size=None):
         self.title = title
         self.x_title = x_title
         self.y_title = y_title
@@ -177,6 +198,10 @@ class Plot:
         self.mode = mode
         self.palatte = palatte
         self.palatte_size = len(palatte)
+        # Font settings
+        self.font_family = font_family
+        self.font_color = font_color
+        self.font_size = font_size
 
     # Return an appropriate face color of a simplex given the simplex,
     # data z values, and either (color index and opaicty, or a list of
@@ -457,9 +482,9 @@ class Plot:
     #                 for 3D plotting).
     #  plot_points -- The number of plot points in the meshgrid.
     #  ... <standard "add" arguments with adjusted defaults> ...
-    def add_func(self, name, func, min_max_x, min_max_y=[],
-                 grid_lines=True, plot_points=PLOT_POINTS, mode=None, 
-                 plot_type=None, **kwargs):
+    def add_function(self, name, func, min_max_x, min_max_y=[],
+                     grid_lines=True, plot_points=PLOT_POINTS, mode=None, 
+                     plot_type=None, **kwargs):
         if (len(min_max_y) > 0): self.is_3d = True
         # If we have two control axes, square root the plot points
         if self.is_3d:
@@ -478,7 +503,10 @@ class Plot:
 
         # Get the response values
         try:
-            response = np.array([func(x) for x in np.vstack(x_vals).T]).flatten()
+            response = [func(x) for x in np.vstack(x_vals).T]
+            # Make sure all "None" values are in brackets
+            while None in response: response[response.index(None)] = [None]
+            response = np.array(response).flatten()
         except SystemExit: exit()
         except:
             # Provide a useful error message if the response values
@@ -518,6 +546,9 @@ class Plot:
                          group=name+" (lines)", mode="lines",
                          line_width=opacity, opacity=opacity,
                          color=line_color, hoverinfo="none")
+
+    @same_as(add_function, mention_usage=True)
+    def add_func(self, *args, **kwargs): return self.add_function(*args, **kwargs)
 
     # Decorated "add" function that automatically sets the options
     # necessary for plotting an N-bin PDF histogram of a given set of
@@ -813,6 +844,7 @@ class Plot:
             hoverinfo = hoverinfo,
             text = text,
             color = color,
+            # Set up the marker style
             marker = dict(
                 # Generate colors based on point magnitude
                 # color = color if ("lines" in mode) else marker_colors,
@@ -950,10 +982,6 @@ class Plot:
     #                 automatically determined by data if possible
     #  z_range     -- The range of z-values to default to displaying,
     #                 automatically determined by data if possible
-    #  xaxis       -- Dictionary of xaxis settings, useful for type = 
-    #                 "log", "date", "category" axes settings.
-    #  yaxis       -- Same as xaxis, but for y.
-    #  zaxis       -- Same as xaxis, but for z.
     #  fixed       -- False if plotly should automatically rescale the
     #                 plot when series are hidden/shown, True if
     #                 plotly should not rescale on hide/show.
@@ -967,7 +995,10 @@ class Plot:
     #                     dictionary for 3D plotting.
     #  axis_settings   -- Controls for each of the axes. Include
     #                     things like showgrid, zeroline, showline,
-    #                     showticklabels (all boolean) or ticks="<str>"
+    #                     showticklabels (all boolean) or ticks="<str>",
+    #                     type = "log", "date", "category".
+    #                     For customizing just one, use
+    #                     "x_axis_settings", "y_axis_settings", etc.
     #  camera_position -- A dictionary of dictionaries of x,y,z
     #                     values, "up" is relative up vector, "center"
     #                     is the point about which a 3D plot rotates, 
@@ -978,6 +1009,8 @@ class Plot:
     #  file_name -- See "create_html".
     #  show      -- See "create_html".
     #  append    -- See "create_html".
+    #  height    -- The height of the plot in pixels
+    #  width     -- The width of the plot in pixels
     # 
     # ANIMATION CONTROLS:
     #  loop_duration       -- Length in seconds of full play cycle.
@@ -1001,15 +1034,15 @@ class Plot:
     # 
     #  ... <any additional plotly.offline.plot keyword arguments> ...
     def plot(self, title=None, x_range=None, y_range=None,
-             z_range=None, xaxis={}, yaxis={}, zaxis={}, fixed=True,
-             show_legend=True, layout={}, aspect_mode='cube',
+             z_range=None, fixed=True, show_legend=True, height=None,
+             width=None, layout={}, aspect_mode='cube',
              scene_settings={}, axis_settings={}, x_axis_settings={},
-             y_axis_settings={}, z_axis_settings={},
-             camera_position=DEFAULT_CAMERA_POSITION, html=True,
-             file_name=None, show=True, append=False, loop_duration=5,
+             y_axis_settings={}, z_axis_settings={}, html=True,
+             show=True, append=False, file_name=None,
+             camera_position=DEFAULT_CAMERA_POSITION, loop_duration=5,
              bounce=False, transition="linear", data_easing=False,
-             redraw=False, slider_transition="cubic",
-             initial_frame=None, frame_label="Frame: ",
+             redraw=False, initial_frame=None,
+             slider_transition="cubic", frame_label="Frame: ",
              show_frame_label=True, show_play_pause=True,
              show_slider_labels=True, **kwargs):
         # Update title, and all plot axis ranges
@@ -1035,6 +1068,13 @@ class Plot:
             title = title,
             showlegend = show_legend,
         )
+        # Set width, height, and compensate for plotly spacing aroung SVG 
+        if type(width) != type(None):  
+            width += 139
+            plot_layout.update(dict(width=width))
+        if type(height) != type(None): 
+            height += 159
+            plot_layout.update(dict(height=height))
         # Set the barmode for histograms if necessary
         if (hasattr(self, 'histogram_barmode') and
             len(self.histogram_barmode) > 0):
@@ -1042,6 +1082,23 @@ class Plot:
         # Clean all annotations so they are ready for plotting
         annotations = [a.copy() for a in self.annotations]
         self._clean_annotations(annotations)
+        # Setup the title and tick fonts dictionary
+        fonts_dict = dict(
+            titlefont = dict(
+                family = self.font_family,
+                color = self.font_color,
+                size = self.font_size,
+            ),
+            tickfont = dict(
+                family = self.font_family,
+                color = self.font_color,
+                size = (max(self.font_size - 4,2) if (
+                    type(self.font_size) != type(None)) else None),
+            )
+        )
+        # Update axis_settings with things from fonts that it doesn't have.
+        fonts_dict.update(axis_settings)
+        axis_settings = fonts_dict
         # Update all axes with the global axis settings
         x_axis_settings.update(axis_settings)
         y_axis_settings.update(axis_settings)
@@ -1096,8 +1153,7 @@ class Plot:
         return fig
 
     @same_as(plot, mention_usage=True)
-    def show(self, *args, **kwargs): return(self.plot(*args, **kwargs))
-
+    def show(self, *args, **kwargs): return plot(self, *args, **kwargs)
 
         
 #      Functions for manipulation produces plots     
@@ -1117,8 +1173,8 @@ class Plot:
 #                        bar that must be done on the HTML.
 # 
 #  ... <any additional plotly.offline.plot keyword arguments> ...
-def create_html(fig, file_name=None, show=True,
-                append=False, show_slider_labels=True, **kwargs):
+def create_html(fig, file_name=None, show=True, append=False,
+                show_slider_labels=True, **kwargs):
     # Handle the creation of a file
     if (type(file_name) == type(None)):
         if append and (len(PREVIOUS_FILE_NAMES) > 0): 
@@ -1127,7 +1183,6 @@ def create_html(fig, file_name=None, show=True,
             with tempfile.NamedTemporaryFile(
                     mode="w", suffix=".html", delete=False) as f:
                 file_name = f.name
-
     # Load the pypi package "plotly" that interfaces with plotly.js
     # only once this is called, otherwise it slows down the import
     plotly = import_package("plotly")
@@ -1142,7 +1197,7 @@ def create_html(fig, file_name=None, show=True,
     else:
         print("Appending plot at", end=" ")
     # Generate the plot offline 
-    plotly.offline.plot(fig, auto_open=False, filename=file_name,
+    plotly.offline.plot(fig, filename=file_name, auto_open=False,
                         show_link=False, **kwargs)
     # Remove unnecessary modebar buttons and the plotly logo link
     with open(file_name) as f:
@@ -1169,7 +1224,7 @@ def create_html(fig, file_name=None, show=True,
     if len(PREVIOUS_FILE_NAMES) > 1: PREVIOUS_FILE_NAMES.pop(0)
     print("file '%s'"%file_name)
     # Open the plot in a webbrowser if the user wants that
-    if show: webbrowser.open("file://"+os.path.abspath(file_name))
+    if show or image: webbrowser.open("file://"+os.path.abspath(file_name))
     return file_name
 
 # Private function for use only by the "plot" function. See the
@@ -1371,7 +1426,8 @@ def _animate(data, plot_layout, loop_duration, bounce, transition,
 #  ... <any additional plotly.offline.plot keyword arguments> ...
 def multiplot(plots, x_domains=None, y_domains=None, html=True,
               show=True, append=False, specs=None, shared_y=False,
-              shared_x=False, gap=0.12, **kwargs): 
+              shared_x=False, show_legend=True, gap=0.12,
+              height=None, width=None, **kwargs): 
     # Load the pypi package "plotly" that interfaces with plotly.js
     # only once this is called, otherwise it slows down the import
     plotly = import_package("plotly")
@@ -1382,7 +1438,8 @@ def multiplot(plots, x_domains=None, y_domains=None, html=True,
     for r in plots:
         for c in range(len(r)):
             if type(r[c]) == Plot:
-                r[c] = r[c].plot(html=False, show=False)
+                r[c] = r[c].plot(html=False, show=False, 
+                                 show_legend=show_legend)
 
     # Count the number of rows and columns
     rows = len(plots)
@@ -1403,13 +1460,13 @@ def multiplot(plots, x_domains=None, y_domains=None, html=True,
     if x_domains == None:                
         x_domains = []
         for r in range(rows):
-            width = (1 - (cols[r]-1)*gap) / cols[r]
+            plot_width = (1 - (cols[r]-1)*gap) / cols[r]
             x_domains.append(
-                [[c*(width+gap), c*(width+gap) + width]
+                [[c*(plot_width+gap), c*(plot_width+gap) + plot_width]
                  for c in range(cols[r])])
     if y_domains == None:                
-        height = (1 - (rows-1)*gap) / rows
-        y_domains = [[r*(height+gap), r*(height+gap) + height]
+        plot_height = (1 - (rows-1)*gap) / rows
+        y_domains = [[r*(plot_height+gap), r*(plot_height+gap) + plot_height]
                      for r in range(rows)]
     # Identify the number of dimensions provided in x an y domains, if
     # too few, then make sure it is the same shape as the plots
@@ -1425,8 +1482,8 @@ def multiplot(plots, x_domains=None, y_domains=None, html=True,
     gap = y_domains[1][0][0] - y_domains[0][0][1] if len(y_domains) > 1 else 0
     for r in range(rows):
         start = 0.0 if r == 0 else flipped_y[-1][1] + gap
-        width = y_domains[rows-r-1][0][1] - y_domains[rows-r-1][0][0]
-        flipped_y.append([start, start+width])
+        plot_width = y_domains[rows-r-1][0][1] - y_domains[rows-r-1][0][0]
+        flipped_y.append([start, start+plot_width])
     y_domains = [[flipped_y[r]]*cols[len(cols)-1-r] for r in range(rows)][::-1]
 
     # Generate the holder for the multiplot
@@ -1480,8 +1537,13 @@ def multiplot(plots, x_domains=None, y_domains=None, html=True,
                 plot['layout']['annotations'] = plot_annotations
             # Remove the 'scene' if there is one left over
             if specs[r][c]['is_3d']: fig['layout'].pop('scene','')
-
-
+    # Set the height and width properties, compensate for plotly spacing aroung SVG
+    if type(width) != type(None):  
+        width += 139
+        fig["layout"].update(dict(width=width))
+    if type(height) != type(None): 
+        height += 159
+        fig["layout"].update(dict(height=height))
     # Create the html plot if the user wants that (pass extra arguments)
     if html: create_html(fig, show=show, append=append, **kwargs)
     # Return the figure to be plotted
