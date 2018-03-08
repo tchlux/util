@@ -1035,7 +1035,7 @@ class Plot:
     #  ... <any additional plotly.offline.plot keyword arguments> ...
     def plot(self, title=None, x_range=None, y_range=None,
              z_range=None, fixed=True, show_legend=True, height=None,
-             width=None, layout={}, aspect_mode='cube',
+             width=None, layout={}, aspect_mode='cube', legend={},
              scene_settings={}, axis_settings={}, x_axis_settings={},
              y_axis_settings={}, z_axis_settings={}, html=True,
              show=True, append=False, file_name=None,
@@ -1063,10 +1063,27 @@ class Plot:
             z_width = self.z_min_max[1] - self.z_min_max[0]
             z_range = [self.z_min_max[0] - 0.05*z_width,
                        self.z_min_max[1] + 0.05*z_width]
+        # Set up a legend font
+        legend_font = dict(
+            family = self.font_family,
+            color = self.font_color,
+            size = (max(self.font_size - 4,2) if (
+                type(self.font_size) != type(None)) else None),
+        )
+        if ("font" in legend): legend_font.update(legend["font"])
+        legend["font"] = legend_font
+        # Set up a title font
+        title_font = dict(
+            family = self.font_family,
+            color = self.font_color,
+            size = self.font_size,
+        )
         # Generate the layout (titles and legend)
         plot_layout = dict(
             title = title,
+            titlefont = title_font,
             showlegend = show_legend,
+            legend = legend,
         )
         # Set width, height, and compensate for plotly spacing aroung SVG 
         if type(width) != type(None):  
@@ -1224,7 +1241,7 @@ def create_html(fig, file_name=None, show=True, append=False,
     if len(PREVIOUS_FILE_NAMES) > 1: PREVIOUS_FILE_NAMES.pop(0)
     print("file '%s'"%file_name)
     # Open the plot in a webbrowser if the user wants that
-    if show or image: webbrowser.open("file://"+os.path.abspath(file_name))
+    if show: webbrowser.open("file://"+os.path.abspath(file_name))
     return file_name
 
 # Private function for use only by the "plot" function. See the
