@@ -33,6 +33,7 @@ def import_package(name, custom_name=None):
     module = imp.load_module(custom_name, f, pathname, desc)
     return module
 
+PLOT_MARGIN = 50 # In pixels
 PLOT_POINTS = 1000
 BRIGHTNESS_RANGE = 0.6
 
@@ -1076,7 +1077,7 @@ class Plot:
         title_font = dict(
             family = self.font_family,
             color = self.font_color,
-            size = self.font_size,
+            size = self.font_size + 2,
         )
         # Generate the layout (titles and legend)
         plot_layout = dict(
@@ -1084,13 +1085,14 @@ class Plot:
             titlefont = title_font,
             showlegend = show_legend,
             legend = legend,
+            margin = dict(t=PLOT_MARGIN,b=PLOT_MARGIN,l=PLOT_MARGIN,r=PLOT_MARGIN),
         )
         # Set width, height, and compensate for plotly spacing aroung SVG 
         if type(width) != type(None):  
-            width += 139
+            # width += 139
             plot_layout.update(dict(width=width))
         if type(height) != type(None): 
-            height += 159
+            # height += 159
             plot_layout.update(dict(height=height))
         # Set the barmode for histograms if necessary
         if (hasattr(self, 'histogram_barmode') and
