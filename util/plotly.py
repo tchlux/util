@@ -34,8 +34,8 @@ def import_package(name, custom_name=None):
     return module
 
 PLOT_MARGIN = 50 # In pixels
-PLOT_POINTS = 1000
-BRIGHTNESS_RANGE = 0.6
+PLOT_POINTS = 1000 # Number of samples
+BRIGHTNESS_RANGE = 0.6 # For default shading of points
 
 # PALATTE SOURCE: colorlover as cl
 # PALATTE SOURCE: np.array(cl.to_numeric(cl.scales['5']['qual']['Set2']))
@@ -63,7 +63,6 @@ DEFAULT_GRADIENT = np.array([[  94.,   79.,  162.],
                              [ 213.,   62.,   79.],
                              [ 158.,    1.,   66.]])
 MIN_COLORS = 40
-
 # Expand the palatte using random combinations of existing colors
 RANDOM_SEED = 0
 random.seed(RANDOM_SEED)
@@ -251,7 +250,7 @@ class Plot:
     def _clean_data(self, data):
         from scipy.spatial import Delaunay
         # Remove the extra color attribute stored for easy access
-        any_heatmaps = any(d.get("type","") == "heatmap" for d in data)
+        # any_heatmaps = any(d.get("type","") == "heatmap" for d in data)
         for d in data:
             d.pop("color")
             if d["type"] == "heatmap":
@@ -1077,7 +1076,7 @@ class Plot:
         title_font = dict(
             family = self.font_family,
             color = self.font_color,
-            size = self.font_size + 2,
+            size = (self.font_size + 2) if (type(self.font_size) == int) else self.font_size,
         )
         # Generate the layout (titles and legend)
         plot_layout = dict(
@@ -1172,7 +1171,7 @@ class Plot:
         return fig
 
     @same_as(plot, mention_usage=True)
-    def show(self, *args, **kwargs): return plot(self, *args, **kwargs)
+    def show(self, *args, **kwargs): return self.plot(*args, **kwargs)
 
         
 #      Functions for manipulation produces plots     
