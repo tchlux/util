@@ -1,4 +1,5 @@
-import os, sys, subprocess
+import time, os, sys, subprocess
+
 
 MAX_FILE_SIZE_BYTES = 50*(2**20)
 CHUNK_EXT = "_(part_%i_of_%i).chunk"
@@ -35,7 +36,7 @@ def disassemble(file_path, max_size_bytes=MAX_FILE_SIZE_BYTES,
                 if verbose:
                     print(" writing chunk %i of %i in '%s'..."%(c,chunks,out.name))
                 out.write(f.read(max_size_bytes))
-            
+           
 
 # Execute a blocking command with a subprocess, on completion provide
 # the return code, stdout as string, and stderr as string. This should
@@ -69,3 +70,66 @@ def run(command, **popen_kwargs):
     else:      stderr = ""
     # Return the exit code, standard out, and standard error
     return proc.returncode, stdout, stderr
+
+
+# ==========================
+#      AtomicOpen Class     
+# ==========================
+
+try:
+    # Posix based file locking (Linux, Ubuntu, MacOS, etc.)
+    import fcntl
+    def lock_file(f):
+        try:
+            fcntl.lockf(f, fcntl.LOCK_EX)
+        except OSError:
+            pass
+    def unlock_file(f): pass
+except ModuleNotFoundError:
+    # Windows file locking
+    import msvcrt
+    def file_size(f):
+        return os.path.getsize( os.path.realpath(f.name) )
+    def lock_file(f):
+        msvcrt.locking(f.fileno(), msvcrt.LK_RLCK, file_size(f))
+    def unlock_file(f):
+        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, file_size(f))
+
+
+# Class for ensuring that all file operations are atomic, treat
+# initialization like a standard call to 'open' that happens to be atomic
+class AtomicOpen:
+    # First acquire a lock for the file, then open the file with
+    # arguments provided by user. Attempts to inherit most of the file
+    # properties, but use "__enter__" to get file object directly.
+    def __init__(self, path, *args, **kwargs):
+        writing = False
+        if (len(args) > 0) and (args[0]) == "w": 
+            writing = True
+            args = tuple((a if (a != "w") else "a") for a in args)
+        # Open the file and acquire a lock on the file before operating
+        self.file = open(path,*args, **kwargs)
+        # Lock the opened file
+        lock_file(self.file)
+        # If the user wanted to write (overwrite existing contents),
+        # make sure that we are doing that exactly (after locking)
+        if writing:
+            self.file.seek(0)
+            self.file.truncate()
+
+    # Return the opened file object (knowing a lock has been obtained)
+    def __enter__(self, *args, **kwargs): return self.file
+
+    # Allows users to use the 'close' function if they want, in case
+    # the user did not have the AtomicOpen in a "with" block.
+    def close(self): self.__exit__()
+
+    # Unlock the file and close the file object
+    def __exit__(self, exc_type=None, exc_value=None, traceback=None):        
+        # Release the lock on the file
+        unlock_file(self.file)
+        self.file.close()
+        # Handle exceptions that may have come up during execution, by
+        # default any exceptions are raised to the user
+        if (exc_type != None): return False
+        else:                  return True        

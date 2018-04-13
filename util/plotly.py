@@ -16,6 +16,9 @@
 #   from scipy.spatial import Delaunay
 # 
 
+# TODO: Plot.add_zero_line(func)
+# TODO: Plot.add_frame(..., persist=True)
+
 import random, numbers, os, webbrowser, imp, sys, re, tempfile
 import numpy as np
 from scipy.spatial.qhull import QhullError
@@ -176,7 +179,6 @@ def color_string_to_array(color_string):
 #  font_family -- The family of font used for axes.
 #  font_color  -- The color of the font used for axes.
 #  font_size   -- The size of the font used for axes.
-
 class Plot:
     def __init__(self, title="", x_title="x", y_title="y",
                  z_title="z", mode="markers", palatte=PALATTE,
@@ -241,6 +243,8 @@ class Plot:
             for a in annotations:
                 if type(a['z']) == type(None):
                     a['z'] = 0
+                a.pop("axref","")
+                a.pop("ayref","")
         return annotations
 
     # Prepares all the data sets to be plotted in whatever dimension
@@ -256,6 +260,8 @@ class Plot:
             if d["type"] == "heatmap":
                 d.pop("marker","")
                 d.pop("mode","")
+            if d["type"] == "box":
+                d.pop("text","")
             #     d.pop("line","")
             #     d.pop("fill","")
             #     d.pop("fillcolor","")
@@ -481,10 +487,14 @@ class Plot:
     #                 show where plot points were placed (only works
     #                 for 3D plotting).
     #  plot_points -- The number of plot points in the meshgrid.
+    #  vectorized  -- True if the provided function can be provided a
+    #                 matrix of points as row-vectors for faster execution.
+    # 
     #  ... <standard "add" arguments with adjusted defaults> ...
     def add_function(self, name, func, min_max_x, min_max_y=[],
-                     grid_lines=True, plot_points=PLOT_POINTS, mode=None, 
-                     plot_type=None, **kwargs):
+                     grid_lines=True, plot_points=PLOT_POINTS,
+                     vectorized=False, mode=None, plot_type=None,
+                     **kwargs):
         if (len(min_max_y) > 0): self.is_3d = True
         # If we have two control axes, square root the plot points
         if self.is_3d:
@@ -502,24 +512,18 @@ class Plot:
         x_vals = tuple(x.flatten() for x in np.meshgrid(*x_vals))
 
         # Get the response values
-        try:
+        if vectorized:
+            # Try vectorizing the function evaluation
+            response = list(func(np.vstack(x_vals).T))
+        else:
+            # Otherwise evaluate the function one point at a time
             response = [func(x) for x in np.vstack(x_vals).T]
+        try:
             # Make sure all "None" values are in brackets
             while None in response: response[response.index(None)] = [None]
-            response = np.array(response).flatten()
-        except SystemExit: exit()
-        except:
-            # Provide a useful error message if the response values
-            # could not be computed correctly
-            try:
-                sample = func((np.vstack(x_vals).T)[0])
-                raise(Exception("Error in return value of provided function. Expected number, got '%s'"%(type(sample))))
-            except:
-                raise(Exception("Error computing the provided function."))
-
-        # For analyzing the specific outputs
-        # temp = np.concatenate((x_vals,[response])).T
-        # np.savetxt("/Users/thomaslux/Desktop/temp.txt", temp)
+        except ValueError:
+            raise(Exception("The provided function returned a non-numeric value."))
+        response = np.array(response).flatten()
 
         # Call the standard plot function
         self.add(name, *x_vals, response, mode=mode,
@@ -916,14 +920,18 @@ class Plot:
     # 
     #  ... <any additional plotly annotation-dictionary args> ...
     def add_annotation(self, text, x, y, z=None, ax=None, ay=None,
-                       opacity=0.8, text_angle=0, align="left",
-                       x_anchor="center", y_anchor="bottom",
-                       font_family="Arial", font_color="#0a0a0a",
-                       font_size=12, border_color="#1a1a1a",
-                       border_width=0, border_pad=4,
-                       bg_color="#f0f0f0", show_arrow=True,
-                       arrow_color="#666", arrow_size=1,
-                       arrow_width=1, arrow_head=7, **kwargs):
+                       axref=None, ayref=None, opacity=0.8,
+                       text_angle=0, align="left", x_anchor="center",
+                       y_anchor="bottom", font_family="Arial",
+                       font_color="#0a0a0a", font_size=12,
+                       border_color="#1a1a1a", border_width=0,
+                       border_pad=4, bg_color="#f0f0f0",
+                       show_arrow=True, arrow_color="#666",
+                       arrow_size=1, arrow_width=1, arrow_head=7,
+                       **kwargs):
+        # Assign default ax and ay references based on provided info
+        if (ax != None) and (axref == None) and (z == None): axref = "x"
+        if (ay != None) and (ayref == None) and (z == None): ayref = "y"
         # Add computed values for the annotation x and y
         if show_arrow:
             if ax == None: ax = 10
@@ -940,6 +948,8 @@ class Plot:
             z = z,
             ax = ax,
             ay = ay,
+            axref = axref,
+            ayref = ayref,
             # Annotation text control
             opacity = opacity,
             textangle = text_angle,
@@ -991,6 +1001,7 @@ class Plot:
     #  layout          -- Update to be performed to the plotly
     #                     layout-dictionary that is generated.
     #  aspect_mode     -- For 3D plotting, standard plotly.
+    #  legend          -- Legend settings, like the font and location.
     #  scene_settings  -- Standard plotly, for updating the "scene"
     #                     dictionary for 3D plotting.
     #  axis_settings   -- Controls for each of the axes. Include
@@ -1029,22 +1040,29 @@ class Plot:
     #  show_frame_label    -- Whether or not to show a frame label.
     #  show_slider_labels  -- Whether or not to show labels under
     #                         slider positions (disable for long labels)
+    #  show_play_pause     -- Whether or not to show the play and pause buttons.
+    #  autoplay            -- Whether or not to autoplay on-load in browser.
+    #  loop_animation      -- Whether or not the animtation should
+    #                         loop when playing, otherwise 1 play -> 1 loop.
+    #  loop_pause          -- The pause in seconds between animation loops.
     # 
     # See more details at: https://github.com/plotly/plotly.js/blob/master/src/plots/animation_attributes.js
     # 
     #  ... <any additional plotly.offline.plot keyword arguments> ...
     def plot(self, title=None, x_range=None, y_range=None,
-             z_range=None, fixed=True, show_legend=True, height=None,
-             width=None, layout={}, aspect_mode='cube', legend={},
-             scene_settings={}, axis_settings={}, x_axis_settings={},
-             y_axis_settings={}, z_axis_settings={}, html=True,
-             show=True, append=False, file_name=None,
-             camera_position=DEFAULT_CAMERA_POSITION, loop_duration=5,
-             bounce=False, transition="linear", data_easing=False,
-             redraw=False, initial_frame=None,
-             slider_transition="cubic", frame_label="Frame: ",
-             show_frame_label=True, show_play_pause=True,
-             show_slider_labels=True, **kwargs):
+             z_range=None, fixed=True, show_legend=True, layout={},
+             aspect_mode='cube', legend={}, scene_settings={},
+             axis_settings={}, x_axis_settings={}, y_axis_settings={},
+             z_axis_settings={},
+             camera_position=DEFAULT_CAMERA_POSITION, html=True,
+             file_name=None, show=True, append=False, height=None,
+             width=None, loop_duration=5, bounce=False,
+             transition="linear", data_easing=False, redraw=False,
+             slider_transition="linear", initial_frame=None,
+             frame_label="Frame: ", show_frame_label=True,
+             show_slider_labels=True, show_play_pause=True,
+             autoplay=False, loop_animation=False, loop_pause=0,
+             **kwargs):
         # Update title, and all plot axis ranges
         if title == None:
             title = self.title
@@ -1166,13 +1184,87 @@ class Plot:
 
         # Create the html file and show in browser if appropriate
         if html: create_html(fig, file_name, show, append,
-                             show_slider_labels, **kwargs)
+                             show_slider_labels, autoplay,
+                             loop_animation, loop_pause, **kwargs)
         # Return the figure
         return fig
 
     @same_as(plot, mention_usage=True)
     def show(self, *args, **kwargs): return self.plot(*args, **kwargs)
 
+    # This function is a light wrapper for "plot" that automatically
+    # sets axis settings for 
+    def graph(self, *args, show_grid=True, show_ticks=False,
+              show_line=False, show_zero_line=False,
+              show_legend=False, x_title="", y_title="", **kwargs):
+        # Set the axis labels
+        self.x_title = x_title
+        self.y_title = y_title
+        # Set the default axis settings
+        axis_settings = dict(showgrid=show_grid, showticklabels=show_ticks,
+                             showline=show_line, zeroline=show_zero_line)
+        if "axis_settings" in kwargs:
+            kwargs["axis_settings"].update(axis_settings)
+        else:
+            kwargs["axis_settings"] = axis_settings
+        # Update "show_legend"
+        kwargs["show_legend"] = show_legend
+        return self.plot(*args, **kwargs)
+
+    # Light wrapper for "add" which is designed to place graphical nodes.
+    def add_node(self, name, x, y, *args, symbol="circle",
+                 display=True, white=True, size=30,
+                 marker_line_color="rgba(0,0,0,1))",
+                 marker_line_width=2, label=False, **kwargs):
+        # Add a label if that is desired.
+        if label: kwargs["mode"] = "markers+text"
+        # Set to a default color if desired
+        if white: kwargs["color"] = "rgba(255,255,255,1)"
+        # Remove the marker line and color if not displayed
+        if not display: 
+            marker_line_width = 0
+            kwargs["color"] = self.color(
+                color=kwargs.get("color","(0,0,0)"), alpha=0)
+        return self.add(name, [x], [y], *args, symbol=symbol,
+                        text=[name], marker_size=size,
+                        marker_line_width=marker_line_width,
+                        marker_line_color=marker_line_color, **kwargs)
+
+    # Wrapper for "plot" that draws lines between nodes in a sequence.
+    def add_edge(self, nodes, color="rgba(0,0,0,1)", mode="lines", 
+                 *args, **kwargs):
+        x = []
+        y = []
+        # Default to adding a fill (if color is specified)
+        if ("fill_color" in kwargs):
+            if ("fill" not in kwargs):
+                kwargs["fill"] = "toself"
+        # Create a local function that says when a frame matches
+        matches_frame = lambda d: ("frame" not in kwargs) or (
+            ("frame" in d) and (d["frame"] == str(kwargs["frame"])))
+        # Now find the nodes to draw between
+        for _ in range(len(nodes)):
+            for d in self.data:
+                if (d["name"] == nodes[0]):
+                    # Skip data that does not match this frame
+                    if not matches_frame(d): continue
+                    # Track the coordinates
+                    x += list(d["x"])
+                    y += list(d["y"])
+                    # Cycle the list
+                    nodes = nodes[1:] + [nodes[0]]
+                    break
+            # If we don't find a matching node, break
+            else: break
+        output = self.add("", x, y, mode=mode, color=color, *args, **kwargs)
+        # Cycle that new element to the front of data so that it is
+        # rendered underneath all nodes.
+        for i in range(len(self.data)):
+            if (self.data[i]["name"] in nodes) and matches_frame(self.data[i]):
+                self.data.insert(i, self.data.pop(-1))
+                break
+        return output
+            
         
 #      Functions for manipulation produces plots     
 # ===================================================
@@ -1189,10 +1281,17 @@ class Plot:
 #               scrollable page, where each plot takes a full screen.
 #  show_slider_labels -- Hack for removing the labels from the slider
 #                        bar that must be done on the HTML.
+#  autoplay           -- Hack for preventing plot animation from
+#                        automatically playing once it is loaded.
+#  loop_animation     -- Hack for making animations automatically
+#                        repeat by modifying raw javascript "animate".
+#  loop_pause         -- Amount of time waited before looping an
+#                        animation in seconds.
 # 
 #  ... <any additional plotly.offline.plot keyword arguments> ...
 def create_html(fig, file_name=None, show=True, append=False,
-                show_slider_labels=True, **kwargs):
+                show_slider_labels=True, autoplay=True,
+                loop_animation=True, loop_pause=0, **kwargs):
     # Handle the creation of a file
     if (type(file_name) == type(None)):
         if append and (len(PREVIOUS_FILE_NAMES) > 0): 
@@ -1226,8 +1325,24 @@ def create_html(fig, file_name=None, show=True, append=False,
         'modeBarButtonsToRemove:[]',
         'modeBarButtonsToRemove:["sendDataToCloud", "select2d", "lasso2d"]')
     file_string += "\n\n"
-    # Prevent animated plots from auto-playing
-    file_string = re.sub("\\.then\\(function\\(\\)\\{Plotly\\.animate\\(\\'[0-9a-zA-Z-]*\\'\\)\\;\\}\\)", "", file_string)
+    # Prevent animated plots from auto-playing if the user wants
+    if (not autoplay):
+        file_string = re.sub("\\.then\\(function\\(\\)\\{Plotly\\.animate\\(\\'[0-9a-zA-Z-]*\\'\\)\\;\\}\\)", "", file_string)
+        # autoplay_substitution = ""
+    else:
+        print("WARNING: Cannot control transitions using autoplay.")
+        # autoplay_substitution = '.then(function(){Plotly.animate([null], {"frame": {"duration": 0, "redraw": false}, "mode": "immediate", "transition": {"duration": 0}})})'
+
+    # Cause animation to loop if the user wants
+    if loop_animation:
+        # Add a global parameter storage at the top of the file
+        file_string = file_string.replace("*/\n!","*/\nvar ap=[];\n!")
+        # Name the x.animate function for internal reference and store
+        # the function parameters passed into the global variable
+        file_string = file_string.replace("x.animate=function(t,e,r){","x.animate=function af(t,e,r){ap=[t,e,r];")
+        # Add a recursive call at the end of the conclusion of the animate function
+        file_string = file_string.replace("}else c()","}else {c();setTimeout(function(){af(ap[0],ap[1],ap[2]);},"+str(1000*loop_pause)+");}")
+
     # Remove the slider label group if necessary by adding CSS that hides it
     if not show_slider_labels:
         extra_css = '<style type="text/css"> g.slider-labels { display: none; } </style>'
@@ -1313,19 +1428,6 @@ def _animate(data, plot_layout, loop_duration, bounce, transition,
     if type(initial_frame) == type(None): 
         initial_frame = frame_names[0]
 
-    # This controls what happens when values are clicked
-    slider_layout = {
-        'args': ['transition', {'duration': 400,
-                                'easing': 'cubic-in-out'}],
-        'initialValue': initial_frame,
-        'plotlycommand': 'animate',
-        'values': frame_names,
-        'visible': True
-    }
-
-    # Add the slider definition to the figure layout
-    figure['layout']['sliders'] = slider_layout
-
     if show_play_pause:
         # Controls the list of elements transitioned through when "Play"
         # is pressed. {"redraw": True} causes the slider to stop working.
@@ -1333,10 +1435,11 @@ def _animate(data, plot_layout, loop_duration, bounce, transition,
         # "[None]" forces a pause, which requires 'immediate" and 0 duration.
         slider_menu = [{
             'buttons': [
-                {'args': [frame_names + (frame_names[::-1] if bounce else []), {'frame': {'duration': transition_duration, 'redraw': redraw},
-                                        'fromcurrent': True, 
-                                        'transition': {'duration': transition_duration if data_easing else 0,
-                                                       'easing': transition}}],
+                {'args': [frame_names + (frame_names[::-1] if bounce else []), 
+                          {'frame': {'duration': transition_duration, 'redraw': redraw},
+                           'fromcurrent': True, 
+                           'transition': {'duration': transition_duration if data_easing else 0,
+                                          'easing': transition}}],
                  'label': 'Play', 'method': 'animate'},
                 {'args': [[None], {'frame': {'duration': 0, 'redraw': redraw},
                                    'mode': 'immediate', 

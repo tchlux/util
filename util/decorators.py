@@ -78,7 +78,7 @@ def same_as(to_copy, mention_usage=False):
 # 
 #   OR
 # 
-#   <function> = same_as(<max_files>, <cache_dir>, <file_prefix>)(<function_to_decorate>)
+#   <function> = cache(<max_files>, <cache_dir>, <file_prefix>)(<function_to_decorate>)
 #   
 def cache(func_to_cache=None, max_files=10, cache_dir=None, file_prefix=None):
     import os, hashlib, pickle

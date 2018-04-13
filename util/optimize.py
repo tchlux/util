@@ -238,7 +238,7 @@ def Random(objective, halt, bounds, solution, args=tuple()):
 # 
 DEFAULT_SEARCH_SIZE = 2.0**10
 DEFAULT_MAX_TIME_SEC = 0.5
-DEFAULT_MIN_STEPS = 10
+DEFAULT_MIN_STEPS = 1
 DEFAULT_MIN_IMPROVEMENT = 0.0
 # Class for tracking convergence of optimization algorithm
 class Tracker:
@@ -307,12 +307,13 @@ class Tracker:
 
     # Function that returns "True" when optimization is over
     def done(self):
-        # Most importantly, check for time
-        time_done = (time.time() - self.start > self.max_time)
-        if time_done: return time_done
-        # Next, check for convergence
+        # Check for convergence (or other stopping criteria)
         converged = False
-        if len(self.record) > self.min_steps:
+        if (self.tries >= self.min_steps):
+            # Check for time requirement
+            time_done = (time.time() - self.start > self.max_time)
+            if time_done: return time_done
+            # Check for change requirement
             change = [abs(o - self.min_obj) for (o,t,s) in self.record[-self.min_steps:]]
             divisor = max(self.record)[0] - min(self.record)[0]
             if divisor == 0: 
@@ -390,7 +391,20 @@ def minimize(objective, solution, bounds=None, args=tuple(),
 
     method(t.check, t.done, bounds, solution, args=args)
 
-    if display: print()
+    if display: 
+        print()
+        try:
+            from util.plotly import Plot
+            name = objective.__name__.title()
+            p = Plot(f"Minimization Performance on Objective '{name}'",
+                     "Trial Number", "Objective Value")
+            trial_numbers = [n for (o,n,s) in t.record]
+            obj_values = [o for (o,n,s) in t.record]
+            p.add("", trial_numbers, obj_values, color=p.color(1),
+                  mode="lines+markers") 
+            p.show(show_legend=False)
+        except: pass
+            
     # Remove the checkpoint file
     if os.path.exists(checkpoint_file): os.remove(checkpoint_file)
     return t.best_sol

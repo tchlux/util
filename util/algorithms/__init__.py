@@ -393,12 +393,8 @@ class VoronoiMesh(Approximator):
         if type(self.values) == type(None):
             raise(Exception("Must provide values in order to make predicitons."))
         weights = self.points_and_weights(xs)
-        print(weights)
         # Generate the predictions
-        predictions = np.matmul(weights, self.values)
-        print(predictions)
-        exit()
-        return predictions
+        return np.matmul(weights, self.values)
 
 # =========================
 #      MaxBoxMesh Mesh     
