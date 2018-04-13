@@ -1,7 +1,8 @@
 import numpy as np
-from util import COMMON_SEPERATORS, UPDATE_RATE, \
+from util import COMMON_SEPERATORS, UPDATE_FREQUENCY, \
     MAX_ERROR_PRINTOUT, NP_TYPES, PY_TYPES
 from util.system import AtomicOpen
+import time
 
 # Given "d+1" categories that need to be converted into real
 # space, generate a regular simplex in d-dimensional space. (all
@@ -39,15 +40,14 @@ def category_ratio(point):
     return np.linalg.solve(categories.T, point)
 
 
-# =======================================================
-#      Automatically Reading Numpy Structured Arrays     
-# =======================================================
-
-class NoFix(Exception): pass
-class FailedFix(Exception): pass
+# =================================================
+#      Automatically Reading Structured Arrays     
+# =================================================
 
 # Return the type of a string (try converting to int and float)
 def get_type(string):
+    if (len(string) == 0):
+        return int
     try:
         int(string)
         return int
@@ -107,115 +107,86 @@ def detect_seperator(filename, verbose=False):
 # Pre:  "filename" is the name of a txt file that has a header
 #       "sep" is the seperator used in the data file
 #       "display" is True if the user wants the detected types printed
-# Post: The header of the file as a list of strings,
-#       the types of each header as a list,
-#       the raw data as a [list of [lists of rows]]
-def read_data_and_type(filename, sep=None, update_rate=UPDATE_RATE):
-    if sep == None: sep = detect_seperator(filename, update_rate!=0)
+# Post: A data.Struct class containing all data from the file.
+def read_struct(filename, sep=None, types=None, verbose=False):
+    if sep == None: sep = detect_seperator(filename, verbose)
     # Open the file to get the data
     with AtomicOpen(filename) as f:
         # Get the first line, assuming it's the header
-        header = f.readline().strip().split(sep)
+        header = [n.strip() for n in f.readline().strip().split(sep)]
         # Get the first line of data and learn the types of each column
         line = f.readline().strip().split(sep)
-        types = list(map(get_type, line))
-        # Add the first line to the data store
-        row_1 = tuple(t(v) for t,v in zip(types,line))
+        # Automatically detect types (if necessary)
+        type_digression = False
+        if type(types) == type(None):
+            types = list(map(get_type, line))
+            type_digression = True
+        # Initialize our data holder
+        data = Struct(names=header, types=types)
+        # Add the first line to the data store (after inserting "None")
+        while "" in line: line[line.index("")] = None
+        data.append(line)
         # Get the rest of the raw data from the file and close it
         raw_data = f.readlines()
     # Print out a nicely formatted description of the detected types
-    if update_rate != 0:
-        print()
-        print("Automatically detected types:")
+    if verbose:
+        print("\nAutomatically detected types based on first line:")
         first_line  = ""
         second_line = ""
         for h,t in zip(header,types):
-            first_line += "  "
-            second_line += "  "
             length = max(len(h), len(t.__name__))
-            first_line += h + " "*(length-len(h))
-            second_line += t.__name__ + " "*(length-len(t.__name__))
+            first_line += f"  {h:{length}s}"
+            second_line += f"  {t.__name__:{length}s}"
         print(first_line)
         print(second_line)
     # Now process the rest of the data, dynamically overwriting old data
-    to_remove = []
+    errors = []
+    last_update = 0
+    should_update = lambda: (verbose and ((time.time() - last_update) > UPDATE_FREQUENCY))
     for i,line in enumerate(raw_data):
-        if (update_rate != 0) and not (i % update_rate):
-            print("\r%0.1f%% complete"% (100.0*i/len(raw_data)), 
-                  flush=True, end="")
-
+        # Update the user on progress if appropriate
+        if should_update():
+            last_update = time.time()
+            print("\r%0.1f%% complete"% (100.0*i/len(raw_data)), flush=True, end="")
+        # Read the line of data into a list format (replace empty string with None)
+        list_line = line.strip().split(sep)
+        # Replace any empty strings with "None" for missing values
+        while "" in list_line: list_line[list_line.index("")] = None
+        # Try and add the line of data
         try:
-            # Holder for the cast row of data
-            raw_data[i] = tuple()
-            # Cycle through the row, casting the types
-            for c, (cast, value) in enumerate(zip(types, line.strip().split(sep))):
-                try:
-                    cast_value = cast(value)
-                except:
-                    # If the number was thought to be an int, try float instead
-                    if (cast == int):
-                        try:
-                            cast_value = float(value)
-                            types[c] = float
-                        # If trying float failed, then there's a problem
-                        except ValueError:
-                            raise(FailedFix())
-                    # If it's not an int to begin with, there's a problem
-                    else:
-                        raise(NoFix())
-                raw_data[i] += (cast_value,)
-        except (ValueError, FailedFix, NoFix):
-            to_remove.append(i)
-            if update_rate != 0:
-                if len(to_remove) > MAX_ERROR_PRINTOUT:
-                    if len(to_remove) == MAX_ERROR_PRINTOUT+1:
-                        print("Suppressing output for errors... See all "+
-                              "erroneous lines in seperate printout.")
-                else:
-                    print("\nERROR ON LINE %i, REMOVING FROM DATA:\n  %s\n"%(i+3,line))
-    if update_rate != 0: print()
-    # Remove lines that caused trouble when casting types
-    for i in to_remove[::-1]:
-        raw_data.pop(i)
-    if (len(to_remove) > 0):
-        print("WARNING: Encountered potentially erroneous lines while\n"+
-              "         reading '%s'.\n"%(filename)+
-              "         Consider setting 'verbose=True' and checking errors.")
-    if (update_rate != 0) and (len(to_remove) > MAX_ERROR_PRINTOUT):
-        print("ERRONEOUS LINES FROM DATA:\n  %s"%to_remove)
-    # Return the header, types, and raw data
-    return header, types, [row_1] + raw_data
-
-# Given a file name, automatically detect the seperator and the types
-# of each column, return all of this in a numpy structured array.
-def read_struct(file_name, sep=None, verbose=False):
-    print_rate = 0 if (not verbose) else UPDATE_RATE
-    if verbose:
-        print("Opening data file and reading into Python List...")
-    try:
-        header, types, data = read_data_and_type(file_name, sep, print_rate)
-        # Sort the data by column precedent (standard python sort)
-        # data.sort()
-    except TypeError:
-        msg = "Current version cannot read data with missing values\n"+\
-              "            or values that change type throughout column. Types\n"+\
-              "            are automatically detected based on first data row."
-        raise(Exception("DATA ERROR: "+msg))
-    # Convert the data into numpy form
-    if verbose: print("Converting the data into numpy format...")
-    dtypes = []
-    for i,(h,t) in enumerate(zip(header,types)):
-        if (t != str):
-            pair = (h,) + NP_TYPES[t]
-        else:
-            max_len = max(len(row[i]) for row in data)
-            pair = (h,) + NP_TYPES[t][:1]+(max_len,)
-        dtypes.append(pair)
-    dtypes = np.dtype(dtypes)
-    if verbose: print("Data types:",dtypes)
-    data = np.array(data, dtype=dtypes)
+            data.append(list_line)
+        except Struct.BadValue:
+            if type_digression:
+                # Update the types based on digression order
+                new_types = list(map(get_type, line.strip().split(sep)))
+                type_order = {int:0, float:1, str:2}
+                new_types = [max(old,new, key=lambda v: type_order[v])
+                             for (old,new) in zip(types, new_types)]
+                # Update the user if appropriate
+                if verbose:
+                    print(f"\nType digression because of line {i+2}."+
+                          f"\n  old types: {types}"+
+                          f"\n  new types: {new_types}")
+                # Retype the existing data to match the new types
+                data.retype(new_types)
+                # Append line that matches new types
+                data.append(list_line)
+                types = new_types
+            else:
+                errors.append(i+3)
+                if len(errors) <= MAX_ERROR_PRINTOUT:
+                    print(f"\nERROR ON LINE {i+3}:\n  {line}\n")
+                if len(errors) == MAX_ERROR_PRINTOUT:
+                    print("Suppressing further error output. See all erroneous lines in later message.")
+    if verbose: print()
+    if (len(errors) > 0):
+        print( "WARNING: Encountered potentially erroneous lines while\n"+
+              f"         reading '{filename}'.\n"+
+               "         Consider setting 'verbose=True' and checking errors.")
+    if verbose and (len(errors) > MAX_ERROR_PRINTOUT):
+        print("ERRONEOUS LINES FROM DATA:\n  {errors}")
+    # Return the struct
     return data
-
 
 # ======================================================
 #      Python 'Struct' with named and typed columns     
@@ -287,13 +258,13 @@ class Struct(list):
         if (type(names) != type(None)):
             if any(type(n) != str for n in names):
                 raise(self.BadSpecifiedName(f"An entry of provided names was not of {str} class."))
-            self.names = names
+            self.names = names[:]
         # Store the types if provided
         if (type(types) != type(None)):
             if any(type(t) != type(type) for t in types):
                 raise(self.BadSpecifiedType(f"An entry of provided types was not of {type(type)} class."))
-            self.types = types
-        self.missing = []
+            self.types = types[:]
+        self.missing = set()
         # If data was provided, put it into this struct
         if type(data) != type(None):
             for row in data:
@@ -301,14 +272,14 @@ class Struct(list):
 
     # Redefined append operator that 
     def append(self, element):
+        missing_values = False
         if (type(self.types) != type(None)):
             if len(element) != len(self.types):
                 raise(self.BadElement(f"Only elements of length {len(self.types)} can be added to this struct."))                
             for i, (val, typ) in enumerate(zip(element, self.types)):
                 # Record 'None' types as missing entries
                 if type(val) == type(None):
-                    if element not in self.missing:
-                        self.missing.append(element)
+                    missing_values = True
                 elif (type(val) != typ):
                     # If not missing, then check the type
                     try:
@@ -325,6 +296,9 @@ class Struct(list):
             self.names = [str(i) for i in range(len(element))]
         # Call the standard append operator, adding the element to self
         super().append(element)
+        # Add to the list of missing values if necessary
+        if (missing_values): self.missing.add(id(self[-1]))
+
 
     # Make sure the copy of this struct is a deep copy
     def copy(self): return self[:]
@@ -342,11 +316,11 @@ class Struct(list):
             return type(self).Column(self, col_number)
         elif (type(index) == slice):
             # Construct a new "struct" with just the specified rows (deep copy)
-            new_struct = type(self)(names=self.names[:])
+            new_struct = type(self)(names=self.names, types=self.types)
             for row in super().__getitem__(index):
                 new_struct.append(row[:])
             return new_struct                
-        elif (type(index) == tuple):
+        elif (type(index) in {tuple,list}):
             if all(type(i) == int for i in index):
                 if (len(index) > 2):
                     raise(self.BadIndex(f"The provided index, {index}, has too many dimensions. Expected 2."))
@@ -361,7 +335,8 @@ class Struct(list):
                 if type(index[1]) == int:
                     index = (index[0], slice(index[1],index[1]+1))
                 # Iterate over both slices
-                new_struct = type(self)(names=self.names[index[1].start : index[1].stop : index[1].step])
+                new_struct = type(self)(names=self.names[index[1].start : index[1].stop : index[1].step],
+                                        types=self.types[index[1].start : index[1].stop : index[1].step])
                 for row in self[index[0].start : index[0].stop : index[0].step]:
                     new_struct.append(
                         row[index[1].start : index[1].stop : index[1].step]
@@ -370,7 +345,8 @@ class Struct(list):
             elif all(type(t)==str for t in index):
                 # The user is slicing by column name, get the requested
                 # columns and put them into a new struct
-                new_struct = type(self)(names=list(index))
+                types = [self.types[self.names.index(n)] for n in index]
+                new_struct = type(self)(names=list(index), types=types)
                 for row in zip(*(self[n] for n in index)):
                     new_struct.append(list(row))
                 return new_struct
@@ -408,8 +384,8 @@ class Struct(list):
                 self[i][col_number] = v
                 if (type(v) == type(None)):
                     # If this is a missing value, update internal records
-                    if (self[i] not in self.missing):
-                        self.missing.append(self[i])
+                    if (id(self[i]) not in self.missing):
+                        self.missing.add(id(self[i]))
                 elif (type(new_type) == type(None)):
                     new_type = type(v)
                 elif (type(v) != new_type):
@@ -440,7 +416,6 @@ class Struct(list):
                 except TypeError: pass
                 # Make sure values is either iterable or 
                 # Iterate over both slices
-                new_struct = type(self)(names=self.names[:])
                 count = 0
                 for row in range(len(self))[index[0]]:
                     for col in range(len(self[0]))[index[1]]:
@@ -450,8 +425,8 @@ class Struct(list):
                             new_val = value[count]
                             count += 1
                         if ((type(new_val) == type(None)) and
-                            (self[row] not in self.missing)):
-                            self.missing.append(self[row])
+                            (id(self[row]) not in self.missing)):
+                            self.missing.add(id(self[row]))
                         elif (type(new_val) != self.types[col]):
                             raise(self.BadAssignment(f"Assigned value '{new_val}' of type {type(new_val)} does not match required type {self.types[col]}."))
                         self[row][col] = new_val
@@ -464,11 +439,11 @@ class Struct(list):
     # Generate a descriptive string of this struct.
     # WARNING: This operation costs O( len(self.missing) * len(self) )
     def __str__(self):
-        string = ""
+        string = "\n"
         string += f"{type(self)}\n"
-        string += f" names:\n  {self.names}\n\n"
+        string += f" names ({len(self.names)}):\n  {self.names}\n\n"
         string += f" types:\n  {self.types}\n\n"
-        string += " values:\n"
+        string += f" values ({len(self)}):\n"
         for row in self[:self._max_display]:
             string += f"  {row}\n"
         if len(self) > self._max_display:
@@ -476,28 +451,25 @@ class Struct(list):
         if len(self.missing) > 0:
             # Get the indices of missing elements
             indices = []
-            no_longer_missing = []
-            for m in self.missing:
-                try: indices.append(self.index(m))
-                except ValueError: no_longer_missing.append(m)
-            # Use this opportunity to remove missing elements that no
-            # longer exist in "self" anymore (because they were popped)
-            for m in no_longer_missing: self.missing.delete(m)
+            for i in range(len(self)):
+                if (id(self[i]) in self.missing):
+                    indices.append(i)
+                if len(indices) > self._max_display: break
             # Print out the missing values
-            string += f"\n missing: ["
+            string += f"\n missing ({len(self.missing)}): ["
             # Print out the indices of the rows with missing values
             for i in indices[:self._max_display]:
                 if (string[-1] != "["): string += ", "
                 string += f"{i}"
             if (len(indices) > self._max_display):
-                string += "..."
+                string += ", ..."
             string += "]\n"
             # Print out the actual rows with missing values
-            for row in self.missing[:self._max_display]:
-                string += f"  {row}\n"
-            if len(self.missing) > self._max_display:
+            for i in indices[:self._max_display]:
+                string += f"  {self[i]}\n"
+            if len(indices) > self._max_display:
                 string += "   ..."
-        return string
+        return string + "\n"
 
     #      Custom Methods     
     # ========================
@@ -540,8 +512,8 @@ class Struct(list):
             self[i].append(val)
             if (type(val) == type(None)):
                 # Only add to missing values entry if it's not already there
-                if (self[i] not in self.missing):
-                    self.missing.append(self[i])
+                if (id(self[i]) not in self.missing):
+                    self.missing.add(id(self[i]))
             elif (type(new_type) == type(None)):
                 # Capture the new type (type must be right)
                 new_type = type(val)
@@ -564,7 +536,7 @@ class Struct(list):
             dtypes.append(pair)
         dtypes = np.dtype(dtypes)
         # Return the numpy structured array
-        return np.array([tuple(row) for row in self if row not in self.missing], 
+        return np.array([tuple(row) for row in self if (id(row) not in self.missing)], 
                         dtype=dtypes)
 
     # Generate a pair of functions. The first function will map rows
@@ -669,6 +641,8 @@ class Struct(list):
     # Give an overview (more detailed than just "str") of the contents
     # of this struct.
     def summarize(self):
+        # All column names
+        #  all unique values (sorted by percentage)
         pass
 
 # TODO: Rewrite "read_struct" function to use the Struct class. Do not
@@ -768,8 +742,15 @@ def test_struct():
     # Verify that missing values are handled correctly by add_column
     b = a[:]
     b.add_column([1,2,3,4,None])
-    assert(tuple(b.missing[0]) == tuple(b[-1]))
+    assert(id(b[-1]) in b.missing)
     assert(len(b.missing) == 1)
+
+    # Verify copying a struct that has a 'None' in the first row
+    b = Struct(names=["0","1"], types=[int,str])
+    b.append([0,None])
+    b.append([1,'b'])
+    c = b[:]
+    assert(tuple(b[0]) == tuple(c[0]))
 
     # Try adding a too-short row
     try:
