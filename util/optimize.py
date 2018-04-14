@@ -246,7 +246,7 @@ class Tracker:
     def __init__(self, objective, max_time=DEFAULT_MAX_TIME_SEC,
                  min_steps=DEFAULT_MIN_STEPS, 
                  min_improvement=DEFAULT_MIN_IMPROVEMENT,
-                 display=False, checkpoint=True,
+                 display=False, checkpoint=False,
                  checkpoint_file=CHECKPOINT_FILE):
         self.max_time = max_time
         self.min_steps = min_steps
@@ -372,7 +372,7 @@ def minimize(objective, solution, bounds=None, args=tuple(),
              max_time=DEFAULT_MAX_TIME_SEC,
              min_steps=DEFAULT_MIN_STEPS,
              min_improvement=DEFAULT_MIN_IMPROVEMENT, display=False,
-             method=AdaptiveNormal, checkpoint=True,
+             method=AdaptiveNormal, checkpoint=False,
              checkpoint_file=CHECKPOINT_FILE):
     # Convert the solution into a float array (if it's not already)
     solution = np.asarray(solution, dtype=float)

@@ -11,6 +11,7 @@ NP_TYPES = {str:(np.str_, 16),    # Which numpy types correspond to
             int:(np.int64,),      # the python types of variables
             float:(np.float64,)}
 PY_TYPES = {value[0]:key for (key,value) in NP_TYPES.items()}
+GENERATOR_TYPE = type(_ for _ in ())
 
 # Reduce a number to its minimal display form (no unnecessary 0's on right)
 CLEAN_NUMBER_STRING = lambda number: str(number).rstrip("0").rstrip(".") \
