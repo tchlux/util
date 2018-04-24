@@ -12,6 +12,7 @@ CLEAN_ARRAY_STRING = lambda arr: " "+str(arr).replace(",","").replace("[","").re
 DEFAULT_RESPONSE = -1 #None
 SMALL_NUMBER = 1.4901161193847656*10**(-8) 
 #              ^^ SQRT(EPSILON( 0.0_REAL64 ))
+IS_NONE = lambda v: type(v) == type(None)
 
 # Nearest neighbor
 NN_DEFAULT_NUM_NEIGHBORS = 1
@@ -337,7 +338,22 @@ class Delaunay(Approximator):
                        simp_out, weights_out, error_out, 
                        extrap_opt=1000,
                        interp_in_opt=interp_in,
-                       interp_out_opt=interp_out)
+                       interp_out_opt=interp_out, budget_opt=1000000)
+        # Handle any errors that may have occurred.
+        if (sum(error_out) != 0):
+            unique_errors = sorted(np.unique(error_out))
+            print(" [Delaunay errors:",end="")
+            for e in unique_errors:
+                if (e in {0,1}): continue
+                print(" %3i"%e,"at",""+",".join(tuple(
+                    str(i) for i in range(len(error_out))
+                    if (error_out[i] == e)))+"}", end=";")
+            print("] ",end="")
+            # Reset the errors to simplex of 1s (to be 0) and weights of 0s.
+            bad_indices = (error_out > 1)
+            simp_out[:,bad_indices] = 1
+            weights_out[:,bad_indices] = 0
+        # Print debugging information if desired
         if debug:
             print("VTDelaunay")
             print("P Input:   ", p_in.T)
@@ -350,51 +366,141 @@ class Delaunay(Approximator):
 # ======================
 #      Voronoi Mesh     
 # ======================
+# Class for using the voronoi mesh to make approximations. This relies
+# on some OpenMP parallelized fortran source to identify the voronoi
+# mesh coefficients (more quickly than can be done in python).
 class VoronoiMesh(Approximator):
+    points = None
+    shift = None
+    scale = None
+    values = None
+    products = None
+
+    # Get fortran function for calculating mesh
     def __init__(self):
-        self.voronoi_mesh = fmodpy.fimport(
-            os.path.join(CWD,"voronoi_mesh","voronoi_mesh.f90"),
-            module_link_args=["-lgfortran","-lblas","-llapack"], 
-            output_directory=CWD)
-        self.points = None
-        self.values = None
+        # Get the source fortran code module
+        path_to_src = os.path.join(CWD,"voronoi.f90")
+        # Compile the fortran source (with OpenMP for acceleration)
+        eval_mesh = fmodpy.fimport(path_to_src, output_directory=CWD,
+                                   fort_compiler_options=["-fPIC", "-O3","-fopenmp"],
+                                   module_link_args=["-lgfortran","-fopenmp"]
+        ).eval_mesh
+        # Store the function for evaluating the mesh into self
+        self.eval_mesh = eval_mesh
 
-    # Fit a set of points
-    def fit(self, points, values=None):
-        self.points = np.asarray(points.T.copy(), order="F")
-        if type(values) != type(None):
-            self.values = np.asarray(values.copy(), order="F")
-        self.dots = np.ones((points.shape[0],)*2, order="F")
-        # Compute all of the pairwise dot products between control points
-        self.voronoi_mesh.train_vm(self.points, self.dots)
+    # Add a single point to the mesh
+    def add_point(self, point, value):
+        point = point.copy()
+        # Normalize the point like others (if they have been normalized)
+        if not IS_NONE(self.shift):
+            point -= self.shift
+        if not IS_NONE(self.scale):
+            point /= self.scale
+        # Update stored points
+        if IS_NONE(self.points):
+            self.points = np.array([point])
+        else:
+            self.points = np.vstack((self.points, point))
+        # Update the stored values
+        if IS_NONE(self.values):
+            self.values = np.array(value).reshape((1,len(value)))
+        else:
+            self.values = np.vstack((self.values,[value]))
+        # Update the fit stored in memory
+        self.fit()
 
-    # Calculate the weights associated with a set of points
-    def points_and_weights(self, x, convex=True):
-        single_response = len(x.shape) == 1
-        if single_response:
-            x = np.array([x])
-        if len(x.shape) != 2:
-            raise(Exception("ERROR: Bad input shape."))
-        x = np.array(x.T, order="F")
-        weights = np.ones((x.shape[1], self.points.shape[1]), 
-                          dtype=np.float64, order="F")
-        self.voronoi_mesh.predict_vm(self.points, self.dots,
-                                     x, weights)
-        if convex:
-            # Make all the weights convex
-            weights = (weights.T / np.sum(weights,axis=1)).T
-        # Generate the list of point indices
-        points = np.zeros(weights.shape, dtype=int) + np.arange(self.points.shape[1])
-        # Return the appropriate shaped pair of points and weights
-        return points, weights
+    # Given points, pre-calculate the inner products of all pairs.
+    def fit(self, points=None, values=None, normalize=False):
+        # Store values if they were provided
+        if not IS_NONE(values):
+            self.values = values.copy()
+        # Store points if they were provided
+        if not IS_NONE(points):
+            self.points = points.copy()
+        # Normalize points to be in unit hypercube if desired
+        if normalize:
+            self.shift = np.min(self.points,axis=0)
+            self.points -= self.shift
+            self.scale = np.max(self.points,axis=0)
+            # Make sure the scale does not contain 0's
+            self.scale = np.where(self.scale != 0, self.scale, 1)
+            self.points /= self.scale
+        # Store pairwise dot products in fortran form
+        self.products = np.array(np.matmul(self.points, self.points.T), order="F")
 
-    # Generate a prediction for a new point
-    def predict(self, xs):
-        if type(self.values) == type(None):
-            raise(Exception("Must provide values in order to make predicitons."))
-        weights = self.points_and_weights(xs)
-        # Generate the predictions
-        return np.matmul(weights, self.values)
+    # Function that returns the convexified support of the
+    # twice-expanded voronoi cells of fit points
+    def support(self, points):
+        if IS_NONE(self.points):
+            raise(NoPointsProvided("Cannot compute support without points."))
+        self.products = np.asarray(self.products, order="F")
+        # Calculate the dot products of the points with themselves
+        products = np.array(np.matmul(points, self.points.T), order="F")
+        # Compute all voronoi cell values
+        vvals = np.array(np.zeros((len(points), len(self.points))), order="F")
+        return self.eval_mesh(self.products, products, vvals)
+
+    # Given points to predict at, make an approximation
+    def predict(self, points):
+        if IS_NONE(self.values): 
+            raise(NoValuesProvided("Values must be provided to make predictions."))
+        # Normalize the points like others (if they have been normalized)
+        if not IS_NONE(self.shift):
+            points -= self.shift
+        if not IS_NONE(self.scale):
+            points /= self.scale
+        # Calculate the support
+        vvals = self.support(points)
+        # Use a convex combinations of values associated with points
+        # to make predictions at all provided points.
+        return np.matmul(vvals, self.values)
+
+
+# class VoronoiMesh(Approximator):
+#     def __init__(self):
+#         self.voronoi_mesh = fmodpy.fimport(
+#             os.path.join(CWD,"voronoi_mesh","voronoi_mesh.f90"),
+#             module_link_args=["-lgfortran","-lblas","-llapack"], 
+#             output_directory=CWD)
+#         self.points = None
+#         self.values = None
+
+#     # Fit a set of points
+#     def fit(self, points, values=None):
+#         self.points = np.asarray(points.T.copy(), order="F")
+#         if type(values) != type(None):
+#             self.values = np.asarray(values.copy(), order="F")
+#         self.dots = np.ones((points.shape[0],)*2, order="F")
+#         # Compute all of the pairwise dot products between control points
+#         self.voronoi_mesh.train_vm(self.points, self.dots)
+
+#     # Calculate the weights associated with a set of points
+#     def points_and_weights(self, x, convex=True):
+#         single_response = len(x.shape) == 1
+#         if single_response:
+#             x = np.array([x])
+#         if len(x.shape) != 2:
+#             raise(Exception("ERROR: Bad input shape."))
+#         x = np.array(x.T, order="F")
+#         weights = np.ones((x.shape[1], self.points.shape[1]), 
+#                           dtype=np.float64, order="F")
+#         self.voronoi_mesh.predict_vm(self.points, self.dots,
+#                                      x, weights)
+#         if convex:
+#             # Make all the weights convex
+#             weights = (weights.T / np.sum(weights,axis=1)).T
+#         # Generate the list of point indices
+#         points = np.zeros(weights.shape, dtype=int) + np.arange(self.points.shape[1])
+#         # Return the appropriate shaped pair of points and weights
+#         return points, weights
+
+#     # Generate a prediction for a new point
+#     def predict(self, xs):
+#         if type(self.values) == type(None):
+#             raise(Exception("Must provide values in order to make predicitons."))
+#         weights = self.points_and_weights(xs)
+#         # Generate the predictions
+#         return np.matmul(weights, self.values)
 
 # =========================
 #      MaxBoxMesh Mesh     

@@ -525,9 +525,10 @@ class Plot:
             raise(Exception("The provided function returned a non-numeric value."))
         response = np.array(response).flatten()
 
+        if "hoverinfo" not in kwargs: kwargs["hoverinfo"] = "name+x+y+z"
         # Call the standard plot function
         self.add(name, *x_vals, response, mode=mode,
-                 hoverinfo="name+x+y+z", plot_type=plot_type, **kwargs)
+                 plot_type=plot_type, **kwargs)
             
         # If this is a 3D surface plot and grid_lines=True, add grid lines
         if (self.is_3d and plot_type == 'surface') and grid_lines:
@@ -1196,10 +1197,11 @@ class Plot:
     # sets axis settings for 
     def graph(self, *args, show_grid=True, show_ticks=False,
               show_line=False, show_zero_line=False,
-              show_legend=False, x_title="", y_title="", **kwargs):
+              show_legend=False, show_titles=False, **kwargs):
         # Set the axis labels
-        self.x_title = x_title
-        self.y_title = y_title
+        if (not show_titles) and ("x_title" not in kwargs) and ("y_title" not in kwargs):
+            self.x_title = ""
+            self.y_title = ""
         # Set the default axis settings
         axis_settings = dict(showgrid=show_grid, showticklabels=show_ticks,
                              showline=show_line, zeroline=show_zero_line)
@@ -1215,18 +1217,28 @@ class Plot:
     def add_node(self, name, x, y, *args, symbol="circle",
                  display=True, white=True, size=30,
                  marker_line_color="rgba(0,0,0,1))",
-                 marker_line_width=2, label=False, **kwargs):
+                 marker_line_width=2, label=False, label_y_offset=1,
+                 label_x_offset=0, **kwargs):
         # Add a label if that is desired.
-        if label: kwargs["mode"] = "markers+text"
+        if label: 
+            self.add_node(name+"_label", x+label_x_offset, 
+                          y+label_y_offset, mode="text", text=name)
+
+        # Disable "white" mode if color was provided
+        if ("color" in kwargs): white = False
         # Set to a default color if desired
         if white: kwargs["color"] = "rgba(255,255,255,1)"
+        # Set the defaults for some other plotting arguments
+        if ("text" not in kwargs):
+            kwargs["text"] = name
+        if ("marker_size" not in kwargs):
+            kwargs["marker_size"] = size
         # Remove the marker line and color if not displayed
         if not display: 
             marker_line_width = 0
             kwargs["color"] = self.color(
                 color=kwargs.get("color","(0,0,0)"), alpha=0)
         return self.add(name, [x], [y], *args, symbol=symbol,
-                        text=[name], marker_size=size,
                         marker_line_width=marker_line_width,
                         marker_line_color=marker_line_color, **kwargs)
 

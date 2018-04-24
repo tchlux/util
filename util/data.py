@@ -2,14 +2,24 @@ from util import COMMON_SEPERATORS, UPDATE_FREQUENCY, \
     MAX_ERROR_PRINTOUT, NP_TYPES, PY_TYPES, GENERATOR_TYPE
 from util.system import AtomicOpen
 
-# Given "d+1" categories that need to be converted into real
-# space, generate a regular simplex in d-dimensional space. (all
-# points are equally spaced from each other and the origin) This
-# process is more efficient than "one-hot" encoding by one
-# dimension. It also guarantees that all points are not placed
-# explicitly on a sub-dimensional manifold.
+# TODO:  Make "unique" for a struct give the unique rows?
+
+
+# Given "d" categories that need to be converted into real space,
+# generate a regular simplex in (d-1)-dimensional space. (all points
+# are equally spaced from each other and the origin) This process
+# guarantees that all points are not placed on a sub-dimensional
+# manifold (as opposed to "one-hot" encoding).
 def regular_simplex(num_categories):
     import numpy as np
+    class InvalidNumberOfCategories(Exception): pass
+    # Special cases for one and two categories
+    if num_categories <= 1:
+        raise(InvalidNumberOfCategories(
+            "Number of categories must be an integer greater than 1."))
+    elif num_categories == 2:
+        return np.array([[0.],[1.]])
+    # Standard case for >2 categories
     d = num_categories
     # Initialize all points to be zeros.
     points = np.zeros((d,d-1))
@@ -69,7 +79,7 @@ def detect_seperator(filename="<no_provided_file>", verbose=False, opened_file=N
     lines = []
     not_viable = set()
     if not opened_file:
-        f = AtomicOpen(filename)
+        f = AtomicOpen(filename).file
     else:
         f = opened_file
     # Identify the potential seperators from the first line
@@ -124,7 +134,7 @@ def read_struct(filename="<no_provided_file>", sep=None, types=None,
     # Get the opened file object
     if (not opened_file):
         # Open the file to get the data
-        f = AtomicOpen(filename)
+        f = AtomicOpen(filename).file
     else:
         f = opened_file
         file_name = f.name
@@ -264,11 +274,47 @@ class Struct(list):
         # Use the iteration to generate a string of this column
         def __str__(self):
             return str(list(self))
-        # Iterate over the indices that are equivalent to a value
-        def __eq__(self, val):
+        # Inequality operator
+        def __ne__(self, group):
+            return self.__eq__(group, equality=False)
+        # Iterate over the indices that exist in a set of values
+        def __eq__(self, group, equality=True):
+            # Try to convert given group to an iterable type for comparison.
+            if (type(self.struct.types) == type(None)):
+                raise(self.struct.BadIndex(f"Cannot check equality against field '{self.struct.names[self.column]}' with without specified type."))
+            elif ((type(group) == self.struct.types[self.column]) or (type(group) == type(None))):
+                group = [group]
+            elif (type(group) in {set, list}): 
+                pass
+            else:
+                raise(self.struct.BadData(f"There is no defined equality operator for the provided type {type(group)}, when it does not match expected type {self.struct.types[self.column]}."))
+            # Iterate over rows, generating indices that match the equality.
             for i,v in enumerate(self):
-                if (v == val):
+                if ((equality) and (v in group)):
                     yield i
+                elif ((not equality) and (v not in group)):
+                    yield i
+        # Iterate over the indices based on a comparison operator
+        def __lt__(self, val):
+            # Iterate over values in this column
+            for i,v in enumerate(self):
+                if (v < val): yield i
+        # Iterate over the indices based on a comparison operator
+        def __gt__(self, val):
+            # Iterate over values in this column
+            for i,v in enumerate(self):
+                if (v > val): yield i
+        # Iterate over the indices based on a comparison operator
+        def __le__(self, val):
+            # Iterate over values in this column
+            for i,v in enumerate(self):
+                if (v <= val): yield i
+        # Iterate over the indices based on a comparison operator
+        def __ge__(self, val):
+            # Iterate over values in this column
+            for i,v in enumerate(self):
+                if (v >= val): yield i
+        
 
     #      Overwritten list Methods     
     # ==================================
@@ -312,7 +358,11 @@ class Struct(list):
             for i, (val, typ) in enumerate(zip(element, self.types)):
                 # Record 'None' types as missing entries
                 if type(val) == type(None):
+                    # This is a missing value
                     missing_values = True
+                elif (typ == type(None)):
+                    # Update unassigned types with the new values' type
+                    self.types[i] = type(val)
                 elif (type(val) != typ):
                     # If not missing, then check the type
                     try:
@@ -364,20 +414,26 @@ class Struct(list):
                     for row in index:
                         new_struct.append( self[row][:] )
                     return new_struct
-            elif all(type(i) in {int,slice} for i in index):
+            elif all(type(i) in {int,slice,list,GENERATOR_TYPE} for i in index):
                 if (len(index) > 2):
                     raise(self.BadIndex(f"The provided index, {index}, is not understood."))
                 # Make sure that both indices are slices
                 if type(index[0]) == int:
-                    index = (slice(index[0],index[0]+1), index[1])
+                    index = ([index[0]], index[1])
+                elif type(index[0]) == slice:
+                    index = (range(len(self))[index[0]], index[1])
                 if type(index[1]) == int:
-                    index = (index[0], slice(index[1],index[1]+1))
+                    index = (index[0], [index[1]])
+                elif type(index[1]) == slice:
+                    index = (index[0], range(len(self))[index[1]])
+                elif type(index[1]) == GENERATOR_TYPE:
+                    index = (index[0], list(index[1]))
                 # Iterate over both slices
-                new_struct = type(self)(names=self.names[index[1].start : index[1].stop : index[1].step],
-                                        types=self.types[index[1].start : index[1].stop : index[1].step])
-                for row in self[index[0].start : index[0].stop : index[0].step]:
+                new_struct = type(self)(names=[self.names[i] for i in index[1]],
+                                        types=[self.types[i] for i in index[1]])
+                for row_idx in index[0]:
                     new_struct.append(
-                        row[index[1].start : index[1].stop : index[1].step]
+                        [self[row_idx][col_idx] for col_idx in index[1]]
                     )
                 return new_struct
             elif all(type(t)==str for t in index):
@@ -446,25 +502,27 @@ class Struct(list):
                 self.types[col_number] = new_type
         elif (type(index) == tuple):
             # Otherwise, if the user provides a tuple of integers + slices
-            if all(type(i) in {int,slice} for i in index):
+            if all(type(i) in {int,slice,list,GENERATOR_TYPE} for i in index):
                 if (len(index) > 2):
                     raise(self.BadIndex(f"The provided index, {index}, is not understood."))
                 # Make sure that both indices are slices
                 if type(index[0]) == int:
-                    index = (slice(index[0],index[0]+1), index[1])
+                    index = ([index[0]], index[1])
+                elif type(index[0]) == slice:
+                    index = (range(len(self))[index[0]], index[1])
                 if type(index[1]) == int:
-                    index = (index[0], slice(index[1],index[1]+1))
-                # Make sure the value has a length
-                singleton = True
-                try: 
-                    len(value)
-                    singleton = False
-                except TypeError: pass
+                    index = (index[0], [index[1]])
+                elif type(index[1]) == slice:
+                    index = (index[0], range(len(self))[index[1]])
+                elif type(index[1]) == GENERATOR_TYPE:
+                    index = (index[0], list(index[1]))
+                # Check if a single value was provided, or multiple
+                singleton = type(value) not in {list, tuple, GENERATOR_TYPE, type(self)}
                 # Make sure values is either iterable or 
                 # Iterate over both slices
                 count = 0
-                for row in range(len(self))[index[0]]:
-                    for col in range(len(self[0]))[index[1]]:
+                for row in index[0]:
+                    for col in index[1]:
                         if singleton:
                             new_val = value
                         else:
@@ -483,7 +541,6 @@ class Struct(list):
             return super().__setitem__(index, value)
 
     # Generate a descriptive string of this struct.
-    # WARNING: This operation costs O( len(self.missing) * len(self) )
     def __str__(self):
         string = "\n"
         string += f"{type(self)}\n"
@@ -576,14 +633,14 @@ class Struct(list):
         elif (ext == "dill"):
             with file_opener(path, "wb") as f:
                 dill.dump(self, f)
-        elif (ext == "csv"):
+        elif (ext in {"csv", "tsv"}):
+            sep = "," if (ext == "csv") else "\t"
             mode = "w" + ("t" if compressed else "")
-            list_to_str = lambda l: ",".join(l) + "\n"
             with file_opener(path, mode) as f:
-                print(",".join(self.names), file=f)
+                print(sep.join(self.names), file=f)
                 for row in self:
                     print_row = [str(v) if type(v) != type(None) else "" for v in row]
-                    print(",".join(print_row), file=f)
+                    print(sep.join(print_row), file=f)
         else:
             raise(self.Unsupported(f"Cannot save {'compressed ' if compressed else ''}file with base extension '{ext}'."))
         return self
@@ -672,13 +729,22 @@ class Struct(list):
         cat_values = {n:sorted(set(self[n])-{None}) for n in cat_names}
         cat_mappings = {n:regular_simplex(len(cat_values[n]))
                         for n in cat_names}
+        num_inds = []
+        cat_inds = []
         # Calculate the dimension of the real space (and the column names)
         real_names = []
+        counter = 0
         for (n,t) in zip(names, types):
             if (t in {int, float}):
-                real_names += [n]
+                real_names.append( n )
+                # Record the indices of numerical values
+                num_inds.append( counter )
+                counter += 1
             else:
                 real_names += [f"{n}-{i+1}" for i in range(len(cat_values[n])-1)]
+                # Record the indices of categorical mappings
+                cat_inds += list(counter+i for i in range(len(cat_values[n])-1))
+                counter = cat_inds[-1] + 1
         real_dim = len(real_names)
 
         # Generate a function that takes a row in the original space
@@ -728,8 +794,8 @@ class Struct(list):
                 else:
                     row += [float(real_row.pop(0))]
             return row
-        # Return the two mapping functions
-        return to_real, real_to, real_names
+        # Return the two mapping functions and some info
+        return to_real, real_to, real_names, num_inds, cat_inds
 
     # Convert this Struct automatically to a real-valued array.
     # Return real-valued array, function for going to real from
@@ -737,7 +803,7 @@ class Struct(list):
     # this struct from a real vector.
     def to_numpy_real(self):
         import numpy as np
-        to_real, real_to, real_names = self.generate_mapping()
+        to_real, real_to, real_names, num_inds, cat_inds = self.generate_mapping()
         data = []
         for row in self:
             if None in row: continue
@@ -750,25 +816,40 @@ class Struct(list):
         # Info.real_to -- the function for processing real vectors
         #                 back into regular vector
         # Info.names   -- meaningful column names for the real vectors
+        # Info.nums    -- standard numerical indices
+        # Info.cats    -- translated categorical indices
         class Info: pass
         # Generate an info object and return it with the array.
         info = Info()
         info.to_real = to_real
         info.real_to = real_to
         info.names = real_names
+        info.nums = num_inds
+        info.cats = cat_inds
         # Return the numeric array
         return array, info
+
+    # Collect the dictionaries of unique values (with counts) for each column.
+    def unique(self):
+        column_info = {n:{} for n in self.names}
+        for row in self:
+            for n,val in zip(self.names, row):
+                # If this column has been removed (because it is
+                # unhashable), then skip it in the processing
+                if n not in column_info: pass
+                # Try to add the new value
+                try:
+                    column_info[n][val] = column_info[n].get(val,0) + 1
+                except TypeError:
+                    # Cannot hash an element of self[n], disable tracking
+                    column_info.pop(n)
+        return column_info
 
     # Give an overview (more detailed than just "str") of the contents
     # of this struct. Useful for quickly understanding how data looks.
     def summarize(self, max_display=None):
         # Set the "max_display" to the default value for this class
         if type(max_display) == type(None): max_display = self._max_display
-        # Custom counter (dict with default value of 0)
-        class Counter(dict):
-            def __getitem__(self, val):
-                if val in self: return super().__getitem__(val)
-                else: return 0
         print("SUMMARY:")
         print()
         print(f"  This data has {len(self)} row{'s' if len(self) != 1 else ''}, {len(self[0])} column{'s' if len(self[0]) != 1 else ''}.")
@@ -781,12 +862,12 @@ class Struct(list):
         name_len = max(map(len, self.names))
         type_len = max(map(lambda t: len(str(t)), self.types))
         # Describe each column of the data
-        for n,t in zip(self.names, self.types):
+        for c,(n,t) in enumerate(zip(self.names, self.types)):
             # Count the number of elements for each value
-            counts = Counter()
+            counts = {}
             for val in self[n]:
-                counts[val] = counts[val] + 1
-            print(f"  {n:{name_len}s} {str(t):{type_len}s} ({len(counts)} unique value{'s' if len(counts) != 1 else ''})")
+                counts[val] = counts.get(val,0) + 1
+            print(f"  {c:{len(str(len(self.names)))}d} -- \"{n}\"{'':{1+name_len-len(n)}s}{str(t):{type_len}s} ({len(counts)} unique value{'s' if (len(counts) != 1) else ''})")
             # Remove the "None" count from "counts" to prevent sorting problems
             none_count = counts.pop(None, 0)
             # For the special case of ordered values, reduce to ranges
@@ -802,10 +883,10 @@ class Struct(list):
                     lower = min_val + width*i
                     upper = min_val + width*(i+1)
                     if (i == (max_display - 2)):
-                        num = sum(counts[v] for v in counts if lower <= v < upper)
+                        num = sum(counts[v] for v in counts if lower <= v <= upper)
                         cap = "]"
                     else:
-                        num = sum(counts[v] for v in counts if lower <= v <= upper)
+                        num = sum(counts[v] for v in counts if lower <= v < upper)
                         cap = ")"
                     perc = 100. * (num / len(self))
                     print(f"    [{lower:.2e}, {upper:.2e}{cap} {num:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
@@ -818,12 +899,18 @@ class Struct(list):
                     ordered_vals = sorted(counts, key=lambda v: -counts[v])
                 val_len = max(map(lambda v: len(str(v)), counts))
                 val_len = max(val_len, len("none"))
+                if (t == str): val_len += 2
                 if (none_count > 0):
                     perc = 100. * (none_count / len(self))
-                    print(f"    {'None':{val_len}s} {none_count:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
-                for val in ordered_vals:
+                    print(f"    {'None':{val_len}s}{'  ' if (t == str) else ''} {none_count:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
+                for val in ordered_vals[:max_display]:
                     perc = 100. * (counts[val] / len(self))
-                    print(f"    {str(val):{val_len}s} {counts[val]:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
+                    if (t == str):
+                        print(f"    \"{val}\"{'':{1+val_len-len(val)}s}{counts[val]:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
+                    else:
+                        print(f"    {str(val):{val_len}s} {counts[val]:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
+                if (len(ordered_vals) > max_display):
+                    print("    ... (increase 'max_display' to see more summary statistics).")
             print()
 
 
@@ -971,9 +1058,21 @@ def test_struct():
     assert(tuple(a["0"]) == tuple(b["0"]))
     os.remove("a-test.csv.gz")
 
-    # Verify column equivalence checker
+    # Verify column equivalence / equality checker by element
     b = a[a["0"] == 1]
     assert(tuple(b["0"]) == tuple([1,1]))
+
+    # Verify one of the inequality operators
+    b = a[a["0"] < 2]
+    assert(tuple(b["0"]) == tuple([1,1,-1]))
+
+    # Verify column membership checker by set
+    b = a[a["1"] == {'a','b','2'}]
+    assert(tuple(b["1"]) == tuple(['a','b','2']))
+
+    # WARNING: Not individually verifying *all* comparison operators.
+    # WARNING: No tests for list-based index assignment
+    # WARNING: No tests for generator-based index assignment
 
     # Try providing a generator that does not give integers
     try:

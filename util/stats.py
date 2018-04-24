@@ -130,13 +130,13 @@ def cdf_fit_func(data, cubic=False):
     # Generate a fit for the data points
     if not cubic:
         # Generate linear function
-        fit = splrep(data_pts[:,0], data_pts[:,1], k=1)
-        fit = lambda x_val, fit=fit: splev(x_val, fit)
-        fit.derivative = lambda d: (lambda x_val: splev(x_val, fit, der=d))
+        fit_params = splrep(data_pts[:,0], data_pts[:,1], k=1)
+        fit = lambda x_val: splev(x_val, fit_params)
+        fit.derivative = lambda x_val, d=1: splev(x_val, fit_params, der=d)
         # Generate inverse linear function
-        inv_fit = splrep(data_pts[:,1], data_pts[:,0], k=1)
-        inv_fit = lambda y_val, inv_fit=inv_fit: splev(y_val, inv_fit)
-        inv_fit.derivative = lambda d: (lambda y_val: splev(y_val, inv_fit, der=d))
+        inv_fit_params = splrep(data_pts[:,1], data_pts[:,0], k=1)
+        inv_fit = lambda y_val: splev(y_val, inv_fit_params)
+        inv_fit.derivative = lambda y_val, d=1: splev(y_val, inv_fit_params, der=d)
         fit.inverse = inv_fit
     else:
         # Generate piecewise cubic monotone increasing spline
@@ -153,17 +153,11 @@ def cdf_fit_func(data, cubic=False):
                 y_val = np.where(x_val < min_pt, 0.0, y_val)
                 y_val = np.where(x_val > max_pt, 1.0, y_val)
             return y_val
-    # Generate the derivative of the function
-    def deriv(x_val):
-        val = fit.derivative(1)(x_val)
-        val = np.where(x_val < min_pt, 0, val)
-        val = np.where(x_val > max_pt, 0, val)
-        return val
 
     # Set the derivative function
-    setattr(cdf_func, "derivative", lambda: deriv)
+    cdf_func.derivative = fit.derivative
     # Set the inverse function
-    setattr(cdf_func, "inverse", lambda: fit.inverse)
+    cdf_func.inverse = fit.inverse
 
     # Return the custom function for this set of points
     return cdf_func
