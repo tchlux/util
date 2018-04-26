@@ -588,7 +588,7 @@ class Struct(list):
         return self
 
     # Convenience method for loading from file.
-    def load(self, path):
+    def load(self, path, **read_struct_kwargs):
         import pickle, dill, gzip
         # Check for compression
         compressed = path[-path[::-1].index("."):] == "gz"
@@ -609,7 +609,8 @@ class Struct(list):
         elif (ext in {"csv", "txt", "tsv"}):
             mode = "r" + ("t" if compressed else "")
             with file_opener(path, mode) as f:
-                self += read_struct(opened_file=f)
+                read_struct_kwargs["opened_file"] = f
+                self += read_struct(**read_struct_kwargs)
         else:
             raise(self.Unsupported(f"Cannot load file with extension '{ext}'."))
         return self
@@ -845,6 +846,40 @@ class Struct(list):
                     column_info.pop(n)
         return column_info
 
+    # Return an iterator that provides "k" (rest, fold) sub-structs
+    # from this struct. Randomly shuffle indices with seed "seed".
+    def k_fold(self, k=10, seed=0):
+        # Generate random indices
+        import random
+        random.seed(seed)
+        indices = list(range(len(self)))
+        random.shuffle(indices)
+        # Re-seed the random number generator as not to muck with
+        # other processes that might be using it.
+        random.seed()
+        # Store some variables for generating the folds
+        total = len(self)
+        source = self
+        # Construct iterator over folds
+        class kFoldIterator:
+            batch = 0
+            def __iter__(self): 
+                self.batch = 0
+                return self
+            def __next__(self):
+                # Stop iterating once the batch get's large
+                if self.batch >= k: raise(StopIteration)
+                # Otherwise, find the indices for training and testing
+                first = int(.5 + self.batch * total / k)
+                last = int(.5 + (self.batch + 1) * total / k)
+                fold = indices[first : last]
+                rest = indices[:first] + indices[last:]
+                self.batch += 1
+                return source[rest], source[fold]
+        # Return the iterator over the folds of this struct
+        return kFoldIterator()
+
+
     # Give an overview (more detailed than just "str") of the contents
     # of this struct. Useful for quickly understanding how data looks.
     def summarize(self, max_display=None):
@@ -1073,6 +1108,16 @@ def test_struct():
     # WARNING: Not individually verifying *all* comparison operators.
     # WARNING: No tests for list-based index assignment
     # WARNING: No tests for generator-based index assignment
+
+    # Verify the generation of a random k-fold cross validation.
+    b = Struct()
+    for i in range(37):
+        b.append([i])
+    # Collect the list of all the "testing" rows seen
+    all_test = []
+    for (train, test) in b.k_fold(k=11, seed=1):
+        all_test += list(test["0"])
+    assert(sorted(all_test) == list(range(len(b))))
 
     # Try providing a generator that does not give integers
     try:

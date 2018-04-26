@@ -2,73 +2,176 @@
 from multiprocessing import cpu_count, get_context, current_process
 # Imports for each process
 from queue import Empty
-import sys
+import sys, dill
 
 # Make sure new processes started are minimal (not complete copies)
 MAX_PROCS = cpu_count()
-PROC_TIMEOUT = None # Should be adjusted per use
 JOB_GET_TIMEOUT = 1
+# Global storage for processes
+MAP_PROCESSES = []
+# Get a reference to the builtin "map" function, so it is not lost
+# when it is overwrittend by "def map" later in this file.
+builtin_map = map
 
-# ==============================================================
-#      Dynamic Distribution multi-processing with Arguments     
-# ==============================================================
+# Iterator that pulls jobs from a queue and stops iterating once the
+# queue is empty (and remains empty for "JOB_GET_TIMEOUT" seconds). On
+# construction, requires a "job_queue" that jobs will come from.
+class JobIterator:
+    def __init__(self, job_queue):
+        self.job_queue = job_queue
+    def __iter__(self): return self
+    def __next__(self):
+        try:
+            value = self.job_queue.get(timeout=JOB_GET_TIMEOUT)
+        except Empty:
+            raise(StopIteration)
+        return value
 
-# Pre:  "job_queue" is a Queue full of tuples that are arguments to
-#       "func", which is a standard (non-lambda) function
-#       "return_queue" is the Queue that should be filled with the
-#       return values from each call to "func"
-# Post: "return_queue" is filled with return values from each call
-#       made to "func" with a set of arguments from "job_queue"
-def worker(job_queue, return_queue, func):
+
+# Given an iterable object and a queue, place jobs into the queue.
+def producer(jobs_iter, job_queue):
+    for job in jobs_iter:
+        job_queue.put(job)
+
+
+# Given an iterable object, a queue to place return values, and a
+# function, apply "func" to elements of "iterable" and put return
+# values into "return_queue".
+# 
+# INPUTS:
+#   func         -- A function that takes elements of "iterable" as
+#                   input. It is expected that the function has been
+#                   packaged with with "dill.dumps" to handle lambda's.
+#   iterable     -- An iterable object (presumably a JobIterator).
+#   return_queue -- A Queue object with a 'put' method.
+def consumer(func, iterable, return_queue):
+    # Retreive the function (because it's been dilled for transfer)
+    func = dill.loads(func)
     # Set the output file for this process so that all print statments
     # by default go there instead of to the terminal
-    log_file_name = "Process-"+current_process().name.split("-")[1]
+    log_file_name = f"Process-{int(current_process().name.split('-')[1])-1}"
     sys.stdout = open("%s.log"%log_file_name,"w")
-    returns = []
-    while not job_queue.empty():
+    # Iterate over values and apply function.
+    for value in iterable:
         try:
-            args = job_queue.get(timeout=JOB_GET_TIMEOUT)
-            return_queue.put(func(*args))
-        except Empty: # See imported exceptions
-            print("Failed 'get', job_queue empty.")
+            # Try executing the function on the value.
+            return_queue.put(func(value))
+        except Exception as exception:
+            # If there is an exception, put it into the queue for the parent.
+            return_queue.put(exception)
+            break
+    # Once the iterable has been exhaused, put in a "StopIteration".
+    return_queue.put(StopIteration)
+    # Close the file object for output redirection
+    sys.stdout.close()
 
-# Pre:  "func" is a standard function (NOT A LAMBDA)
-#       "args_list" is a list of tuples where each tuple is a valid
-#       set of arguments for "func"
-# Post: "func" is run for all of the argument instances in "args_list"
-#       distributed among however many processors are on the current
-#       computer using a dynamic shared jobs queue
-def call(func, args_list, verbose=True):
+
+# A parallel OUT-OF-ORDER implementation of the builtin 'map' function
+# in Python. Provided a function and an iterable that is *not* a
+# generator, use the all cores on the current system to map "func" to
+# all elements of "iterable".
+# 
+# INPUTS
+#   func     -- Any function that takes elements of "iterable" as an argument.
+#   iterable -- An iterable object that is NOT A GENERATOR. Pickle / Dill
+#               are not presently able to pass generators. The elements
+#               of this will be passed into "func".
+# 
+# OPTIONALS:
+#   max_waiting_jobs    -- Integer, maximum number of jobs that can be
+#                          in the job queue at any given time.
+#   max_waiting_returns -- Integer, maximum number of return values in
+#                          the return queue at any given time.
+# 
+# RETURNS:
+#   An output generator, just like the builtin "map" function.
+# 
+# WARNINGS:
+#   If iteration is not completed, then waiting idle processes will
+#   still be alive. Call "parallel.killall()" to terminate lingering
+#   map processes when iteration is prematurely terminated.
+def map(func, iterable, max_waiting_jobs=1, max_waiting_returns=1):
     # Create multiprocessing context (not to muddle with others)
-    ctx = get_context("spawn")    
-    # Create queues
-    job_queue = ctx.Queue()
-    return_queue = ctx.Queue()
-    proc_args = (job_queue, return_queue, func)
-    processes = [ctx.Process( target=worker, args=proc_args )
-                 for i in range(MAX_PROCS)]    
-    # Fill the job queue
-    for arg in args_list:
-        job_queue.put(arg)
-    # Start the processes
-    for p in processes:
-        p.start()
-    # Continue picking up results until completed
-    completed = 0
-    returns = []
-    if verbose: print("Distributing jobs among %i processors..."%MAX_PROCS)
-    if verbose: print("[%0.1f] %i completed of %i total."%
-                      (100.0 * completed / len(args_list), 
-                       completed, len(args_list)), end="")
-    while completed != len(args_list):
-        returns.append( return_queue.get() )
-        completed += 1
-        if verbose:
-            print("\r[%0.1f] %i completed of %i total."%
-                  (100.0 * completed / len(args_list), 
-                   completed, len(args_list)), end="")
-    if verbose: print()
-    for p in processes: p.join()
-    for p in processes: p.terminate()
-    # Return all results
-    return returns
+    ctx = get_context() # "fork" on Linux, "spawn" on Windows.
+    # Create a job_queue for passing jobs to processes
+    job_queue = ctx.Queue(max_waiting_jobs)
+    # Create return queue for holding results
+    return_queue = ctx.Queue(max_waiting_returns)
+    # Create the shared set of arguments going to all consumer processes
+    producer_args = (iterable, job_queue)
+    consumer_args = (dill.dumps(func), JobIterator(job_queue), return_queue)
+    # Start a "producer" process that will add jobs to the queue,
+    # create the set of "consumer" processes that will get jobs from the queue.
+    producer_process = ctx.Process(target=producer, args=producer_args)
+    consumer_processes = [ctx.Process(target=consumer, args=consumer_args)
+                          for i in range(MAX_PROCS)]
+    # Track (in a global) all of the active processes.
+    MAP_PROCESSES.append(producer_process)
+    for p in consumer_processes:
+        MAP_PROCESSES.append(p)
+    # Start the producer and consumer processes
+    producer_process.start()
+    for p in consumer_processes: p.start()
+    # Construct a generator function for reading the returns
+    def return_generator():
+        stopped_consumers = 0
+        # Continue picking up results until generator is depleted
+        while (stopped_consumers < MAX_PROCS):
+            value = return_queue.get()
+            if (value == StopIteration):
+                stopped_consumers += 1
+            elif isinstance(value, Exception):
+                # Kill all processes for this "map"
+                for p in consumer_processes: 
+                    p.terminate()
+                producer_process.terminate()
+                # Raise exception
+                raise(value)
+            else:
+                yield value
+        # Join all processes (to close them gracefully).
+        for p in consumer_processes:
+            p.join()
+            MAP_PROCESSES.remove(p)
+        producer_process.join()
+        MAP_PROCESSES.remove(producer_process)
+    # Return all results in a generator object
+    return return_generator()
+
+# Kill all active "map" processes.
+def killall():
+    # Terimate all processes and empty global record.
+    while len(MAP_PROCESSES) > 0:
+        proc = MAP_PROCESSES.pop(-1)
+        proc.terminate()
+
+
+# Development testing code.
+if __name__ == "__main__":
+    import time, random
+    # A slow function
+    def slow_func(value):
+        import time, random
+        time.sleep(random.random()*.1 + .5)
+        return str(value)
+    # Generate a normal "map" and a parallel "map"
+    start = time.time()
+    s_gen = builtin_map(slow_func, [i for i in range(10)])
+    print("Standard map time:", time.time() - start)
+    start = time.time()
+    p_gen = map(slow_func, [i for i in range(10)])
+    print("Parllel map time: ", time.time() - start)
+
+    print()
+    for value in s_gen:
+        print(value, end=" ", flush=True)
+        if value >= "5": break
+    print()
+
+    print()
+    for value in p_gen:
+        print(value, end=" ", flush=True)
+        if value > "5": break
+    print()
+
+    killall()

@@ -168,7 +168,7 @@ class NearestNeighbor(Approximator):
                 distances = 1 / distances
                 weights = distances / sum(distances)
                 response.append( np.sum(weights * self.values[closest]) )
-        return response
+        return np.array(response)
 
 
 # =======================
@@ -291,7 +291,7 @@ class Delaunay(Approximator):
                             dtype=np.int32, order="F")
         self.delaunayp(self.pts.shape[0], self.pts, p_in, work_in,
                        simp_out, weights_out, error_out, 
-                       extrap_opt=1000)
+                       extrap_opt=10000, budget_opt=1000000)
         error_out = np.where(error_out != 1, error_out, 0)
         # Handle any errors that may have occurred.
         if (sum(error_out) != 0):
@@ -338,7 +338,7 @@ class Delaunay(Approximator):
                        simp_out, weights_out, error_out, 
                        extrap_opt=1000,
                        interp_in_opt=interp_in,
-                       interp_out_opt=interp_out, budget_opt=1000000)
+                       interp_out_opt=interp_out, budget_opt=10000)
         # Handle any errors that may have occurred.
         if (sum(error_out) != 0):
             unique_errors = sorted(np.unique(error_out))
