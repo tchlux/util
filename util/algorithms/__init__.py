@@ -291,7 +291,7 @@ class Delaunay(Approximator):
                             dtype=np.int32, order="F")
         self.delaunayp(self.pts.shape[0], self.pts, p_in, work_in,
                        simp_out, weights_out, error_out, 
-                       extrap_opt=10000, budget_opt=1000000)
+                       extrap_opt=100000)
         error_out = np.where(error_out != 1, error_out, 0)
         # Handle any errors that may have occurred.
         if (sum(error_out) != 0):
@@ -336,9 +336,9 @@ class Delaunay(Approximator):
                              dtype=np.float64, order="F")
         self.delaunayp(self.pts.shape[0], self.pts, p_in, work_in,
                        simp_out, weights_out, error_out, 
-                       extrap_opt=1000,
+                       extrap_opt=10000,
                        interp_in_opt=interp_in,
-                       interp_out_opt=interp_out, budget_opt=10000)
+                       interp_out_opt=interp_out)
         # Handle any errors that may have occurred.
         if (sum(error_out) != 0):
             unique_errors = sorted(np.unique(error_out))
