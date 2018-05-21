@@ -236,6 +236,7 @@ class Struct(list):
     class BadSpecifiedType(Exception): pass
     class BadSpecifiedName(Exception): pass
     class NoNamesSpecified(Exception): pass
+    class ImproperUsage(Exception): pass
     class UnknownName(Exception): pass
     class Unsupported(Exception): pass
     class BadAssignment(Exception): pass
@@ -243,6 +244,7 @@ class Struct(list):
     class BadValue(Exception): pass
     class BadIndex(Exception): pass
     class BadData(Exception): pass
+    class Empty(Exception): pass
     # Local mutable Column class (for column item assignment,
     # retrieval, and iteration over a column in a struct).
     class Column:
@@ -345,6 +347,13 @@ class Struct(list):
 
     # Redefined append operator that 
     def append(self, element):
+        # Make sure the element has a "len" property
+        try:    len(element)
+        except: raise(self.BadValue(f"Invalid appended element of type {type(element)}, which does not have 'len'."))
+        # Convert the element into a python list
+        if type(element) != list:
+            try:    element = list(element)
+            except: raise(self.BadValue(f"Invalid appended element, failed conversion to type {list}."))
         missing_values = False
         # Check length in case names already exist
         if (type(self.names) != type(None)):
@@ -371,6 +380,8 @@ class Struct(list):
                     except ValueError:
                         # Otherwise raise an error to the user
                         raise(self.BadValue(f"Value '{val}' of type '{type(val)}' could not successfully be cast as '{typ}'."))
+                    except TypeError:
+                        print("Struct error:", typ, typ==type(None))
         else:
             # Construct the expected "types" of this struct
             self.types = [type(val) for val in element]
@@ -378,7 +389,7 @@ class Struct(list):
             # Construct default names for each column
             self.names = [str(i) for i in range(len(element))]
         # Call the standard append operator, adding the element to self
-        super().append(element)
+        super().append(list(element))
         # Add to the list of missing values if necessary
         if (missing_values): self.missing.add(id(self[-1]))
 
@@ -417,25 +428,37 @@ class Struct(list):
             elif all(type(i) in {int,slice,list,GENERATOR_TYPE} for i in index):
                 if (len(index) > 2):
                     raise(self.BadIndex(f"The provided index, {index}, is not understood."))
-                # Make sure that both indices are slices
+                # Convert first index into a list
                 if type(index[0]) == int:
                     index = ([index[0]], index[1])
                 elif type(index[0]) == slice:
                     index = (range(len(self))[index[0]], index[1])
+                elif type(index[0]) == GENERATOR_TYPE:
+                    index = (list(index[0]), index[1])
+                # Convert second index into a list
                 if type(index[1]) == int:
                     index = (index[0], [index[1]])
                 elif type(index[1]) == slice:
                     index = (index[0], range(len(self))[index[1]])
                 elif type(index[1]) == GENERATOR_TYPE:
                     index = (index[0], list(index[1]))
-                # Iterate over both slices
+                # Iterate over both slices, generating a new struct
                 new_struct = type(self)(names=[self.names[i] for i in index[1]],
                                         types=[self.types[i] for i in index[1]])
                 for row_idx in index[0]:
                     new_struct.append(
                         [self[row_idx][col_idx] for col_idx in index[1]]
                     )
-                return new_struct
+                # Return the appropriate shape object based on index
+                if len(new_struct) == 1:
+                    # If the Struct has one row, return a 1D list
+                    return new_struct[0]
+                elif len(new_struct.names) == 1:
+                    # If the Struct has one column, return a 1D list
+                    return list(new_struct[new_struct.names[0]])
+                else:
+                    # Otherwise return a struct
+                    return new_struct
             elif all(type(t)==str for t in index):
                 # The user is slicing by column name, get the requested
                 # columns and put them into a new struct
@@ -456,6 +479,7 @@ class Struct(list):
                 new_struct.append(self[row][:])
             return new_struct
         elif ((type(index) == int) and 
+              (len(self) > 0) and
               (index >= len(self)) and
               (index < len(self)*len(self[0]))):
             # This index is accessing this structure serially
@@ -482,6 +506,13 @@ class Struct(list):
                 if (i >= len(self)):
                     # If there are too many values, raise an error
                     raise(self.BadAssignment(f"Column assignment requires a column of length {len(self)}, received object of at least length {i+1}."))
+                # If the value being assigned was missing, the new
+                # value is not missing, and this is the only missing
+                # value, update self.missing by removing this row.
+                if ((type(self[i][col_number]) == type(None)) and 
+                    (type(v) != type(None)) and
+                    (sum(type(e) == type(None) for e in self[i]) == 1)):
+                    self.missing.remove(id(self[i]))
                 # Update the value of the next entry in the struct
                 self[i][col_number] = v
                 if (type(v) == type(None)):
@@ -518,7 +549,6 @@ class Struct(list):
                     index = (index[0], list(index[1]))
                 # Check if a single value was provided, or multiple
                 singleton = type(value) not in {list, tuple, GENERATOR_TYPE, type(self)}
-                # Make sure values is either iterable or 
                 # Iterate over both slices
                 count = 0
                 for row in index[0]:
@@ -528,16 +558,28 @@ class Struct(list):
                         else:
                             new_val = value[count]
                             count += 1
+                        # Check type of new value (and update self.missing)
                         if ((type(new_val) == type(None)) and
                             (id(self[row]) not in self.missing)):
                             self.missing.add(id(self[row]))
+                        elif (self.types[col] == type(None)):
+                            self.types[col] = type(new_val)
                         elif (type(new_val) != self.types[col]):
                             raise(self.BadAssignment(f"Assigned value '{new_val}' of type {type(new_val)} does not match required type {self.types[col]}."))
+                        # If the value being assigned was missing, the new
+                        # value is not missing, and this is the only missing
+                        # value, update self.missing by removing this row.
+                        if ((type(self[row][col]) == type(None)) and 
+                            (type(new_val) != type(None)) and
+                            (sum(type(e) == type(None) for e in self[row]) == 1)):
+                            self.missing.remove(id(self[row]))
+                        # Store the new value
                         self[row][col] = new_val
             else:
                 raise(self.BadIndex(f"The provided index, {index}, is not understood."))
         else:
-            # If this is a normal index, use the standard get-item
+            # TODO: This is setting an entire row, need to type check,
+            #       verify length, and update self.missing accordingly.
             return super().__setitem__(index, value)
 
     # Generate a descriptive string of this struct.
@@ -578,6 +620,9 @@ class Struct(list):
     # Define a convenience funciton for concatenating another
     # similarly typed and named struct to self.
     def __iadd__(self, struct):
+        # Check for improper usage
+        if type(struct) != type(self):
+            raise(self.Unsupported(f"In-place addition only supports type {type(self)}, but {type(struct)} was given."))
         # Copy names *only* if this struct does not have any
         if type(self.names) == type(None):
             self.names = struct.names[:]
@@ -588,8 +633,19 @@ class Struct(list):
         return self
 
     # Convenience method for loading from file.
-    def load(self, path, **read_struct_kwargs):
+    def load(path, *args, **read_struct_kwargs):
         import pickle, dill, gzip
+        # Handle two different usages of the 'load' function.
+        if (type(path) != str): 
+            # If the user called "load" on an initialized struct, ignore
+            self = path
+            if (len(args) == 1):
+                path = args[0]
+            else:
+                raise(Struct.ImproperUsage("'load' method for Struct must be given a path."))
+        else:
+            # Otherwise define 'self' as a new Struct object.
+            self = Struct()
         # Check for compression
         compressed = path[-path[::-1].index("."):] == "gz"
         file_opener = open
@@ -670,9 +726,6 @@ class Struct(list):
 
     # Given a new column of data, add it to this Struct
     def add_column(self, column, name=None):
-        # Verify the column length
-        if (len(column) != len(self)):
-            raise(self.BadData(f"Additional column has length {len(column)}, but this struct has {len(self)} rows."))
         # Verify the name
         if (type(name) == type(None)):
             num = 0
@@ -683,19 +736,32 @@ class Struct(list):
         else:
             self.names.append(name)
         # Verify the column type dynamically. Add new values to all rows.
-        new_type = None
+        new_type = type(None)
         for i,val in enumerate(column):
+            # Verify valid index first..
+            if (i >= len(self)):
+                # Remove the added elements if the length was not right
+                for j in range(len(self)): self[j].pop(-1)
+                # Raise error for too long of a column
+                raise(self.BadData(f"Additional column has more elements than {len(self)}, the length of this struct."))
+            # Append the value to this row..
             self[i].append(val)
             if (type(val) == type(None)):
                 # Only add to missing values entry if it's not already there
                 if (id(self[i]) not in self.missing):
                     self.missing.add(id(self[i]))
-            elif (type(new_type) == type(None)):
+            elif (new_type == type(None)):
                 # Capture the new type (type must be right)
                 new_type = type(val)
             elif (type(val) != new_type):
                 # This is a new type, problem!
-                raise(self.BadValue("Provided column has multiple types. Original type {new_type}, but '{val}' has type {type(val)}."))
+                raise(self.BadValue(f"Provided column has multiple types. Original type {new_type}, but '{val}' has type {type(val)}."))
+        # Verify the column length
+        if (i != len(self)-1):
+            # Remove the added elements if the length was not right
+            for j in range(i+1): self[j].pop(-1)
+            # Raise error for too short of a column
+            raise(self.BadData(f"Additional column has length greater than {len(self)}, the length of this struct."))
         # Finally, record the new type
         self.types.append(new_type)
 
@@ -883,6 +949,10 @@ class Struct(list):
     # Give an overview (more detailed than just "str") of the contents
     # of this struct. Useful for quickly understanding how data looks.
     def summarize(self, max_display=None):
+        # Special case for an empty struct
+        if len(self) == 0:
+            print(self)
+            return
         # Set the "max_display" to the default value for this class
         if type(max_display) == type(None): max_display = self._max_display
         print("SUMMARY:")
@@ -970,7 +1040,14 @@ def test_struct():
     a.append([3,"c"])
 
     # Verify add_column
-    a.add_column([1.2, 3.0, 2.4])
+
+    # Verify add column (with edge case, none type)
+    a.add_column([None,None,None])
+    assert(a.types[-1] == type(None))
+    # Reassign the missing value column to floats, verify type update
+    a[a.names[-1]] = [1.2, 3.0, 2.4]
+    assert(a.types[-1] == float)
+    # WARNING: Need to check doing (<int>, <str>) assignment
 
     # Verify in-place addition
     b = a[:]
@@ -995,17 +1072,7 @@ def test_struct():
     assert(a[0,1] == "a")
 
     # Verify double indexing with slices
-    assert(tuple(a[::-1,1]["1"]) == tuple(["c","b","a"]))
-
-    # Verify that copies with "copy" are deep
-    b = a.copy()
-    b.retype([str,str,str])
-    assert(a.types[0] != str)
-
-    # Verify that copies with slicing are deep
-    b = a[:]
-    b.retype([str,str,str])
-    assert(a.types[0] != str)
+    assert(tuple(a[::-1,1]) == tuple(["c","b","a"]))
 
     # Verify standard index access
     assert(tuple(a[0]) == tuple([1,"a",1.2]))
@@ -1018,6 +1085,16 @@ def test_struct():
 
     # Verify slicing by names
     assert(tuple(a["0","2"][0]) == tuple([1,1.2]))
+
+    # Verify that copies with "copy" are deep
+    b = a.copy()
+    b.retype([str,str,str])
+    assert(a.types[0] != str)
+
+    # Verify that copies with slicing are deep
+    b = a[:]
+    b.retype([str,str,str])
+    assert(a.types[0] != str)
 
     # Verify automatic type generation AND automatic type-casting
     a.append([1,2,3])
@@ -1077,7 +1154,7 @@ def test_struct():
 
     # Verify load and save of a pkl file
     a.save("a-test.pkl")
-    b = Struct().load("a-test.pkl")
+    b = Struct.load("a-test.pkl")
     assert(tuple(a["0"]) == tuple(b["0"]))
     os.remove("a-test.pkl")
 
@@ -1119,6 +1196,13 @@ def test_struct():
         all_test += list(test["0"])
     assert(sorted(all_test) == list(range(len(b))))
 
+    # Attempt to index an empty struct
+    b = Struct()
+    try:
+        b[0]
+    except IndexError: pass
+    else: assert(False)
+
     # Try providing a generator that does not give integers
     try:
         a[(v for v in ('a','b'))]
@@ -1136,6 +1220,13 @@ def test_struct():
     try:
         b = a[:]
         b.add_column([1])
+    except Struct.BadData: pass
+    else: assert(False)
+
+    # Try a too-long column
+    try:
+        b = a[:]
+        b.add_column(map(float,range(1000)))
     except Struct.BadData: pass
     else: assert(False)
 

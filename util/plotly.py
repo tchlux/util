@@ -593,11 +593,14 @@ class Plot:
         bins = bar_spacing + "bins"
         self.histogram_barmode = barmode
         # Calculate the range of the histogram
-        hist_value_range = max(values) - min(values)
-        hist_start_val = min(values) - hist_value_range * padding
-        hist_end_val   = max(values) + hist_value_range * padding
+        hist_start_val = min(values)
+        hist_end_val   = max(values)
         if type(start) != type(None): hist_start_val = start
         if type(end) != type(None):   hist_end_val   = end
+        # Update the range, start, and end values (to have padding)
+        hist_value_range = hist_end_val - hist_start_val
+        hist_start_val -= hist_value_range * padding
+        hist_end_val += hist_value_range * padding
         # Provide necessary keyword arguments (that the user has not already)
         if (values_name not in kwargs):
             kwargs[values_name] = values
@@ -829,9 +832,9 @@ class Plot:
                                                          brightness=brightness, 
                                                          alpha=opacity) )
                 else:
-                    marker_colors = [color]*len(values)
+                    marker_colors = None
             else:
-                marker_colors = [color]*len(values)
+                marker_colors = None
 
         # Special plotly failure mode, need to reverse data for
         # 'tonext' to actually mean 'next' instead of 'previous'. This
@@ -1072,16 +1075,28 @@ class Plot:
             x_width = self.x_min_max[1] - self.x_min_max[0]
             x_range = [self.x_min_max[0] - 0.05*x_width,
                        self.x_min_max[1] + 0.05*x_width]
+            if ((x_axis_settings.get("type","") == "log") or
+                (axis_settings.get("type","") == "log") and 
+                (x_range[0] > 0)):
+                x_range = [np.log10(x_range[0]), np.log10(x_range[1])]
         if (fixed and y_range == None and
             max(map(abs,self.y_min_max)) != float('inf')):
             y_width = self.y_min_max[1] - self.y_min_max[0]
             y_range = [self.y_min_max[0] - 0.05*y_width,
                        self.y_min_max[1] + 0.05*y_width]
+            if ((y_axis_settings.get("type","") == "log") or
+                (axis_settings.get("type","") == "log") and 
+                (y_range[0] > 0)):
+                y_range = [np.log10(y_range[0]), np.log10(y_range[1])]
         if (fixed and z_range == None and
             max(map(abs,self.z_min_max)) != float('inf')):
             z_width = self.z_min_max[1] - self.z_min_max[0]
             z_range = [self.z_min_max[0] - 0.05*z_width,
                        self.z_min_max[1] + 0.05*z_width]
+            if ((z_axis_settings.get("type","") == "log") or
+                (axis_settings.get("type","") == "log") and 
+                (z_range[0] > 0)):
+                z_range = [np.log10(z_range[0]), np.log10(z_range[1])]
         # Set up a legend font
         legend_font = dict(
             family = self.font_family,
@@ -1302,7 +1317,7 @@ class Plot:
 # 
 #  ... <any additional plotly.offline.plot keyword arguments> ...
 def create_html(fig, file_name=None, show=True, append=False,
-                show_slider_labels=True, autoplay=True,
+                show_slider_labels=True, autoplay=False,
                 loop_animation=True, loop_pause=0, **kwargs):
     # Handle the creation of a file
     if (type(file_name) == type(None)):
@@ -1633,10 +1648,32 @@ def multiplot(plots, x_domains=None, y_domains=None, html=True,
             if type(plot) == type(None): continue
             # Otherwise, continue assuming we have a figure!
             for d in plot['data']:
+                # # Only add traces that are not redundant (same trace for different frames)
+                # if not any((d['name'] == f['name']) for f in fig['data']):
                 fig.append_trace(d, r+1, c+1)
+            # Add frames to the record for this figure
+            if ('frames' in plot):
+                if ('frames' in fig):
+                    if (len(plot['frames']) != len(fig['frames'])):
+                        raise(Exception("Each subplot must have same number of frames for multiplot animation."))
+                    for i,f_src in enumerate(plot['frames']):
+                        for d in f_src['data']:
+                            # Update the x-axis and y-axis of the frame
+                            d['xaxis'] = fig['data'][-1]['xaxis']
+                            d['yaxis'] = fig['data'][-1]['yaxis']
+                            fig['frames'][i]['data'] += [d]
+                else:
+                    if (r != 0) or (c != 0):
+                        raise(Exception("Each subplot must have same number of frames for multiplot animation."))
+                    fig['frames'] = plot['frames']
+                    for f_src in fig['frames']:
+                        for i,d in enumerate(f_src['data']):
+                            d['xaxis'] = fig['data'][-1]['xaxis']
+                            d['yaxis'] = fig['data'][-1]['yaxis']
+
             # Extract the annotations for this plot
             plot_annotations = plot['layout'].pop('annotations',[])
-            # Handle 3D and 3D differently
+            # Handle 3D and 2D differently
             if specs[r][c]['is_3d']:
                 counter_3d += 1
                 scene_name = 'scene' + str(counter_3d)
@@ -1677,6 +1714,7 @@ def multiplot(plots, x_domains=None, y_domains=None, html=True,
     if type(height) != type(None): 
         height += 159
         fig["layout"].update(dict(height=height))
+
     # Create the html plot if the user wants that (pass extra arguments)
     if html: create_html(fig, show=show, append=append, **kwargs)
     # Return the figure to be plotted
@@ -1768,5 +1806,21 @@ if __name__ == "__main__":
     plot3.plot(title="'fixed=False' Plotting", fixed=False, append=True)
 
 
-
+    # Add an example of two plots being animated side-by-side
+    p1 = Plot("","Plot 1")
+    p2 = Plot("","Plot 2")
+    # x values for each plot
+    x = [-2,-1,0.01,1,2,3]
+    for f in range(10):
+        # Add the first plot series
+        y = list(map(lambda v: v**2 - f*v, x))
+        p1.add("f1", x, y, color=p1.color(0), mode='markers+lines',
+               shade=False, frame=f)
+        # Add the second plot series
+        y = np.array(list(map(lambda v: v**(3) + f*v, x)))
+        p2.add("f2", x, y, color=p2.color(1), mode='markers+lines',
+               shade=False, frame=f)
+    p1 = p1.plot(data_easing=True, bounce=True, html=False, loop_duration=2.5)
+    p2 = p2.plot(data_easing=True, bounce=True, html=False, loop_duration=2.5)
+    multiplot([[p1, p2]], append=True)
 

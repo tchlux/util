@@ -201,6 +201,25 @@ class qHullDelaunay(Approximator):
                                                   self.values,
                                                   fill_value="extrapolate")
 
+    def points_and_weights(self, x):
+        # Solve for the weights in the old Delaunay model
+        simp_ind = self.surf.find_simplex(x)
+        # If a point is outside the convex hull, use the
+        # closest simplex to extrapolate the value
+        if simp_ind < 0: 
+            # Calculate the distance between the x each simplex
+            simp_dists = self.surf.plane_distance(x)
+            # Find the index of the closest simplex
+            simp_ind = np.argmax(simp_dists)
+        # Solve for the response value
+        simp = self.surf.simplices[simp_ind]
+        system = np.concatenate((self.pts[simp],
+            np.ones((simp.shape[0],1))), axis=1).T
+        x_pt = np.concatenate((x,[1]))
+        weights = np.linalg.solve(system, x_pt)
+        weights = np.where(weights > 0, weights, 0)
+        return (simp, weights / sum(weights))
+
     # Use scipy code in order to evaluate delaunay triangulation
     def predict(self, x, debug=False, verbose=False):
         # Compute the response values
@@ -244,6 +263,7 @@ class qHullDelaunay(Approximator):
         return response
 
 
+
 # ============================
 #      VTDelaunay Wrapper     
 # ============================
@@ -251,10 +271,10 @@ class qHullDelaunay(Approximator):
 # Wrapper class for using the Delaunay fortran code
 class Delaunay(Approximator):
     def __init__(self):
-        self.delaunayp = fmodpy.fimport(
-            os.path.join(CWD,"VTdelaunay","VTdelaunay.f90"),
-            module_link_args=["-lgfortran","-lblas","-llapack"], 
-            output_directory=CWD, ).delaunayp
+        # Get the source fortran code module
+        path_to_src = os.path.join(CWD,"TOMS_Delaunay","VTdelaunay.f90")
+        self.delaunayinterp = fmodpy.fimport(
+            path_to_src, output_directory=CWD).delaunayinterp
         self.pts = None
         self.values = None
         self.errs = {}
@@ -279,20 +299,18 @@ class Delaunay(Approximator):
             raise(Exception("ERROR: Bad input shape."))
 
         # Get the predictions from VTdelaunay
+        pts_in = np.asarray(self.pts.copy(), order="F")
         p_in = np.asarray(x.T, dtype=np.float64, order="F")
-        work_in = np.ones(shape=(max(5*p_in.shape[0],
-                                     p_in.shape[0]*p_in.shape[1]),), 
-                          dtype=np.float64, order="F")
         simp_out = np.ones(shape=(p_in.shape[0]+1, p_in.shape[1]), 
                            dtype=np.int32, order="F")
         weights_out = np.ones(shape=(p_in.shape[0]+1, p_in.shape[1]), 
                               dtype=np.float64, order="F")
         error_out = np.ones(shape=(p_in.shape[1],), 
                             dtype=np.int32, order="F")
-        self.delaunayp(self.pts.shape[0], self.pts, p_in, work_in,
-                       simp_out, weights_out, error_out, 
-                       extrap_opt=100000)
-        error_out = np.where(error_out != 1, error_out, 0)
+        self.delaunayinterp(self.pts.shape[0], self.pts.shape[1],
+                            pts_in, p_in.shape[1], p_in, simp_out,
+                            weights_out, error_out, extrap_opt=1.0)
+        error_out = np.where(error_out == 1, 0, error_out)
         # Handle any errors that may have occurred.
         if (sum(error_out) != 0):
             unique_errors = sorted(np.unique(error_out))
@@ -302,7 +320,7 @@ class Delaunay(Approximator):
                 print(" %3i"%e,"at",""+",".join(tuple(
                     str(i) for i in range(len(error_out))
                     if (error_out[i] == e)))+"}", end=";")
-            print("] ",end="")
+            print("] ")
             # Reset the errors to simplex of 1s (to be 0) and weights of 0s.
             bad_indices = (error_out > 1)
             simp_out[:,bad_indices] = 1
@@ -320,47 +338,10 @@ class Delaunay(Approximator):
             raise(Exception("ERROR: Must provide values in order to get predictions."))
         # Calculate all of the response values
         response = []
-        # Get the predictions from VTdelaunay
-        p_in = np.asarray(x.T, dtype=np.float64, order="F")
-        work_in = np.ones(shape=(max(5*p_in.shape[0],
-                                     p_in.shape[0]*p_in.shape[1]),), 
-                          dtype=np.float64, order="F")
-        simp_out = np.ones(shape=(p_in.shape[0]+1, p_in.shape[1]), 
-                           dtype=np.int32, order="F")
-        weights_out = np.ones(shape=(p_in.shape[0]+1, p_in.shape[1]), 
-                              dtype=np.float64, order="F")
-        error_out = np.ones(shape=(p_in.shape[1],), 
-                            dtype=np.int32, order="F")
-        interp_in = self.values
-        interp_out = np.ones(shape=(self.values.shape[0], p_in.shape[1]),
-                             dtype=np.float64, order="F")
-        self.delaunayp(self.pts.shape[0], self.pts, p_in, work_in,
-                       simp_out, weights_out, error_out, 
-                       extrap_opt=10000,
-                       interp_in_opt=interp_in,
-                       interp_out_opt=interp_out)
-        # Handle any errors that may have occurred.
-        if (sum(error_out) != 0):
-            unique_errors = sorted(np.unique(error_out))
-            print(" [Delaunay errors:",end="")
-            for e in unique_errors:
-                if (e in {0,1}): continue
-                print(" %3i"%e,"at",""+",".join(tuple(
-                    str(i) for i in range(len(error_out))
-                    if (error_out[i] == e)))+"}", end=";")
-            print("] ",end="")
-            # Reset the errors to simplex of 1s (to be 0) and weights of 0s.
-            bad_indices = (error_out > 1)
-            simp_out[:,bad_indices] = 1
-            weights_out[:,bad_indices] = 0
-        # Print debugging information if desired
-        if debug:
-            print("VTDelaunay")
-            print("P Input:   ", p_in.T)
-            print("Simp Out:  ", simp_out.T - 1)
-            print("Error Out: ", error_out)
-            print("Interp Out:", interp_out.T)
-        return interp_out[0,:]
+        for pt in x:
+            pts, wts = self.points_and_weights(pt)
+            response.append( sum(self.values[:,pts][0] * wts) )
+        return np.array(response)
 
 
 # ======================
@@ -850,15 +831,13 @@ if __name__ == "__main__":
     #     exit()
     # exit()
 
-    from util.plotly import Plot
     mult = 5
     fun = lambda x: np.cos(x[0]*mult) + np.sin(x[1]*mult)
-    p = Plot()
     low = 0
     upp = 1
     dim = 2
     plot_points = 2000
-    N = 2
+    N = 20
     random = True
     if random:
         x = np.random.random(size=(N,dim))
@@ -866,12 +845,15 @@ if __name__ == "__main__":
         N = int(round(N ** (1/dim)))
         x = np.array([r.flatten() for r in np.meshgrid(np.linspace(low,upp,N), np.linspace(low,upp,N))]).T
     y = np.array([fun(v) for v in x])
-    p.add("Training Points", *x.T, y)
-    
-    # surf = Delaunay()
-    # surf = MaxBoxMesh()
-    surf = VoronoiMesh()
-    surf.fit(x,y)
-    p.add_func(str(surf), surf, *([(low,upp)]*dim), plot_points=plot_points)
-    p.plot(file_name="test_plot.html")
 
+    # surf = qHullDelaunay()
+    surf = Delaunay()
+    # surf = MaxBoxMesh()
+    # surf = VoronoiMesh()
+    surf.fit(x,y)
+
+    from util.plotly import Plot
+    p = Plot()
+    p.add("Training Points", *x.T, y)
+    p.add_func(str(surf), surf, *([(low-.1,upp+.1)]*dim), plot_points=plot_points)
+    p.plot(file_name="test_plot.html")
