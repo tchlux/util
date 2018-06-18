@@ -121,10 +121,12 @@ class LinearModel(Approximator):
         self.model = None
 
     # Fit a linear model to the data
-    def fit(self, control_points, values):
+    def fit(self, control_points, values, weights=None):
         # Process and store local information
         ones_column = np.ones( (control_points.shape[0],1) )
         coef_matrix = np.concatenate((control_points, ones_column), axis=1)
+        # Weight the points if necessary
+        if type(weights) != type(None): coef_matrix[:,-1] *= weights
         # Returns (model, residuals, rank, singular values), we want model
         self.model, self.residuals = np.linalg.lstsq(coef_matrix, values)[:2]
 
@@ -147,27 +149,56 @@ class NearestNeighbor(Approximator):
         self.num_neighbors = num_neighbors
 
     # Use fortran code to compute the boxes for the given data
-    def fit(self, control_points, values, num_neighbors=None):
+    def fit(self, control_points, values=None, num_neighbors=None):
         if type(num_neighbors) != type(None):
             self.num_neighbors = num_neighbors
         # Process and store local information
         self.points = control_points.copy()
-        self.values = values.copy()
+        if (type(values) != type(None)):
+            self.values = values.copy()
 
-    # Use fortran code to evaluate the computed boxes
-    def predict(self, x):
-        # Use the nearest point 
-        response = []
-        for pt in x:
+    # Function that returns the indices of points and the weights that
+    # should be used to make associated predictions for each point in
+    # "points".
+    def points_and_weights(self, points):
+        single_response = len(points.shape) == 1
+        if single_response:
+            points = np.array([points])
+        if len(points.shape) != 2:
+            raise(Exception("ERROR: Bad input shape."))
+        # Body
+        pts = []
+        wts = []
+        for pt in points:
             distances = np.sum((self.points - pt)**2, axis=1)
             closest = np.argsort(distances)[:self.num_neighbors]
             distances = distances[closest]
             if np.min(distances) <= 0:
-                response.append( self.values[closest][np.argmin(distances)] )
+                pts.append( [closest[0]] )
+                wts.append( [1.0] )
             else:
-                distances = 1 / distances
-                weights = distances / sum(distances)
-                response.append( np.sum(weights * self.values[closest]) )
+                # distances = 1 / distances
+                # weights = distances / sum(distances)
+                weights = np.ones(self.num_neighbors) / self.num_neighbors
+                points = closest
+                pts.append( closest )
+                wts.append( weights )
+        # Convert into array form
+        pts = np.array(pts)
+        wts = np.array(wts)
+        # Return the appropriate shaped pair of points and weights
+        return (pts[0], wts[0]) if single_response else (pts, wts)
+
+
+    # Use fortran code to evaluate the computed boxes
+    def predict(self, x):
+        if (type(self.values) == type(None)):
+            raise(Exception("Need to assign 'values' in order to predict."))
+        # Use the nearest point 
+        response = []
+        for pt in x:
+            pts, wts = self.points_and_weights(pt)
+            response.append( sum(self.values[pts] * wts) )
         return np.array(response)
 
 
@@ -201,24 +232,40 @@ class qHullDelaunay(Approximator):
                                                   self.values,
                                                   fill_value="extrapolate")
 
-    def points_and_weights(self, x):
-        # Solve for the weights in the old Delaunay model
-        simp_ind = self.surf.find_simplex(x)
-        # If a point is outside the convex hull, use the
-        # closest simplex to extrapolate the value
-        if simp_ind < 0: 
-            # Calculate the distance between the x each simplex
-            simp_dists = self.surf.plane_distance(x)
-            # Find the index of the closest simplex
-            simp_ind = np.argmax(simp_dists)
-        # Solve for the response value
-        simp = self.surf.simplices[simp_ind]
-        system = np.concatenate((self.pts[simp],
-            np.ones((simp.shape[0],1))), axis=1).T
-        x_pt = np.concatenate((x,[1]))
-        weights = np.linalg.solve(system, x_pt)
-        weights = np.where(weights > 0, weights, 0)
-        return (simp, weights / sum(weights))
+    # Function that returns the indices of points and the weights that
+    # should be used to make associated predictions for each point in
+    # "points".
+    def points_and_weights(self, points):
+        single_response = len(points.shape) == 1
+        if single_response:
+            points = np.array([points])
+        if len(points.shape) != 2:
+            raise(Exception("ERROR: Bad input shape."))
+        # Body
+        for x in points:
+            # Solve for the weights in the old Delaunay model
+            simp_ind = self.surf.find_simplex(x)
+            # If a point is outside the convex hull, use the
+            # closest simplex to extrapolate the value
+            if simp_ind < 0: 
+                # Calculate the distance between the x each simplex
+                simp_dists = self.surf.plane_distance(x)
+                # Find the index of the closest simplex
+                simp_ind = np.argmax(simp_dists)
+            # Solve for the response value
+            simp = self.surf.simplices[simp_ind]
+            system = np.concatenate((self.pts[simp],
+                np.ones((simp.shape[0],1))), axis=1).T
+            x_pt = np.concatenate((x,[1]))
+            weights = np.linalg.solve(system, x_pt)
+            weights = np.where(weights > 0, weights, 0)
+            pts.append( simp )
+            wts.append( weights / sum(weights) )
+        # Convert into array form
+        pts = np.array(pts)
+        wts = np.array(wts)
+        # Return the appropriate shaped pair of points and weights
+        return (pts[0], wts[0]) if single_response else (pts, wts)
 
     # Use scipy code in order to evaluate delaunay triangulation
     def predict(self, x, debug=False, verbose=False):
@@ -277,17 +324,21 @@ class Delaunay(Approximator):
             path_to_src, output_directory=CWD).delaunayinterp
         self.pts = None
         self.values = None
+        self.flat_values = False
         self.errs = {}
 
     # Use fortran code to compute the boxes for the given data
     def fit(self, control_points, values=None):
         self.pts = np.asarray(control_points.T, dtype=np.float64, order="F")
         # Store values if they were given
-        if type(values) != type(None):
-            self.values = np.asarray(values.reshape((1,values.shape[0])),
-                                     dtype=np.float64, order="F")
+        if (type(values) == type(np.array([]))):
+            if (len(values.shape) != 2):
+                values = np.reshape(values, (len(values),1))
+            self.values = values
+            self.flat_values = True
         else:
             self.values = None
+            self.flat_values = False
 
     # Return just the points and the weights associated with them for
     # creating the correct interpolation
@@ -309,7 +360,7 @@ class Delaunay(Approximator):
                             dtype=np.int32, order="F")
         self.delaunayinterp(self.pts.shape[0], self.pts.shape[1],
                             pts_in, p_in.shape[1], p_in, simp_out,
-                            weights_out, error_out, extrap_opt=1.0)
+                            weights_out, error_out, extrap_opt=100.0)
         error_out = np.where(error_out == 1, 0, error_out)
         # Handle any errors that may have occurred.
         if (sum(error_out) != 0):
@@ -333,16 +384,142 @@ class Delaunay(Approximator):
         
 
     # Use fortran code to evaluate the computed boxes
-    def predict(self, x, debug=False, verbose=False):
+    def predict(self, x, debug=False, verbose=False, display_wait_sec=1):
+        import time
         if type(self.values) == type(None):
             raise(Exception("ERROR: Must provide values in order to get predictions."))
         # Calculate all of the response values
         response = []
-        for pt in x:
+        start = time.time()
+        for i,pt in enumerate(x):
+            if ((time.time() - start) > display_wait_sec):
+                start = time.time()
+                print(f" {100.*i/len(x):.2f}%", end="\r", flush=True)
             pts, wts = self.points_and_weights(pt)
-            response.append( sum(self.values[:,pts][0] * wts) )
-        return np.array(response)
+            response.append( np.sum(self.values[pts,:].T * wts, axis=1) )
+        # Convert to flattened values 
+        if (self.flat_values): response = np.array(response).flatten()
+        return np.asarray(response)
 
+
+# =================
+#      Voronoi     
+# =================
+# Class for using the voronoi mesh to make approximations. This relies
+# on some OpenMP parallelized fortran source to identify the voronoi
+# mesh coefficients (more quickly than can be done in python).
+class Voronoi(Approximator):
+    points = None
+    shift = None
+    scale = None
+    values = None
+    dots = None
+    flat_values = False
+
+    # Get fortran function for calculating mesh
+    def __init__(self):
+        # Get the source fortran code module
+        path_to_src = os.path.join(CWD,"voronoi.f90")
+        # Compile the fortran source (with OpenMP for acceleration)
+        self.voronoi = fmodpy.fimport(path_to_src, output_directory=CWD,
+                                      fort_compiler_options=["-fPIC", "-O3","-fopenmp"],
+                                      module_link_args=["-lgfortran","-fopenmp"])
+
+    # Add a single point to the mesh
+    def add_point(self, point, value):
+        point = point.copy()
+        # Normalize the point like others (if they have been normalized)
+        if not IS_NONE(self.shift):
+            point -= self.shift
+        if not IS_NONE(self.scale):
+            point /= self.scale
+        # Update stored points
+        if IS_NONE(self.points):
+            self.points = np.array([point]).T
+        else:
+            self.points = np.hstack((self.points, point))
+        # Update the stored values
+        if IS_NONE(self.values):
+            self.values = np.array(value).reshape((1,len(value)))
+        else:
+            self.values = np.vstack((self.values,[value]))
+        # Update the fit stored in memory
+        self.fit()
+
+    # Given points, pre-calculate the inner products of all pairs.
+    def fit(self, points=None, values=None, normalize=False):
+        # Store values if they were provided
+        if not IS_NONE(values):
+            if len(values.shape) == 2:
+                self.values = values.copy()
+            else:
+                self.flat_values = True
+                self.values = values.copy()[:,None]
+        # Store points if they were provided
+        if not IS_NONE(points):
+            self.points = points.copy().T
+        # Normalize points to be in unit hypercube if desired
+        if normalize:
+            self.shift = np.min(self.points,axis=1)
+            self.points = (self.points.T - self.shift).T
+            self.scale = np.max(self.points,axis=1)
+            # Make sure the scale does not contain 0's
+            self.scale = np.where(self.scale != 0, self.scale, 1)
+            self.points = (self.points.T / self.scale).T
+        # Allocate space for pairwise dot products between points,
+        # intialize all values to be the maximum representable number.
+        self.dots = np.empty((self.points.shape[1],
+                              self.points.shape[1]), order='F')
+        self.voronoi.make_huge(self.dots)
+
+    # Function that returns the indices of points and the weights that
+    # should be used to make associated predictions for each point in
+    # "points".
+    def points_and_weights(self, points):
+        single_response = len(points.shape) == 1
+        if single_response:
+            points = np.array([points])
+        if len(points.shape) != 2:
+            raise(Exception("ERROR: Bad input shape."))
+        if IS_NONE(self.points):
+            raise(NoPointsProvided("Cannot compute support without points."))
+        pts = []
+        wts = []
+        indices = np.arange(self.points.shape[1])
+        for pt in points:
+            _, support = self.voronoi.predict(self.points, self.dots, 
+                                              np.asarray(pt,order='F'))
+            supported_points = indices[support > 0]
+            supported_weights = support[supported_points]
+            pts.append( supported_points )
+            wts.append( supported_weights )
+        pts = np.asarray(pts)
+        wts = np.asarray(wts)
+        # Return the appropriate shaped pair of points and weights
+        return (pts[0], wts[0]) if single_response else (pts, wts)
+
+    # Given points to predict at, make an approximation
+    def predict(self, points, display_wait_sec=1):
+        import time
+        if IS_NONE(self.values): 
+            raise(NoValuesProvided("Values must be provided to make predictions."))
+        # Normalize the points like others (if they have been normalized)
+        if not IS_NONE(self.shift):
+            points -= self.shift
+        if not IS_NONE(self.scale):
+            points /= self.scale
+        # Calculate all of the response values
+        response = []
+        start = time.time()
+        for i,pt in enumerate(points):
+            if ((time.time() - start) > display_wait_sec):
+                start = time.time()
+                print(f" {100.*i/len(points):.2f}%", end="\r", flush=True)
+            pts, wts = self.points_and_weights(pt)
+            response.append( np.sum(self.values[pts,:].T * wts, axis=1) )
+        # Convert to flattened values 
+        if (self.flat_values): response = np.array(response).flatten()
+        return np.asarray(response)
 
 # ======================
 #      Voronoi Mesh     
@@ -362,12 +539,9 @@ class VoronoiMesh(Approximator):
         # Get the source fortran code module
         path_to_src = os.path.join(CWD,"voronoi.f90")
         # Compile the fortran source (with OpenMP for acceleration)
-        eval_mesh = fmodpy.fimport(path_to_src, output_directory=CWD,
-                                   fort_compiler_options=["-fPIC", "-O3","-fopenmp"],
-                                   module_link_args=["-lgfortran","-fopenmp"]
-        ).eval_mesh
-        # Store the function for evaluating the mesh into self
-        self.eval_mesh = eval_mesh
+        self.voronoi = fmodpy.fimport(path_to_src, output_directory=CWD,
+                                      fort_compiler_options=["-fPIC", "-O3","-fopenmp"],
+                                      module_link_args=["-lgfortran","-fopenmp"])
 
     # Add a single point to the mesh
     def add_point(self, point, value):
@@ -409,17 +583,40 @@ class VoronoiMesh(Approximator):
         # Store pairwise dot products in fortran form
         self.products = np.array(np.matmul(self.points, self.points.T), order="F")
 
-    # Function that returns the convexified support of the
-    # twice-expanded voronoi cells of fit points
+    # Function that returns the indices of points and the weights that
+    # should be used to make associated predictions for each point in
+    # "points".
+    def points_and_weights(self, points):
+        single_response = len(points.shape) == 1
+        if single_response:
+            points = np.array([points])
+        if len(points.shape) != 2:
+            raise(Exception("ERROR: Bad input shape."))
+        if IS_NONE(self.points):
+            raise(NoPointsProvided("Cannot compute support without points."))
+        support = self.support(points)
+        pts = []
+        wts = []
+        indices = np.arange(self.points.shape[0])
+        for i in range(len(points)):
+            supported_points = indices[support[i,:] > 0]
+            supported_weights = support[i,supported_points]
+            pts.append( supported_points )
+            wts.append( supported_weights )
+        pts = np.asarray(pts)
+        wts = np.asarray(wts)
+        # Return the appropriate shaped pair of points and weights
+        return (pts[0], wts[0]) if single_response else (pts, wts)
+
+    # Compute the support using a brute force method
     def support(self, points):
         if IS_NONE(self.points):
             raise(NoPointsProvided("Cannot compute support without points."))
-        self.products = np.asarray(self.products, order="F")
         # Calculate the dot products of the points with themselves
         products = np.array(np.matmul(points, self.points.T), order="F")
         # Compute all voronoi cell values
         vvals = np.array(np.zeros((len(points), len(self.points))), order="F")
-        return self.eval_mesh(self.products, products, vvals)
+        return self.voronoi.eval_mesh(self.products, products, vvals)
 
     # Given points to predict at, make an approximation
     def predict(self, points):
@@ -437,104 +634,34 @@ class VoronoiMesh(Approximator):
         return np.matmul(vvals, self.values)
 
 
-# class VoronoiMesh(Approximator):
-#     def __init__(self):
-#         self.voronoi_mesh = fmodpy.fimport(
-#             os.path.join(CWD,"voronoi_mesh","voronoi_mesh.f90"),
-#             module_link_args=["-lgfortran","-lblas","-llapack"], 
-#             output_directory=CWD)
-#         self.points = None
-#         self.values = None
-
-#     # Fit a set of points
-#     def fit(self, points, values=None):
-#         self.points = np.asarray(points.T.copy(), order="F")
-#         if type(values) != type(None):
-#             self.values = np.asarray(values.copy(), order="F")
-#         self.dots = np.ones((points.shape[0],)*2, order="F")
-#         # Compute all of the pairwise dot products between control points
-#         self.voronoi_mesh.train_vm(self.points, self.dots)
-
-#     # Calculate the weights associated with a set of points
-#     def points_and_weights(self, x, convex=True):
-#         single_response = len(x.shape) == 1
-#         if single_response:
-#             x = np.array([x])
-#         if len(x.shape) != 2:
-#             raise(Exception("ERROR: Bad input shape."))
-#         x = np.array(x.T, order="F")
-#         weights = np.ones((x.shape[1], self.points.shape[1]), 
-#                           dtype=np.float64, order="F")
-#         self.voronoi_mesh.predict_vm(self.points, self.dots,
-#                                      x, weights)
-#         if convex:
-#             # Make all the weights convex
-#             weights = (weights.T / np.sum(weights,axis=1)).T
-#         # Generate the list of point indices
-#         points = np.zeros(weights.shape, dtype=int) + np.arange(self.points.shape[1])
-#         # Return the appropriate shaped pair of points and weights
-#         return points, weights
-
-#     # Generate a prediction for a new point
-#     def predict(self, xs):
-#         if type(self.values) == type(None):
-#             raise(Exception("Must provide values in order to make predicitons."))
-#         weights = self.points_and_weights(xs)
-#         # Generate the predictions
-#         return np.matmul(weights, self.values)
-
-# =========================
-#      MaxBoxMesh Mesh     
-# =========================
-class MaxBoxMesh(Approximator):
-    def __init__(self):
-        self.max_box_mesh = fmodpy.fimport(
-            os.path.join(CWD,"max_box_mesh","max_box_mesh.f90"),
-            module_link_args=["-lgfortran","-lblas","-llapack"], 
-            output_directory=CWD)
-        self.points = None
-        self.values = None
+# ======================
+#      BoxMesh Mesh     
+# ======================
+class BoxMesh(Approximator):
+    meshes = fmodpy.fimport(
+        os.path.join(CWD,"meshes","meshes.f90"),
+        module_link_args=["-lgfortran","-lblas","-llapack"], 
+        output_directory=CWD)
+    error_tolerance = 0.0
 
     # Fit a set of points
-    def fit(self, points, values=None):
+    def fit(self, points, values):
         self.points = np.asarray(points.T.copy(), order="F")
-        if type(values) != type(None):
-            self.values = np.asarray(values.copy(), order="F")
-        self.shapes = np.ones((self.points.shape[0]*2,self.points.shape[1]), order="F")
-        # Compute all of the max-boxes
-        self.max_box_mesh.max_boxes(self.points, self.shapes)
-        # Expand all boxes (to make the mesh space-filling)
-        self.shapes += SMALL_NUMBER
-
-    # Calculate the weights associated with a set of points
-    def points_and_weights(self, x):
-        single_response = len(x.shape) == 1
-        if single_response:
-            x = np.array([x])
-        if len(x.shape) != 2:
-            raise(Exception("ERROR: Bad input shape."))
-
-        x = np.array(x.T, order="F")
-        weights = np.ones((x.shape[1], self.points.shape[1]), 
-                          dtype=np.float64, order="F")
-        self.max_box_mesh.eval_box_mesh(self.points, self.shapes,
-                                        x, weights)
-
-        # Make all weights convex
-        for i,w in enumerate(np.sum(weights,axis=1)):
-            weights[i,:] /= w
-        points = np.zeros(weights.shape, dtype=int) + np.arange(self.points.shape[1])
-        # Return the appropriate shaped pair of points and weights
-        return points, weights
+        self.values = np.asarray(values.copy(), order="F")
+        self.box_sizes = np.ones((self.points.shape[0]*2,self.points.shape[1]),
+                                  dtype=np.float64, order="F") * -1
+        # Construct the box mesh
+        for i in range(1,self.points.shape[1]+1):
+            self.meshes.build_ibm(self.points[:,:i], self.box_sizes)
 
     # Generate a prediction for a new point
     def predict(self, xs):
-        if type(self.values) == type(None):
-            raise(Exception("Must provide values in order to make predicitons."))
-        weights = self.points_and_weights(xs)
-        predictions = np.matmul(weights, self.values)
+        to_predict = np.asarray(xs.T, order="F")
+        predictions = np.ones((xs.shape[0],), dtype=np.float64, order="F")        
+        self.meshes.predict_convex_mesh(self.points, self.box_sizes,
+                                        to_predict, self.values,
+                                        predictions)
         return predictions
-
 
 
 # ==============================
@@ -800,60 +927,139 @@ class tgp(Approximator):
         return np.asarray(response[15], dtype=float)
 
 
-if __name__ == "__main__":
-    np.random.seed(0)
+# Given a model, test the time it takes to make a prediction
+def test_time(model, ns=range(10,10011,1000), ds=range(2,11,2)):
+    import time
+    print("Starting")
+    for d in ds:
+        print(f"D: {d}")
+        print()
+        for n in ns:
+            print(f" N: {n}")
+            x = np.random.random((n,d))
+            y = np.random.random((n,))
+            start = time.time()
+            model.fit(x, y)
+            print(f"  fit:     {time.time() - start:5.2f}")
+            start = time.time()
+            model(x[0])
+            print(f"  predict: {time.time() - start:5.2f}")
+            print()
+        print()
 
-    # import time
-    # print("Starting")
-    # for n in range(10, 20011, 1000):
-    #     n = 8000
-    #     # for d in range(20,21,10):
-    #     d = 5
-    #     print("%6s"%n, "%3s"%d)
-    #     x = np.random.random((n,d))
-    #     y = np.random.random((n,))
-    #     # model = NearestNeighbor(2)
-    #     # model = LinearModel()
-    #     # model = MARS()
-    #     # model = LSHEP()
-    #     # model = MLPRegressor()
-    #     # model = VoronoiMesh()
-    #     model = Delaunay()
-    #     # model = MaxBoxMesh()
-    #     # model = qHullDelaunay()
-    #     start = time.time()
-    #     model.fit(x, y)
-    #     print("%5.2f"%(time.time() - start),end=" ")
-    #     start = time.time()
-    #     model(x[0])
-    #     print("%3.2f"%((time.time() - start)*10000))
-    #     print()
-    #     exit()
-    # exit()
-
-    mult = 5
-    fun = lambda x: np.cos(x[0]*mult) + np.sin(x[1]*mult)
-    low = 0
-    upp = 1
-    dim = 2
-    plot_points = 2000
-    N = 20
-    random = True
+# Given a model, generate a test plot demonstrating the surface it procudes
+def test_plot(model, low=0, upp=1, plot_points=3000, p=None,
+              fun=lambda x: 3*x[0]+.5*np.cos(8*x[0])+np.sin(5*x[-1]),
+              N=20, D=2, random=True, seed=0):
+    np.random.seed(seed)
+    # Generate x points
     if random:
-        x = np.random.random(size=(N,dim))
+        x = np.random.random(size=(N,D))
     else:
-        N = int(round(N ** (1/dim)))
-        x = np.array([r.flatten() for r in np.meshgrid(np.linspace(low,upp,N), np.linspace(low,upp,N))]).T
+        N = int(round(N ** (1/D)))
+        x = np.array([r.flatten() for r in np.meshgrid(*[np.linspace(0,1,N)]*D)]).T
+    # Calculate response values
     y = np.array([fun(v) for v in x])
-
-    # surf = qHullDelaunay()
-    surf = Delaunay()
-    # surf = MaxBoxMesh()
-    # surf = VoronoiMesh()
-    surf.fit(x,y)
-
+    # Fit the model to the points
+    model.fit(x,y)
+    # Generate the plot
     from util.plotly import Plot
-    p = Plot()
+    if type(p) == type(None): p = Plot()
     p.add("Training Points", *x.T, y)
-    p.add_func(str(surf), surf, *([(low-.1,upp+.1)]*dim), plot_points=plot_points)
-    p.plot(file_name="test_plot.html")
+    p.add_func(str(model), model, *([(low-.1,upp+.1)]*D),
+               plot_points=plot_points, vectorized=True)
+    return p, x, y
+
+# Given a model, use the method "points_and_weights" to identify the
+# regions of support for each of the interpolation points.
+def test_support(model, low=0, upp=1, plot_points=3000, p=None,
+                 fun=lambda x: 3*x[0]+.5*np.cos(8*x[0])+np.sin(5*x[-1]),
+                 N=20, D=2, random=True, seed=0):
+    # Force D to be 2
+    D = 2
+    np.random.seed(seed)
+    # Generate x points
+    if random:
+        x = np.random.random(size=(N,D))
+    else:
+        N = int(round(N ** (1/D)))
+        x = np.array([r.flatten() for r in np.meshgrid(*[np.linspace(0,1,N)]*D)]).T
+    # Calculate response values
+    y = np.array([fun(v) for v in x])
+    # Fit the model to the points
+    model.fit(x,y)
+    # Generate the plot
+    from util.plotly import Plot
+    if type(p) == type(None): p = Plot()
+    p.add("Training Points", *x.T, color=p.color(len(x)))
+    for i in range(len(x)):
+        name = f"{i+1}" 
+        p.add(name, [x[i][0]], [x[i][1]], group=name)
+        def supported(pt):
+            pts, wts = model.points_and_weights(pt)
+            return (i in pts)
+        p.add_region(name+" region", supported, *([(low-.1,upp+.1)]*D),
+                     color=p.color(p.color_num), group=name,
+                     plot_points=plot_points, show_in_legend=False) 
+    # p.add_func(str(model), model, *([(low-.1,upp+.1)]*D),
+    #            plot_points=plot_points, vectorized=True)
+    return p, x, y
+
+
+if __name__ == "__main__":
+    # print("Adding surface to plot..")
+    # p,_,_ = test_plot(Voronoi(), N=20, D=2, low=-.1, upp=1.1,
+    #                   random=True, plot_points=4000) # 6, 8
+    # print("Generating plot HTML..")
+    # p.show()
+
+    test_time(NearestNeighbor(), ns=range(10000,100001,10000),
+              ds=range(10,1001,100))
+
+    # # ================================================
+    # #      Testing Regions of Support for Voronoi     
+    # # ================================================
+
+    # p,_,_ = test_support(Voronoi(), N=3, D=2, low=-.4, upp=1.4,
+    #                      random=True, seed=8) # 6
+    # p.show(width=700, height=700)
+    # p,_,_ = test_support(VoronoiMesh(), N=3, D=2, low=-.4, upp=1.4,
+    #                      random=True, seed=8) # 6
+    # p.show(width=700, height=700)
+
+    # p, x, y = test_plot(Delaunay, N=9, low=-.2, upp=1.2, random=False)
+    # p.plot("VT Delaunay", file_name="bad_extrap.html", show=False)
+    # p, x, y = test_plot(qHullDelaunay, N=9, low=-.2, upp=1.2, random=False)
+    # p.plot("QHull Delaunay", file_name="bad_extrap.html", show=False, append=True)
+
+    # # ==================================
+    # #      TOMS_Delaunay Error Case     
+    # # ==================================
+
+    # from util.plotly import Plot
+    # surf = Delaunay()
+    # surf.fit(x,y)
+    # surf2 = qHullDelaunay()
+    # surf2.fit(x,y)
+
+    # # bad = np.array([.2, -.1])
+    # bad = np.array([-.01, .01])
+    # sp, sw = surf.points_and_weights(bad)
+    # s2p, s2w = surf2.points_and_weights(bad)
+
+    # np.savetxt("bad_train.csv", x)
+    # print("extrap_point = (\ %s \)"%(", ".join(map(str,bad))))
+    # print("OBTAINED simplex:", sp + 1)
+    # print("         weights:", sw)
+    # print("EXPECTED simplex:", s2p + 1)
+    # print("         weights:", s2w)
+
+    # p = Plot()
+    # p.add("Given Points", x[:,0], x[:,1], shade=False)
+    # p.add("Extrap Point", [bad[0]], [bad[1]], color="rgb(0,0,0)", shade=False)
+    # p.add("Obtained Simplex", (surf.pts.T)[sp][:,0],
+    #       (surf.pts.T)[sp][:,1], color=p.color(3), shade=False)
+    # p.add("Expected Simplex", surf2.pts[s2p][:,0],
+    #       surf2.pts[s2p][:,1], color=p.color(1), shade=False)
+    # p.show(file_name="bad_extrap.html", append=True)
+

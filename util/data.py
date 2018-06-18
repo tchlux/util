@@ -2,8 +2,13 @@ from util import COMMON_SEPERATORS, UPDATE_FREQUENCY, \
     MAX_ERROR_PRINTOUT, NP_TYPES, PY_TYPES, GENERATOR_TYPE
 from util.system import AtomicOpen
 
-# TODO:  Make "unique" for a struct give the unique rows?
-
+# TODO:  Add addition, subtraction, multiplication, and division
+#        operators to column objects.
+# TODO:  Non-singleton comparison operator for Column Column comparison.
+# TODO:  Test cases for "fill" method.
+# TODO:  "Data.fill" needs to take a Data object, group by common
+#        missing values, run rounds of prediction on each of those
+#        groups. Also needs to utilize parallelism with pmap.
 
 # Given "d" categories that need to be converted into real space,
 # generate a regular simplex in (d-1)-dimensional space. (all points
@@ -68,6 +73,18 @@ def get_type(string):
         except ValueError:
             return str
 
+# Return the given element without quotes (if it is a string)
+def without_quotes(s): 
+    is_str = (type(s) == str)
+    if is_str:
+        is_long_enough = (len(s) > 1)
+        if is_long_enough:
+            has_single_quotes = (s[0] == s[-1] == "'")
+            has_double_quotes = (s[0] == s[-1] == '"')
+            if (has_single_quotes or has_double_quotes):
+                return s[1:-1]
+    return s
+
 # Pre:  "filename" is the name of an existing file (including path)
 # Post: "filename" is scanned for viable seperators, those are all
 #       characters used the same number of times on each line. If at
@@ -126,9 +143,9 @@ def detect_seperator(filename="<no_provided_file>", verbose=False, opened_file=N
 # Pre:  "filename" is the name of a txt file that has a header
 #       "sep" is the seperator used in the data file
 #       "display" is True if the user wants the detected types printed
-# Post: A data.Struct class containing all data from the file.
-def read_struct(filename="<no_provided_file>", sep=None, types=None,
-                verbose=False, opened_file=None):
+# Post: A data.Data class containing all data from the file.
+def read_data(filename="<no_provided_file>", sep=None, types=None,
+              verbose=False, opened_file=None):
     import time
     if sep == None: sep = detect_seperator(filename, verbose, opened_file)
     # Get the opened file object
@@ -140,16 +157,16 @@ def read_struct(filename="<no_provided_file>", sep=None, types=None,
         file_name = f.name
     # Get the first line, assuming it's the header
     line = f.readline()
-    header = [n.strip() for n in line.strip().split(sep)]
+    header = [without_quotes(n.strip()).strip() for n in line.strip().split(sep)]
     # Get the first line of data and learn the types of each column
-    line = f.readline().strip().split(sep)
+    line = [without_quotes(v.strip()).strip() for v in f.readline().strip().split(sep)]
     # Automatically detect types (if necessary)
     type_digression = False
     if type(types) == type(None):
         types = list(map(get_type, line))
         type_digression = True
     # Initialize our data holder
-    data = Struct(names=header, types=types)
+    data = Data(names=header, types=types)
     # Add the first line to the data store (after inserting "None")
     while "" in line: line[line.index("")] = None
     data.append(line)
@@ -181,12 +198,14 @@ def read_struct(filename="<no_provided_file>", sep=None, types=None,
             print("\r%0.1f%% complete"% (100.0*i/len(raw_data)), flush=True, end="")
         # Read the line of data into a list format (replace empty string with None)
         list_line = line.strip().split(sep)
+        # Remove leading and trailing quotes from strings if necessary
+        list_line = [without_quotes(el).strip() for el in list_line]
         # Replace any empty strings with "None" for missing values
         while "" in list_line: list_line[list_line.index("")] = None
         # Try and add the line of data
         try:
             data.append(list_line)
-        except Struct.BadValue:
+        except Data.BadValue:
             if type_digression:
                 # Update the types based on digression order
                 new_types = list(map(get_type, line.strip().split(sep)))
@@ -216,19 +235,21 @@ def read_struct(filename="<no_provided_file>", sep=None, types=None,
                "         Consider setting 'verbose=True' and checking errors.")
     if verbose and (len(errors) > MAX_ERROR_PRINTOUT):
         print(f"ERRONEOUS LINES FROM DATA:\n  {errors}")
-    # Return the struct
+    # Return the data
     return data
 
 # ======================================================
-#      Python 'Struct' with named and typed columns     
+#      Python 'Data' with named and typed columns     
 # ======================================================
 
-# Define a python structure (named columns)
-class Struct(list):
+# Define a python data matrix structure (named and typed columns)
+class Data(list):
     # Default values for 'self.names' and 'self.types'
     names = None
     types = None
-    # Default maximum printed rows of this struct
+    # Default values for "numeric" representation of self.
+    numeric = None
+    # Default maximum printed rows of this data
     _max_display = 10
 
     # Local descriptive exceptions
@@ -246,33 +267,50 @@ class Struct(list):
     class BadData(Exception): pass
     class Empty(Exception): pass
     # Local mutable Column class (for column item assignment,
-    # retrieval, and iteration over a column in a struct).
+    # retrieval, and iteration over a column in a data object).
     class Column:
         index = 0
-        def __init__(self, struct, column):
-            # Store the parent struct and the column number 
-            self.struct = struct
+        def __init__(self, data, column, indices=None):
+            # Generate indices if they were not provided
+            if (type(indices) == type(None)):
+                indices = list(range(len(data)))
+            # Store the parent data and the column number 
+            self.data = data
             self.column = column
+            self.indices = indices
         def __setitem__(self, index, value):
-            # Default setitem for the parent struct
-            self.struct[index, self.column] = value
+            index = self.indices[index]
+            # Default setitem for the parent data
+            self.data[index, self.column] = value
         def __getitem__(self, index):
-            # Handle integer indices
+            # Default getitem for the parent data
             if (type(index) == int):
-                return self.struct[index, self.column]
-            # Handle slices as indices
-            return [self.struct[i,self.column] for
-                    i in range(len(self.struct))[index]]
-        def __len__(self): return len(self.struct)
+                index = self.indices[index]
+                return self.data[index, self.column]
+            elif (type(index) == slice):
+                index = range(len(self.indices))[index]
+            elif (hasattr(index, "__iter__")):
+                pass
+            else:
+                raise(self.data.BadIndex(f"Data column does not support indexing with type {type(index)}."))
+            # Convert provided index into a list of integers.
+            indices = []
+            for i in index:
+                if (type(i) != int):
+                    raise(self.data.BadIndex(f"Data column index iterable contained type {type(i)}, expected {int}."))                    
+                indices.append( self.indices[i] )
+            # Return a new column with modified indices.
+            return self.data.Column(self.data, self.column, indices)
+        def __len__(self): return len(self.indices)
         # Define this as an interator
         def __iter__(self):
             self.index = 0
             return self
         def __next__(self):
-            if (self.index >= len(self.struct)):
+            if (self.index >= len(self.indices)):
                 raise(StopIteration)
             self.index += 1
-            return self.struct[self.index-1, self.column]
+            return self.data[self.indices[self.index-1], self.column]
         # Use the iteration to generate a string of this column
         def __str__(self):
             return str(list(self))
@@ -282,14 +320,12 @@ class Struct(list):
         # Iterate over the indices that exist in a set of values
         def __eq__(self, group, equality=True):
             # Try to convert given group to an iterable type for comparison.
-            if (type(self.struct.types) == type(None)):
-                raise(self.struct.BadIndex(f"Cannot check equality against field '{self.struct.names[self.column]}' with without specified type."))
-            elif ((type(group) == self.struct.types[self.column]) or (type(group) == type(None))):
+            if ((type(group) == self.data.types[self.column]) or (type(group) == type(None))):
                 group = [group]
             elif (type(group) in {set, list}): 
                 pass
             else:
-                raise(self.struct.BadData(f"There is no defined equality operator for the provided type {type(group)}, when it does not match expected type {self.struct.types[self.column]}."))
+                raise(self.data.BadData(f"There is no defined equality operator for the provided type {type(group)}, when it does not match expected type {self.data.types[self.column]}."))
             # Iterate over rows, generating indices that match the equality.
             for i,v in enumerate(self):
                 if ((equality) and (v in group)):
@@ -316,6 +352,8 @@ class Struct(list):
             # Iterate over values in this column
             for i,v in enumerate(self):
                 if (v >= val): yield i
+    class SubColumn(Column):
+        indices = None
         
 
     #      Overwritten list Methods     
@@ -338,9 +376,9 @@ class Struct(list):
             if any(type(t) != type(type) for t in types):
                 raise(self.BadSpecifiedType(f"An entry of provided types was not of {type(type)} class."))
             self.types = types[:]
-        # WARNING: self.missing never shrinks, only grows with life of struct.
+        # WARNING: self.missing never shrinks, only grows with life of data.
         self.missing = set()
-        # If data was provided, put it into this struct
+        # If data was provided, put it into this data
         if type(data) != type(None):
             for row in data:
                 self.append(row)
@@ -358,11 +396,11 @@ class Struct(list):
         # Check length in case names already exist
         if (type(self.names) != type(None)):
             if (len(element) != len(self.names)):
-                raise(self.BadElement(f"Only elements of length {len(self.names)} can be added to this struct."))
+                raise(self.BadElement(f"Only elements of length {len(self.names)} can be added to this data."))
         # Check length in case types already exist
         if (type(self.types) != type(None)):
             if len(element) != len(self.types):
-                raise(self.BadElement(f"Only elements of length {len(self.types)} can be added to this struct."))                
+                raise(self.BadElement(f"Only elements of length {len(self.types)} can be added to this data."))                
             # Try type casing the new element
             for i, (val, typ) in enumerate(zip(element, self.types)):
                 # Record 'None' types as missing entries
@@ -381,9 +419,9 @@ class Struct(list):
                         # Otherwise raise an error to the user
                         raise(self.BadValue(f"Value '{val}' of type '{type(val)}' could not successfully be cast as '{typ}'."))
                     except TypeError:
-                        print("Struct error:", typ, typ==type(None))
+                        print("Data error:", typ, typ==type(None))
         else:
-            # Construct the expected "types" of this struct
+            # Construct the expected "types" of this data
             self.types = [type(val) for val in element]
         if (type(self.names) == type(None)):
             # Construct default names for each column
@@ -392,208 +430,140 @@ class Struct(list):
         super().append(list(element))
         # Add to the list of missing values if necessary
         if (missing_values): self.missing.add(id(self[-1]))
+        # If we are storing a numeric representation and there are no missing values
+        elif (type(self.numeric) != type(None)):
+            import numpy as np
+            # Get the real representation of the new row
+            new_row = np.array(self.numeric.to_real(self[-1]))
+            # Append the new row to the matrix of data.
+            self.numeric.data = np.concatenate((self.numeric.data,
+                                                new_row[None,:]))
 
-
-    # Make sure the copy of this struct is a deep copy
+    # Make sure the copy of this data is a deep copy
     def copy(self): return self[:]
 
     # Overwrite the standard "[]" get operator to accept strings as well.
     def __getitem__(self, index):
-        if (type(index) == str):
-            # Get the column of information under the given name
-            if type(self.names) == type(None):
-                raise(self.NoNamesSpecified("This struct does not have assigned 'names'."))
+        # Special case for being empty.
+        if ((type(self.names) == type(None)) or 
+            (type(self.types) == type(None))):
+            raise(self.Empty("Cannot get item from empty data."))
+        if ((type(index) == tuple) and (len(index) == 2) and 
+            (all(type(i) == int for i in index))):
+            # This index is accessing a (row,col) entry
+            return super().__getitem__(index[0])[index[1]]
+        elif (type(index) == int):
+            # This index is accessing a Data row
+            return super().__getitem__(index)
+        elif (type(index) == str):
+            # This index is accessing a column
             if (index not in self.names):
-                raise(self.UnknownName(f"This struct does not have a column named '{index}'."))
+                raise(self.UnknownName(f"This data does not have a column named '{index}'."))
             col_number = self.names.index(index)
             # Return a mutable "Column" object
             return type(self).Column(self, col_number)
-        elif (type(index) == slice):
-            # Construct a new "struct" with just the specified rows (deep copy)
-            new_struct = type(self)(names=self.names, types=self.types)
-            for row in super().__getitem__(index):
-                new_struct.append(row[:])
-            return new_struct                
-        elif (type(index) in {tuple,list}):
-            if all(type(i) == int for i in index):
-                if (type(index) == tuple) and (len(index) == 2):
-                    # Return the multi-dimensional index access
-                    return self[index[0]][index[1]]
-                else:
-                    # Assume that the user is accessing many rows by index
-                    new_struct = Struct(names=self.names, types=self.types)
-                    for row in index:
-                        new_struct.append( self[row][:] )
-                    return new_struct
-            elif all(type(i) in {int,slice,list,GENERATOR_TYPE} for i in index):
-                if (len(index) > 2):
-                    raise(self.BadIndex(f"The provided index, {index}, is not understood."))
-                # Convert first index into a list
-                if type(index[0]) == int:
-                    index = ([index[0]], index[1])
-                elif type(index[0]) == slice:
-                    index = (range(len(self))[index[0]], index[1])
-                elif type(index[0]) == GENERATOR_TYPE:
-                    index = (list(index[0]), index[1])
-                # Convert second index into a list
-                if type(index[1]) == int:
-                    index = (index[0], [index[1]])
-                elif type(index[1]) == slice:
-                    index = (index[0], range(len(self))[index[1]])
-                elif type(index[1]) == GENERATOR_TYPE:
-                    index = (index[0], list(index[1]))
-                # Iterate over both slices, generating a new struct
-                new_struct = type(self)(names=[self.names[i] for i in index[1]],
-                                        types=[self.types[i] for i in index[1]])
-                for row_idx in index[0]:
-                    new_struct.append(
-                        [self[row_idx][col_idx] for col_idx in index[1]]
-                    )
-                # Return the appropriate shape object based on index
-                if len(new_struct) == 1:
-                    # If the Struct has one row, return a 1D list
-                    return new_struct[0]
-                elif len(new_struct.names) == 1:
-                    # If the Struct has one column, return a 1D list
-                    return list(new_struct[new_struct.names[0]])
-                else:
-                    # Otherwise return a struct
-                    return new_struct
-            elif all(type(t)==str for t in index):
-                # The user is slicing by column name, get the requested
-                # columns and put them into a new struct
-                types = [self.types[self.names.index(n)] for n in index]
-                new_struct = type(self)(names=list(index), types=types)
-                for row in zip(*(self[n] for n in index)):
-                    new_struct.append(list(row))
-                return new_struct
-            else:
-                # This is not a recognized index.
-                raise(self.BadIndex(f"The provided index, {index}, is not understood."))
-        elif (type(index) == GENERATOR_TYPE):
-            # Iterate over integer indices provided by generator
-            new_struct = type(self)(names=self.names, types=self.types)
-            for row in index:
-                if (type(row) != int):
-                    raise(self.BadIndex(f"Generators as indices are only allowed to produce integers, encountered {type(row)}."))
-                new_struct.append(self[row][:])
-            return new_struct
-        elif ((type(index) == int) and 
-              (len(self) > 0) and
-              (index >= len(self)) and
-              (index < len(self)*len(self[0]))):
-            # This index is accessing this structure serially
-            row = index // len(self[0])
-            col = index % len(self[0])
-            return self[row][col]
         else:
-            # If this is a normal index, use the standard get-item
-            return super().__getitem__(index)
+            # This index is retrieving a sliced subset of self.
+            rows, cols = self._index_to_rows_cols(index)
+            names = [self.names[col] for col in cols]
+            types = [self.types[col] for col in cols]
+            new_data = type(self)(names=names, types=types)
+            for row in rows:
+                if type(row) != int:
+                    raise(self.BadIndex(f"The provided row index of type {type(row)}, {row}, is not understood."))
+                new_data.append( [self[row][col] for col in cols] )
+            return new_data
 
-    # Overwrite standard "[]" assignment operator to accept strings.
+    # Overwrite the standard "[]" get operator to accept strings as well.
     def __setitem__(self, index, value):
-        if (type(index) == str):
-            # Get the column of information under the given name
-            if type(self.names) == type(None):
-                raise(self.NoNamesSpecified("This struct does not have assigned 'names'."))
-            if (index not in self.names):
-                raise(self.UnknownName(f"This struct does not have a column named '{index}'."))
-            col_number = self.names.index(index)
-            # The new type will be recovered from the assigned values
-            new_type = None
-            # Set the values in self
-            for i,v in enumerate(value):
-                if (i >= len(self)):
-                    # If there are too many values, raise an error
-                    raise(self.BadAssignment(f"Column assignment requires a column of length {len(self)}, received object of at least length {i+1}."))
-                # If the value being assigned was missing, the new
-                # value is not missing, and this is the only missing
-                # value, update self.missing by removing this row.
-                if ((type(self[i][col_number]) == type(None)) and 
-                    (type(v) != type(None)) and
-                    (sum(type(e) == type(None) for e in self[i]) == 1)):
-                    self.missing.remove(id(self[i]))
-                # Update the value of the next entry in the struct
-                self[i][col_number] = v
-                if (type(v) == type(None)):
-                    # If this is a missing value, update internal records
-                    if (id(self[i]) not in self.missing):
-                        self.missing.add(id(self[i]))
-                elif (type(new_type) == type(None)):
-                    new_type = type(v)
-                elif (type(v) != new_type):
-                    # If this type is unexpected, raise an error
-                    raise(self.BadAssignment(f"Assigned column values were of type {new_type}, but encountered second type {type(v)}."))
-            else:
-                # If there were not enough values, raise an error
-                if (i != (len(self)-1)):
-                    raise(self.BadAssignment(f"Column assignment requires a column of length {len(self)}, received object of only length {i+1}."))
-            if (type(new_type) != type(None)):
-                # Update the new type stored in this column of the struct
-                self.types[col_number] = new_type
-        elif (type(index) == tuple):
-            # Otherwise, if the user provides a tuple of integers + slices
-            if all(type(i) in {int,slice,list,GENERATOR_TYPE} for i in index):
-                if (len(index) > 2):
-                    raise(self.BadIndex(f"The provided index, {index}, is not understood."))
-                # Make sure that both indices are slices
-                if type(index[0]) == int:
-                    index = ([index[0]], index[1])
-                elif type(index[0]) == slice:
-                    index = (range(len(self))[index[0]], index[1])
-                if type(index[1]) == int:
-                    index = (index[0], [index[1]])
-                elif type(index[1]) == slice:
-                    index = (index[0], range(len(self))[index[1]])
-                elif type(index[1]) == GENERATOR_TYPE:
-                    index = (index[0], list(index[1]))
-                # Check if a single value was provided, or multiple
-                singleton = type(value) not in {list, tuple, GENERATOR_TYPE, type(self)}
-                # Iterate over both slices
-                count = 0
-                for row in index[0]:
-                    for col in index[1]:
-                        if singleton:
-                            new_val = value
-                        else:
-                            new_val = value[count]
-                            count += 1
-                        # Check type of new value (and update self.missing)
-                        if ((type(new_val) == type(None)) and
-                            (id(self[row]) not in self.missing)):
-                            self.missing.add(id(self[row]))
-                        elif (self.types[col] == type(None)):
-                            self.types[col] = type(new_val)
-                        elif (type(new_val) != self.types[col]):
-                            raise(self.BadAssignment(f"Assigned value '{new_val}' of type {type(new_val)} does not match required type {self.types[col]}."))
-                        # If the value being assigned was missing, the new
-                        # value is not missing, and this is the only missing
-                        # value, update self.missing by removing this row.
-                        if ((type(self[row][col]) == type(None)) and 
-                            (type(new_val) != type(None)) and
-                            (sum(type(e) == type(None) for e in self[row]) == 1)):
+        self.numeric = None # Reset the numeric representation (if it existed)
+        # Special case for being empty.
+        if ((type(self.names) == type(None)) or 
+            (type(self.types) == type(None))):
+            raise(self.Empty("Cannot set item for empty data."))
+        # Special case assignment of new column
+        if ((type(index) == str) and (index not in self.names)):
+            return self.add_column(value, name=index)
+        # Normal usage case.
+        step = 0
+        singleton = not hasattr(value, '__iter__')
+        if not singleton: value_iter = value.__iter__()
+        rows, cols = self._index_to_rows_cols(index)
+        new_type = type(None)
+        for row in rows:
+            if type(row) != int:
+                raise(self.BadIndex(f"The provided row index of type {type(row)}, {row}, is not understood."))
+            for col in cols:
+                # Retreive next value from iterator if necessary.
+                if not singleton:
+                    try:
+                        value = value_iter.__next__()
+                    except StopIteration:
+                        raise(self.BadValue(f"Provided iterable only contained {step} elements, expected more."))
+                # Log missing value if that is what was provided
+                if (type(value) == type(None)):
+                    if (id(self[row]) not in self.missing):
+                        self.missing.add(id(self[row]))
+                # Handle type of new value appropriately
+                if (len(rows) == len(self)):
+                    # Check to find the type of the new column (if appropriate)
+                    if (new_type == type(None)):
+                        new_type = type(value)
+                    # Check the type of the new value being assigned
+                    elif (type(value) != new_type):
+                        raise(self.BadAssignment(f"Provided value {value} of type {type(value)} does not match expected type {new_type}."))
+                # The existing column doesn't have a type, assign it.
+                elif (self.types[col] == type(None)):
+                    self.types[col] = type(value)
+                # Check against the existing column type (for verification).
+                elif (type(value) != self.types[col]):
+                    raise(self.BadAssignment(f"Provided value {value} of type {type(value)} does not match expected type {self.types[col]}."))
+                # Make the assignment
+                super().__getitem__(row)[col] = value
+                # Remove entry from missing if appropriate.
+                if (type(value) != type(None)):
+                    if (id(self[row]) in self.missing):
+                        if (None not in self[row]):
                             self.missing.remove(id(self[row]))
-                        # Store the new value
-                        self[row][col] = new_val
-            else:
-                raise(self.BadIndex(f"The provided index, {index}, is not understood."))
-        else:
-            # TODO: This is setting an entire row, need to type check,
-            #       verify length, and update self.missing accordingly.
-            return super().__setitem__(index, value)
+                step += 1
+        # Update column type if it was totally reassigned.
+        if (len(rows) == len(self)):
+            self.types[cols[0]] = new_type
+        # Verify that the iterable has been exhausted.
+        if (not singleton):
+            try:
+                value = value_iter.__next__()
+                raise(self.BadAssignment(f"Column assignment requires a column of length {len(self)}, provided values iterable was too long."))
+            except StopIteration: pass
 
-    # Generate a descriptive string of this struct.
+    # Printout a brief table-format summary of this data.
     def __str__(self):
-        string = "\n"
-        string += f"{type(self)}\n"
-        string += f" names ({len(self.names)}):\n  {self.names}\n\n"
-        string += f" types:\n  {self.types}\n\n"
-        string += f" values ({len(self)}):\n"
+        # Special case for being empty.
+        if ((type(self.names) == type(None)) or 
+            (type(self.types) == type(None))):
+            return "This Data has no contents.\n"
+        # Make a pretty table formatted output
+        rows = []
+        rows += [ self.names ]
+        rows += [ list(map(lambda t: str(t)[8:-2],self.types)) ]
         for i,row in enumerate(self):
-            string += f"  {row}\n"
+            rows += [ row ]
             if i >= self._max_display: break
-        if len(self) > self._max_display:
-            string += "   ...\n"
+        rows = [list(map(str,r)) for r in rows]
+        lens = [max(len(r[c]) for r in rows)
+                for c in range(len(self.names))]
+        rows = [[v + " "*(lens[i]-len(v)) for i,v in enumerate(row)]
+                for row in rows]
+        rows = [" " + (" | ".join(row)) + "\n" for row in rows]
+        string = "\n" + "="*len(rows[0]) + "\n"
+        string += f"Size: ({len(self)} x {len(self.names)})\n\n"
+        string += rows[0]
+        string += rows[1]
+        string += "-"*len(rows[0]) + "\n"
+        for row in rows[2:]:                string += row
+        if (len(self) > self._max_display): string += "  ...\n"
+        string += "\n"
+        # Print some info about missing values if they exist.
         if len(self.missing) > 0:
             # Get the indices of missing elements
             indices = []
@@ -602,50 +572,123 @@ class Struct(list):
                     indices.append(i)
                 if len(indices) > self._max_display: break
             # Print out the missing values
-            string += f"\n missing ({len(self.missing)}): ["
+            string += f" missing values ({len(self.missing)}) at rows:\n  ["
             # Print out the indices of the rows with missing values
             for i in indices[:self._max_display]:
-                if (string[-1] != "["): string += ", "
-                string += f"{i}"
+                string += f"{i}, "
             if (len(indices) > self._max_display):
-                string += ", ..."
+                string += "..."
+            else:
+                string = string[:-2]
             string += "]\n"
-            # Print out the actual rows with missing values
-            for i in indices[:self._max_display]:
-                string += f"  {self[i]}\n"
-            if len(indices) > self._max_display:
-                string += "   ..."
-        return string + "\n"
+        string += "="*len(rows[0]) + "\n"
+        return string
 
     # Define a convenience funciton for concatenating another
-    # similarly typed and named struct to self.
-    def __iadd__(self, struct):
+    # similarly typed and named data to self.
+    def __iadd__(self, data):
+        self.numeric = None # Reset the numeric representation (if it existed)
         # Check for improper usage
-        if type(struct) != type(self):
-            raise(self.Unsupported(f"In-place addition only supports type {type(self)}, but {type(struct)} was given."))
-        # Copy names *only* if this struct does not have any
+        if type(data) != type(self):
+            raise(self.Unsupported(f"In-place addition only supports type {type(self)}, but {type(data)} was given."))
+        # Copy names *only* if this data does not have any
         if type(self.names) == type(None):
-            self.names = struct.names[:]
-        # Load in the struct
-        for row in struct:
+            self.names = data.names[:]
+        # Load in the data
+        for row in data:
             self.append(row)
         # Return self
         return self
 
+    # ========================
+    #      Custom Methods     
+    # ========================
+
+    # Given an index (of any acceptable type), convert it into an
+    # iterable of integer rows and a list of integer columns.
+    def _index_to_rows_cols(self, index):
+        # Special case for being empty.
+        if ((type(self.names) == type(None)) or 
+            (type(self.types) == type(None))):
+            raise(self.Empty("Cannot get rows and cols from empty data."))
+        # Standard usage.
+        if (type(index) == int):
+            rows = [index]
+            cols = list(range(len(self.names)))
+        elif (type(index) == str):
+            rows = range(len(self))
+            if index not in self.names:
+                raise(self.UnknownName(f"This data does not have a column named '{index}'."))
+            cols = [self.names.index(index)]
+        if ((type(index) == tuple) and (len(index) == 2) and 
+            (all(type(i) == int for i in index))):
+            # This index is accessing a (row,col) entry
+            rows = [index[0]]
+            cols = [index[1]]
+        elif (type(index) == slice):
+            # Construct a new "data" with just the specified rows (deep copy)
+            rows = range(len(self))[index]
+            cols = list(range(len(self.names)))
+        elif (hasattr(index, "__iter__")):
+            index = tuple(index)
+            # Special case for when a list of ints is used to access rows
+            if all(type(i)==int for i in index):
+                rows = index
+                cols = list(range(len(self.names)))
+            # Special case for when a list of strings is used to access columns
+            elif all(type(i)==str for i in index):
+                rows = range(len(self))
+                cols = []
+                for i in index:
+                    if i not in self.names:
+                        raise(self.UnknownName(f"This data does not have a column named '{i}'."))
+                    cols.append( self.names.index(i) )
+            else:
+                # Otherwise this should be a two-index for [row,col] access.
+                if (len(index) != 2):
+                    raise(self.BadIndex(f"The provided index, {index}, is not understood."))
+                # Create row index
+                if type(index[0]) == int:
+                    rows = [index[0]]
+                elif hasattr(index[0], "__iter__"):
+                    rows = index[0]
+                elif type(index[0]) == slice:
+                    rows = range(len(self))[index[0]]
+                else:
+                    raise(self.BadIndex(f"The provided index, {index}, is not understood."))
+                # Create column index
+                if type(index[1]) == int:
+                    cols = [index[1]]
+                elif hasattr(index[1], "__iter__"):
+                    cols = []
+                    for i in index[1]:
+                        if (type(i) not in {str,int}):
+                            raise(self.BadIndex(f"The provided column index of type {type(i)}, {i}, is not understood."))
+                        elif (type(i) == str):
+                            if (i not in self.names):
+                                raise(self.UnknownName(f"This data does not have a column named '{i}'."))
+                            i = self.names.index(i)
+                        cols.append( i )
+                elif type(index[1]) == slice:
+                    cols = list(range(len(self.names))[index[1]])
+                else:
+                    raise(self.BadIndex(f"The provided index, {index}, is not understood."))
+        return rows, cols
+
     # Convenience method for loading from file.
-    def load(path, *args, **read_struct_kwargs):
+    def load(path, *args, **read_data_kwargs):
         import pickle, dill, gzip
         # Handle two different usages of the 'load' function.
         if (type(path) != str): 
-            # If the user called "load" on an initialized struct, ignore
+            # If the user called "load" on an initialized data, ignore
             self = path
             if (len(args) == 1):
                 path = args[0]
             else:
-                raise(Struct.ImproperUsage("'load' method for Struct must be given a path."))
+                raise(Data.ImproperUsage("'load' method for Data must be given a path."))
         else:
-            # Otherwise define 'self' as a new Struct object.
-            self = Struct()
+            # Otherwise define 'self' as a new Data object.
+            self = Data()
         # Check for compression
         compressed = path[-path[::-1].index("."):] == "gz"
         file_opener = open
@@ -665,8 +708,8 @@ class Struct(list):
         elif (ext in {"csv", "txt", "tsv"}):
             mode = "r" + ("t" if compressed else "")
             with file_opener(path, mode) as f:
-                read_struct_kwargs["opened_file"] = f
-                self += read_struct(**read_struct_kwargs)
+                read_data_kwargs["opened_file"] = f
+                self += read_data(**read_data_kwargs)
         else:
             raise(self.Unsupported(f"Cannot load file with extension '{ext}'."))
         return self
@@ -702,16 +745,13 @@ class Struct(list):
             raise(self.Unsupported(f"Cannot save {'compressed ' if compressed else ''}file with base extension '{ext}'."))
         return self
 
-
-    #      Custom Methods     
-    # ========================
-
     # Given a new list of types, re-cast all elements of columns with
     # changed types into the newly specified type.
     def retype(self, types):
+        self.numeric = None # Reset the numeric representation (if it existed)
         if type(self.types) == type(None): self.types = types
         if (len(self.types) != len(types)):
-            raise(self.BadSpecifiedType(f"{type(self).retype} given {len(types)} types, this struct requires {len(self.types)}."))
+            raise(self.BadSpecifiedType(f"{type(self).retype} given {len(types)} types, this data requires {len(self.types)}."))
         for c, (new_t, old_t) in enumerate(zip(types, self.types)):
             if (new_t == old_t): continue
             # Update the stored type
@@ -724,8 +764,9 @@ class Struct(list):
                 except ValueError:
                     raise(self.BadSpecifiedType(f"Type casting {new_t} for column {c} is not compatible with existing value '{self[i][c]}' on row {i}."))
 
-    # Given a new column of data, add it to this Struct
+    # Given a new column of data, add it to this Data
     def add_column(self, column, name=None):
+        self.numeric = None # Reset the numeric representation (if it existed)
         # Verify the name
         if (type(name) == type(None)):
             num = 0
@@ -743,7 +784,7 @@ class Struct(list):
                 # Remove the added elements if the length was not right
                 for j in range(len(self)): self[j].pop(-1)
                 # Raise error for too long of a column
-                raise(self.BadData(f"Additional column has more elements than {len(self)}, the length of this struct."))
+                raise(self.BadData(f"Provided column has more elements than {len(self)}, the length of this data."))
             # Append the value to this row..
             self[i].append(val)
             if (type(val) == type(None)):
@@ -761,39 +802,31 @@ class Struct(list):
             # Remove the added elements if the length was not right
             for j in range(i+1): self[j].pop(-1)
             # Raise error for too short of a column
-            raise(self.BadData(f"Additional column has length greater than {len(self)}, the length of this struct."))
+            raise(self.BadData(f"Provided column has length greater than {len(self)}, the length of this data."))
         # Finally, record the new type
         self.types.append(new_type)
 
-    # Generate a compact numpy structured array from the contents of self.
-    def to_numpy_struct(self):
-        import numpy as np
-        # Generate the dtypes
-        dtypes = []
-        for i,(n,t) in enumerate(zip(self.names,self.types)):
-            if (t != str):
-                pair = (n,) + NP_TYPES[t]
-            else:
-                max_len = max(len(s) for s in self[n] if type(s) == str)
-                pair = (n,) + NP_TYPES[t][:1]+(max_len,)
-            dtypes.append(pair)
-        dtypes = np.dtype(dtypes)
-        # Return the numpy structured array
-        return np.array([tuple(row) for row in self if (id(row) not in self.missing)], 
-                        dtype=dtypes)
-
     # Generate a pair of functions. The first function will map rows
-    # of Struct to a real-valued list. The second function will map
+    # of Data to a real-valued list. The second function will map
     # real-valued lists back to rows in the original space.
     def generate_mapping(self):
         # Make sure we can handle this type of data
         if not all(t in {int,float,str} for t in self.types):
-            raise(self.Unsupported("A mapping is only designed for Structs composed of <float>, <int>, and <str> typed values."))
+            raise(self.Unsupported("A mapping is only designed for Data composed of <float>, <int>, and <str> typed values."))
         # Get those categoricals that need to be converted to reals
         names = self.names[:]
         types = self.types[:]
         cat_names = [n for (n,t) in zip(names,types) if (t == str)]
         cat_values = {n:sorted(set(self[n])-{None}) for n in cat_names}
+        # Identify those categories that should be removed (only 1 option)
+        to_remove = []
+        for n in cat_names:
+            if len(cat_values[n]) == 1:
+                to_remove.append(n)
+                cat_values[n] = []
+        for n in to_remove:
+            cat_names.remove(n)
+        # Get the categorical simplex mappings.
         cat_mappings = {n:regular_simplex(len(cat_values[n]))
                         for n in cat_names}
         num_inds = []
@@ -824,8 +857,15 @@ class Struct(list):
             real_row = []
             for (n,t,v) in zip(names, types, row):
                 # Check for the type of the elements of the row
-                if (t != type(v)):
+                if (type(v) == type(None)):
+                    if (t == str):
+                        real_row += [None] * len(cat_mappings[n][0])
+                    else:
+                        real_row += [None]
+                    continue
+                elif (type(v) != t):
                     raise(self.BadValue(f"Value '{v}' in provided row has wrong type. Got {type(v)}, expected {t}."))
+                # Handle the addition of a proper value
                 if (t == str):
                     # WARNING: Not handling "unrecognized categories"
                     cat_index = cat_values[n].index(v)
@@ -864,40 +904,70 @@ class Struct(list):
         # Return the two mapping functions and some info
         return to_real, real_to, real_names, num_inds, cat_inds
 
-    # Convert this Struct automatically to a real-valued array.
+    # Generate a compact numpy structured array from the contents of self.
+    def to_struct(self):
+        import numpy as np
+        # Generate the dtypes
+        dtypes = []
+        for i,(n,t) in enumerate(zip(self.names,self.types)):
+            if (t != str):
+                pair = (n,) + NP_TYPES[t]
+            else:
+                max_len = max(len(s) for s in self[n] if type(s) == str)
+                pair = (n,) + NP_TYPES[t][:1]+(max_len,)
+            dtypes.append(pair)
+        dtypes = np.dtype(dtypes)
+        # Return the numpy structured array
+        return np.array([tuple(row) for row in self if (id(row) not in self.missing)], 
+                        dtype=dtypes)
+
+    # Convert this Data automatically to a real-valued array.
     # Return real-valued array, function for going to real from
-    # elements of this Struct, function for going back to elements of
-    # this struct from a real vector.
-    def to_numpy_real(self):
+    # elements of this Data, function for going back to elements of
+    # this data from a real vector.
+    def to_matrix(self, print_column_width=70):
         import numpy as np
         to_real, real_to, real_names, num_inds, cat_inds = self.generate_mapping()
         data = []
         for row in self:
-            if None in row: continue
+            # How to handle rows with missing values?
+            if (id(row) in self.missing): continue
             data.append( to_real(row) )
         array = np.array(data)
         # Container for important post-processing information. 
         # 
-        # Info.to_real -- the function for processing regular
-        #                 vectors into associated real vectors
-        # Info.real_to -- the function for processing real vectors
-        #                 back into regular vector
-        # Info.names   -- meaningful column names for the real vectors
-        # Info.nums    -- standard numerical indices
-        # Info.cats    -- translated categorical indices
-        class Info: pass
-        # Generate an info object and return it with the array.
-        info = Info()
-        info.to_real = to_real
-        info.real_to = real_to
-        info.names = real_names
-        info.nums = num_inds
-        info.cats = cat_inds
-        # Return the numeric array
-        return array, info
+        # Numeric.to_real -- the function for processing regular
+        #                    vectors into associated real vectors
+        # Numeric.real_to -- the function for processing real vectors
+        #                    back into regular vector
+        # Numeric.names   -- meaningful column names for the real vectors
+        # Numeric.nums    -- standard numerical indices
+        # Numeric.cats    -- translated categorical indices
+        # Numeric.data    -- The numeric version of the data.
+        class Numeric:
+            def __str__(self):
+                str_real_names = ["  ["]
+                for n in real_names:
+                    if not ((len(str_real_names[0]) == 3) or
+                            (len(str_real_names[-1]) + len(n) < print_column_width)):
+                        str_real_names.append("   ")
+                    str_real_names[-1] += f"'{n}', "
+                str_real_names[-1] = str_real_names[-1][:-2] + "]"
+                str_real_names = "\n".join(str_real_names)
+                return f"Numeric object for data with {len(real_names)} columns named:\n{str_real_names}"
+        # Generate a container object and fill it.
+        numeric = Numeric()
+        numeric.to_real = to_real
+        numeric.real_to = real_to
+        numeric.names = real_names
+        numeric.nums = num_inds
+        numeric.cats = cat_inds
+        numeric.data = array
+        # Return the container object
+        return numeric
 
     # Collect the dictionaries of unique values (with counts) for each column.
-    def unique(self):
+    def counts(self):
         column_info = {n:{} for n in self.names}
         for row in self:
             for n,val in zip(self.names, row):
@@ -912,9 +982,59 @@ class Struct(list):
                     column_info.pop(n)
         return column_info
 
-    # Return an iterator that provides "k" (rest, fold) sub-structs
-    # from this struct. Randomly shuffle indices with seed "seed".
-    def k_fold(self, k=10, seed=0):
+    # Generate a new data with only the unique rows (by content) from this data.
+    def unique(self):
+        unique = type(self)(names=self.names, types=self.types)
+        found = set()
+        for row in self:
+            t_row = tuple(row)
+            if t_row not in found:
+                found.add(t_row)
+                unique.append(row)
+        return unique
+
+    # Given a Data that has at least one column with the same names as
+    # a column in self, collect all those values in non-mutual names
+    # in lists of values where the shared columns had the same content.
+    # 
+    # Example:
+    #   Combined with "unique", this function can be used to convert a
+    #   struct where some rows are repeats of each other having unique
+    #   values in only one column to a Data object with only unique
+    #   rows and one column contains lists of values associated with
+    #   each unique row.
+    # 
+    #   densified_data = data[some_columns].unique().collect(data)
+    # 
+    def collect(self, data):
+        # Get the names of shared columns and indices in each.
+        match_names = set(n for n in self.names if n in data.names)
+        self_columns = [i for (i,n) in enumerate(self.names) if n in match_names]
+        other_columns = [i for (i,n) in enumerate(data.names) if n in match_names]
+        # Collection columns
+        collections_names = [n for n in data.names if n not in match_names]
+        collections_columns  = [i for (i,n) in enumerate(data.names) if n not in match_names]
+        collections = {n:[] for n in collections_names}
+        # Perform the serach process
+        for search in self:
+            # Initialize storage for all matches
+            for n in collections_names:
+                collections[n].append([])
+            # Cycle all the rows of data
+            for match in data:
+                if all(search[sc] == match[oc] for (sc,oc) in zip(self_columns,other_columns)):
+                    # Add these unique values to collections
+                    for n,i in zip(collections_names, collections_columns):
+                        collections[n][-1].append( match[i] )
+        # Add the columns of matches to self
+        for n in collections_names:
+            self.add_column(collections[n], name=n)
+        # Return the self (that has been modified)
+        return self
+
+    # Return an iterator that provides "k" (rest, fold) sub-data
+    # from this data. Randomly shuffle indices with seed "seed".
+    def k_fold(self, k=10, seed=0, only_indices=False):
         # Generate random indices
         import random
         random.seed(seed)
@@ -926,30 +1046,91 @@ class Struct(list):
         # Store some variables for generating the folds
         total = len(self)
         source = self
-        # Construct iterator over folds
-        class kFoldIterator:
-            batch = 0
-            def __iter__(self): 
-                self.batch = 0
-                return self
-            def __next__(self):
-                # Stop iterating once the batch get's large
-                if self.batch >= k: raise(StopIteration)
-                # Otherwise, find the indices for training and testing
-                first = int(.5 + self.batch * total / k)
-                last = int(.5 + (self.batch + 1) * total / k)
-                fold = indices[first : last]
-                rest = indices[:first] + indices[last:]
-                self.batch += 1
-                return source[rest], source[fold]
-        # Return the iterator over the folds of this struct
-        return kFoldIterator()
+        for batch in range(k):
+            # Find the indices for training and testing
+            first = int(.5 + batch * total / k)
+            last = int(.5 + (batch + 1) * total / k)
+            fold = indices[first : last]
+            rest = indices[:first] + indices[last:]
+            if only_indices:
+                yield rest, fold
+            else:
+                yield source[rest], source[fold]
+
+    # Use a prediction method to fill missing values in a provided row.
+    def fill(self, row, method=None):
+        import numpy as np
+        # Get the numeric representation of self.
+        if type(self.numeric) == type(None):
+            self.numeric = self.to_matrix()
+        # Pick the filling method based on data size.
+        if (type(method) == type(None)):
+            # Use Delaunay if a simplex can be formed and there are fewer than 50 dimensions.
+            if ((self.numeric.data.shape[1] < 10) and 
+                (len(self) > self.numeric.data.shape[1])):
+                from util.algorithms import Delaunay
+                method = Delaunay()
+            # Use Voronoi if there are fewer than 1000 points.
+            elif (self.numeric.data.shape[0] < 20000):
+                from util.algorithms import Voronoi
+                method = Voronoi()
+            # Otherwise use nearest neighbor (can't get points + weights from NN)
+            else:
+                from util.algorithms import NearestNeighbor
+                method = NearestNeighbor()
+        # Get the numeric version of the provided row.
+        numeric_row = self.numeric.to_real(row)
+        # Identify the indices of known values and unknown values.
+        known_values = [i for i in range(len(numeric_row))
+                        if (type(numeric_row[i]) != type(None))]
+        unknown_values = [i for i in range(len(numeric_row))
+                          if (type(numeric_row[i]) == type(None))]
+        # Collect the unique numeric rows for training (and source locations)
+        unique_numeric_pts = {}
+        for i,pt in enumerate(self.numeric.data[:,known_values]):
+            pt = tuple(pt)
+            unique_numeric_pts[pt] = unique_numeric_pts.get(pt,[])+[i]
+        unique_numeric_data = np.array([pt for pt in unique_numeric_pts])
+        # Get the part of the numeric row
+        no_none_numeric_row = [v for v in numeric_row if (type(v) != type(None))]
+        # Fit a method and make a prediction for this row.
+        method.fit(unique_numeric_data)
+        pts, wts = method.points_and_weights(np.array(no_none_numeric_row))
+        fill_row = np.zeros(len(numeric_row))
+        all_sources = []
+        # Average the source (unique) points and weights (only 1)
+        for pt_idx, wt in zip(pts, wts):
+            pt = tuple(unique_numeric_data[pt_idx])
+            src_pts = unique_numeric_pts[pt]
+            avg = self.numeric.data[src_pts].mean(axis=0)
+            fill_row += avg * wt
+            all_sources += src_pts
+        # Transfer the filled numeric row into the original row
+        fill_row = self.numeric.real_to(fill_row)
+        for i,val in enumerate(fill_row):
+            if type(row[i]) == type(None):
+                # Set the value in the row to be the predicted fill value.
+                row[i] = val
+            else:
+                # Backwards correct predicted output to have known values.
+                fill_row[i] = row[i]
+        prediction_method = str(method)
+        # Construct a "Prediction" object with info about the prediction.
+        class Prediction:
+            given = known_values
+            filled = unknown_values
+            predictors = all_sources
+            weights = list(wts)
+            data = fill_row
+            method = prediction_method
+            def __str__(self): return f"{fill_row}"
+        return Prediction()
 
 
     # Give an overview (more detailed than just "str") of the contents
-    # of this struct. Useful for quickly understanding how data looks.
+    # of this data. Useful for quickly understanding how data looks.
     def summarize(self, max_display=None):
-        # Special case for an empty struct
+        # Special case for an empty data
         if len(self) == 0:
             print(self)
             return
@@ -994,7 +1175,7 @@ class Struct(list):
                         num = sum(counts[v] for v in counts if lower <= v < upper)
                         cap = ")"
                     perc = 100. * (num / len(self))
-                    print(f"    [{lower:.2e}, {upper:.2e}{cap} {num:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
+                    print(f"    [{lower:9.2e}, {upper:9.2e}{cap} {num:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
             else:
                 if t in {int, float}:
                     # Order the values by their inate ordering
@@ -1003,7 +1184,7 @@ class Struct(list):
                     # Order the values by their frequency and print
                     ordered_vals = sorted(counts, key=lambda v: -counts[v])
                 val_len = max(map(lambda v: len(str(v)), counts))
-                val_len = max(val_len, len("none"))
+                val_len = max(val_len, len("None"))
                 if (t == str): val_len += 2
                 if (none_count > 0):
                     perc = 100. * (none_count / len(self))
@@ -1011,7 +1192,7 @@ class Struct(list):
                 for val in ordered_vals[:max_display]:
                     perc = 100. * (counts[val] / len(self))
                     if (t == str):
-                        print(f"    \"{val}\"{'':{1+val_len-len(val)}s}{counts[val]:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
+                        print(f"    \"{val}\"{'':{1+val_len-len(str(val))}s}{counts[val]:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
                     else:
                         print(f"    {str(val):{val_len}s} {counts[val]:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
                 if (len(ordered_vals) > max_display):
@@ -1019,20 +1200,13 @@ class Struct(list):
             print()
 
 
-# TODO: Rewrite "read_struct" function to use the Struct class. Do not
-#       separately read into a python structure and then convert
-#       that. Read straight into the Struct. Use type digression to
-#       handle unexpected changes in types (when no types are
-#       provided). When types are provided and conversion fails, fill
-#       with "None" and print warning.
-
-# Some tests for the struct
-def test_struct():
+# Some tests for the data
+def test_data():
     import os
     import numpy as np
 
-    print("Testing Struct...", end=" ")
-    a = Struct()
+    print("Testing Data...", end=" ")
+    a = Data()
 
     # Verify append
     a.append([1,"a"])
@@ -1065,14 +1239,11 @@ def test_struct():
     b[:,0] = [3,1,4]
     assert(tuple(b["0"]) == tuple([3,1,4]))
 
-    # Verify serial indexing
-    assert(a[7] == "c")
-
     # Verify double indexing with integers
     assert(a[0,1] == "a")
 
     # Verify double indexing with slices
-    assert(tuple(a[::-1,1]) == tuple(["c","b","a"]))
+    assert(tuple(a[::-1,1]["1"]) == tuple(["c","b","a"]))
 
     # Verify standard index access
     assert(tuple(a[0]) == tuple([1,"a",1.2]))
@@ -1106,12 +1277,12 @@ def test_struct():
     assert(len(a.missing) == 1)
 
     # Verify the ability to construct real-valued arrays (and go back)
-    b, info = a.to_numpy_real()
-    c = Struct(map(info.real_to, b))
-    assert(tuple(a["1"][:-1]) == tuple(c["1"]))
-
+    numeric = a.to_matrix()
+    c = Data(map(numeric.real_to, numeric.data))
+    assert(tuple(a[:-1]["1"]) == tuple(c["1"]))
+    
     # Verify conversion into numpy structured array (without "None")
-    b = a.to_numpy_struct()
+    b = a.to_struct()
     assert(type(b) == np.ndarray)
     assert(type(b.dtype.names) == tuple)
     assert(tuple(b['1']) == tuple(a['1'][:-1]))
@@ -1119,7 +1290,6 @@ def test_struct():
     # Verify column item retrieval and assignment
     assert(a["0"][0] == a[0][0])
     a["0"][0] = -10
-    assert(a[0][0] == -10)
     a["0"][0] = 1
 
     # Verify total column assignment
@@ -1129,14 +1299,21 @@ def test_struct():
     assert(tuple(a["0"]) == tuple(new_col))
     a["0"] = first_col
 
+    # Verify new column assignment
+    b = a[:]
+    first_col = list(b["0"])
+    new_col = list(map(str,b["0"]))
+    b["0-str"] = new_col
+    assert(tuple(map(str,b["0"])) == tuple(b["0-str"]))
+
     # Verify that missing values are handled correctly by add_column
     b = a[:]
     b.add_column([1,2,3,4,None])
     assert(id(b[-1]) in b.missing)
     assert(len(b.missing) == 1)
 
-    # Verify copying a struct that has a 'None' in the first row
-    b = Struct(names=["0","1"], types=[int,str])
+    # Verify copying a data object that has a 'None' in the first row
+    b = Data(names=["0","1"], types=[int,str])
     b.append([0,None])
     b.append([1,'b'])
     c = b[:]
@@ -1148,25 +1325,25 @@ def test_struct():
 
     # Verify load and save of a csv file
     a.save("a-test.csv")
-    b = Struct().load("a-test.csv")
+    b = Data().load("a-test.csv")
     assert(tuple(a["0"]) == tuple(b["0"]))
     os.remove("a-test.csv")
 
     # Verify load and save of a pkl file
     a.save("a-test.pkl")
-    b = Struct.load("a-test.pkl")
+    b = Data.load("a-test.pkl")
     assert(tuple(a["0"]) == tuple(b["0"]))
     os.remove("a-test.pkl")
 
     # Verify load and save of a gzipped dill file
     a.save("a-test.dill.gz")
-    b = Struct().load("a-test.dill.gz")
+    b = Data().load("a-test.dill.gz")
     assert(tuple(a["0"]) == tuple(b["0"]))
     os.remove("a-test.dill.gz")
 
     # Verify load and save of a gzipped csv file
     a.save("a-test.csv.gz")
-    b = Struct().load("a-test.csv.gz")
+    b = Data().load("a-test.csv.gz")
     assert(tuple(a["0"]) == tuple(b["0"]))
     os.remove("a-test.csv.gz")
 
@@ -1187,7 +1364,7 @@ def test_struct():
     # WARNING: No tests for generator-based index assignment
 
     # Verify the generation of a random k-fold cross validation.
-    b = Struct()
+    b = Data()
     for i in range(37):
         b.append([i])
     # Collect the list of all the "testing" rows seen
@@ -1196,129 +1373,143 @@ def test_struct():
         all_test += list(test["0"])
     assert(sorted(all_test) == list(range(len(b))))
 
-    # Attempt to index an empty struct
-    b = Struct()
+    # Verify the identification of unique rows and collection process.
+    b = a[:]
+    b += a
+    cols = ['0','1']
+    b = b[cols].unique().collect(b)
+    assert(tuple(b[0,-1]) == tuple(2*[a[0,-1]]))
+
+    # Test the 'fill' method.
+    b = a[:]
+    b[-2,1] = 'd'
+    b.append( b[0] )
+    assert(str(b.fill(b[-2])) == str([-1,'a',1.8]))
+    assert(str(a.fill(a[-1])) == str([-1,'2',2.1]))
+
+    # Attempt to index an empty data
+    b = Data()
     try:
         b[0]
-    except IndexError: pass
+    except Data.Empty: pass
     else: assert(False)
 
-    # Try providing a generator that does not give integers
+    # Try providing a generator that does not give strictly integers
     try:
-        a[(v for v in ('a','b'))]
-    except Struct.BadIndex: pass
+        a[(v for v in ('a',1,'b'))]
+    except Data.BadIndex: pass
     else: assert(False)
 
     # Try adding a too-short row
     try:
         b = a[:]
         b.append([9,"z"])
-    except Struct.BadElement: pass
+    except Data.BadElement: pass
     else: assert(False)
 
     # Try a too-short column
     try:
         b = a[:]
         b.add_column([1])
-    except Struct.BadData: pass
+    except Data.BadData: pass
     else: assert(False)
 
     # Try a too-long column
     try:
         b = a[:]
         b.add_column(map(float,range(1000)))
-    except Struct.BadData: pass
+    except Data.BadData: pass
     else: assert(False)
 
     # Try adding a name that is not a string
     try:
         b = a[:]
         b.add_column([1,2,3,4,5], name=1)
-    except Struct.BadSpecifiedName: pass
+    except Data.BadSpecifiedName: pass
     else: assert(False)
 
     # Try adding a column with multiple types
     try:
         b = a[:]
         b.add_column([1,2,3,4,5.0])
-    except Struct.BadValue: pass
+    except Data.BadValue: pass
     else: assert(False)
 
     # Try a mismatched-type slice assignment
     try:
         b = a[:]
-        b[:,0] = 1.0
-    except Struct.BadAssignment: pass
+        b[:,0] = [1.0, 1, 1, 1, 1]
+    except Data.BadAssignment: pass
     else: assert(False)
 
     # Try a mismatched-type column assignment operation
     try:
         a["0"] = list(a["0"])[:-1] + ["0"]
-    except Struct.BadAssignment: pass
+    except Data.BadAssignment: pass
     else: assert(False)
 
     # Try a too-short column assignment operation
     try:
         a["0"] = list(map(str,a["0"]))[:-1]
-    except Struct.BadAssignment: pass
+    except Data.BadValue: pass
     else: assert(False)
 
     # Try a too-long column assignment operation
     try:
         a["0"] = list(map(str,a["0"])) + [1]
-    except Struct.BadAssignment: pass
+    except Data.BadAssignment: pass
     else: assert(False)
 
     # Try a bad combination of names and types
     try:
-        Struct(names=["a","b","c"], types=[str, str])
-    except Struct.NameTypeMismatch: pass
+        Data(names=["a","b","c"], types=[str, str])
+    except Data.NameTypeMismatch: pass
     else: assert(False)
 
     # Try a bad value in "names"
     try:
-        Struct(names=[1,2,3], types=["a","b","c"])
-    except Struct.BadSpecifiedName: pass
+        Data(names=[1,2,3], types=["a","b","c"])
+    except Data.BadSpecifiedName: pass
     else: assert(False)
 
     # Try a bad value in "types"
     try:
-        Struct(names=["a","b","c"], types=[1,2,3])
-    except Struct.BadSpecifiedType: pass
+        Data(names=["a","b","c"], types=[1,2,3])
+    except Data.BadSpecifiedType: pass
     else: assert(False)
 
     # Try bad value
     try:
         a.append(["a","b","c"])
-    except Struct.BadValue: pass
+    except Data.BadValue: pass
     else: assert(False)
 
     # Try bad element
     try:
         a.append([1,2])
-    except Struct.BadElement: pass
+    except Data.BadElement: pass
     else: assert(False)
 
     # Try non-existing column index
     try:
         a["hello"]
-    except Struct.UnknownName: pass
+    except Data.UnknownName: pass
     else: assert(False)
 
-    # Try column indexing an uninitialized struct
+    # Try column indexing an uninitialized data
     try:
-        Struct()["a"]
-    except Struct.NoNamesSpecified: pass
+        Data()["a"]
+    except Data.Empty: pass
     else: assert(False)
 
     # Done testing
     print("passed.")
 
 # =============================================================
-#      END OF Python 'Struct' with named and typed columns     
+#      END OF Python 'Data' with named and typed columns     
 # =============================================================
 
 
 # Run test cases
 if __name__ == "__main__":
-    test_struct()
+    test_data()

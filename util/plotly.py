@@ -444,7 +444,7 @@ class Plot:
     #  ... <standard "add" arguments with adjusted defaults> ...
     def add_region(self, name, func, min_max_x=None, min_max_y=None,
                    plot_points=PLOT_POINTS, mode="lines", opacity=0.1,
-                   fill="toself", line_width=0, **kwargs):
+                   fill="toself", line_width=0, nonconvex=True, **kwargs):
         from scipy.spatial import ConvexHull
         if self.is_3d: raise(Exception("ERROR: Regions only work for 2D plots."))
         if type(min_max_x) == type(None):
@@ -460,16 +460,19 @@ class Plot:
         y_vals = (np.linspace(*min_max_y, num=plot_points),)
         x,y = np.meshgrid(x_vals, y_vals)
         test_pts = np.vstack((x.flatten(), y.flatten())).T
-        region_pts = np.array([pt for pt in test_pts if func(pt)])
-        # Try reducing to the set of convex hull points for the region
-        # and plotting that, if it fails simply print an error message.
-        try:
+        in_region = np.array([func(pt) for pt in test_pts])
+        region_pts = test_pts[in_region]
+        if nonconvex:
+            opacity *= 3
+            self.add(name, region_pts[:,0], region_pts[:,1], mode='markers', symbol='square',
+                     opacity=opacity, marker_line_width=0, marker_size=10,**kwargs)
+        else:
+            # Try reducing to the set of convex hull points for the region
+            # and plotting that, if it fails simply print an error message.
             hull_pts = region_pts[ConvexHull(region_pts).vertices]
             self.add(name, hull_pts[:,0], hull_pts[:,1], mode=mode,
                      opacity=opacity, fill=fill,
                      line_width=line_width, **kwargs)
-        except:
-            print("ERROR: Could not add region.")
 
     # Decorated "add" function that automatically generates the
     # response values for a given "func" over a meshgrid using

@@ -525,7 +525,7 @@ CONTAINS
 
     REAL(KIND=REAL64), DIMENSION(:,:), INTENT(IN) :: pts
     REAL(KIND=REAL64), DIMENSION(2*SIZE(pts,1), SIZE(pts,2)),&
-         & INTENT(OUT) :: box_widths
+         & INTENT(INOUT) :: box_widths
     ! Holder for the upper and lower widths surrounding each box
     REAL(KIND=REAL64), DIMENSION(SIZE(pts,2)) :: distances
     ! Distances between points
@@ -562,7 +562,7 @@ CONTAINS
              box_widths(dim+SIZE(pts,1),box) = &
                   pts(dim,other_pt_idx) - pts(dim,box)
              box_widths(dim,other_pt_idx) = &
-                  pts(dim,box) - pts(dim,other_pt_idx)
+                  pts(dim,other_pt_idx) - pts(dim,box)
           END IF
        END IF rebuild_box
     END DO compute_box_shapes
@@ -662,6 +662,33 @@ CONTAINS
        !      SUM(mesh_values(step,:num_control_points))
     END DO compute_approximation
   END SUBROUTINE predict_box_mesh
+
+
+  SUBROUTINE predict_convex_mesh(boxes, widths, x_points, box_values, values)
+    ! Given box centers, box widths, response values for each box,
+    ! coefficients for each box, and new approximation points,
+    ! calculate approximate response values for each point using the
+    ! fit box mesh.
+
+    REAL (KIND=REAL64), INTENT(IN), DIMENSION(:,:) :: boxes
+    REAL (KIND=REAL64), INTENT(IN), DIMENSION(SIZE(boxes,1)*2, &
+         SIZE(boxes,2)) :: widths
+    REAL (KIND=REAL64), INTENT(IN), DIMENSION(:,:) :: x_points
+    REAL (KIND=REAL64), INTENT(IN), DIMENSION(SIZE(boxes,2)) :: box_values
+    REAL (KIND=REAL64), INTENT(OUT), DIMENSION(SIZE(x_points,2)) :: values
+
+    REAL (KIND=REAL64), DIMENSION(SIZE(x_points,2)&
+         &,SIZE(boxes,2)) :: box_vals
+    INTEGER :: step
+
+    CALL eval_box_mesh(boxes, widths, x_points, box_vals)
+    ! EVALUATE APPROXIMATION
+    compute_approximation : DO step = 1, SIZE(x_points,2)
+       ! Predictions made with NURBS-style blending
+       values(step) = SUM(box_vals(step,:) * box_values) / SUM(box_vals(step,:))
+    END DO compute_approximation
+  END SUBROUTINE predict_convex_mesh
+
 
   !                          Utilities                          
   !=============================================================
