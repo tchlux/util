@@ -2,13 +2,19 @@ from util import COMMON_SEPERATORS, UPDATE_FREQUENCY, \
     MAX_ERROR_PRINTOUT, NP_TYPES, PY_TYPES, GENERATOR_TYPE
 from util.system import AtomicOpen
 
+# TODO:  Add tests for empty data object.
+# TODO:  Add "Descriptor" class for Data.names and Data.types so that
+#        they can be directly modified by users safely (with checks).
+# TODO:  Add "Row" class that protects item assignment types over rows
+#        and allows for item-wise equality operator.
+# TODO:  Non-singleton comparison operator for Column Column comparison.
 # TODO:  Add addition, subtraction, multiplication, and division
 #        operators to column objects.
-# TODO:  Non-singleton comparison operator for Column Column comparison.
-# TODO:  Test cases for "fill" method.
 # TODO:  "Data.fill" needs to take a Data object, group by common
 #        missing values, run rounds of prediction on each of those
 #        groups. Also needs to utilize parallelism with pmap.
+# WARNING: Doing batch-assigment to column with type
+
 
 # Given "d" categories that need to be converted into real space,
 # generate a regular simplex in (d-1)-dimensional space. (all points
@@ -19,9 +25,11 @@ def regular_simplex(num_categories):
     import numpy as np
     class InvalidNumberOfCategories(Exception): pass
     # Special cases for one and two categories
-    if num_categories <= 1:
+    if num_categories < 1:
         raise(InvalidNumberOfCategories(
-            "Number of categories must be an integer greater than 1."))
+            "Number of categories must be an integer greater than 0."))
+    elif num_categories == 1:
+        return np.array([[]])
     elif num_categories == 2:
         return np.array([[0.],[1.]])
     # Standard case for >2 categories
@@ -352,9 +360,11 @@ class Data(list):
             # Iterate over values in this column
             for i,v in enumerate(self):
                 if (v >= val): yield i
-    class SubColumn(Column):
-        indices = None
-        
+
+    # Local class for iterating over 'rows' of this data object,
+    # prevents each row from being modified directly by users.
+    class Row(Column):
+        pass
 
     #      Overwritten list Methods     
     # ==================================
@@ -373,10 +383,9 @@ class Data(list):
             self.names = names[:]
         # Store the types if provided
         if (type(types) != type(None)):
-            if any(type(t) != type(type) for t in types):
+            if any(type(t) != type for t in types):
                 raise(self.BadSpecifiedType(f"An entry of provided types was not of {type(type)} class."))
             self.types = types[:]
-        # WARNING: self.missing never shrinks, only grows with life of data.
         self.missing = set()
         # If data was provided, put it into this data
         if type(data) != type(None):
@@ -439,9 +448,6 @@ class Data(list):
             self.numeric.data = np.concatenate((self.numeric.data,
                                                 new_row[None,:]))
 
-    # Make sure the copy of this data is a deep copy
-    def copy(self): return self[:]
-
     # Overwrite the standard "[]" get operator to accept strings as well.
     def __getitem__(self, index):
         # Special case for being empty.
@@ -461,34 +467,38 @@ class Data(list):
                 raise(self.UnknownName(f"This data does not have a column named '{index}'."))
             col_number = self.names.index(index)
             # Return a mutable "Column" object
-            return type(self).Column(self, col_number)
+            return Data.Column(self, col_number)
         else:
             # This index is retrieving a sliced subset of self.
             rows, cols = self._index_to_rows_cols(index)
             names = [self.names[col] for col in cols]
             types = [self.types[col] for col in cols]
-            new_data = type(self)(names=names, types=types)
+            new_data = Data(names=names, types=types)
             for row in rows:
                 if type(row) != int:
                     raise(self.BadIndex(f"The provided row index of type {type(row)}, {row}, is not understood."))
-                new_data.append( [self[row][col] for col in cols] )
+                new_data.append( [self[row,col] for col in cols] )
             return new_data
 
     # Overwrite the standard "[]" get operator to accept strings as well.
     def __setitem__(self, index, value):
-        self.numeric = None # Reset the numeric representation (if it existed)
         # Special case for being empty.
         if ((type(self.names) == type(None)) or 
             (type(self.types) == type(None))):
             raise(self.Empty("Cannot set item for empty data."))
+        self.numeric = None # Reset the numeric representation (if it existed)
         # Special case assignment of new column
         if ((type(index) == str) and (index not in self.names)):
             return self.add_column(value, name=index)
-        # Normal usage case.
-        step = 0
-        singleton = not hasattr(value, '__iter__')
-        if not singleton: value_iter = value.__iter__()
+        # Get the list of rows and list of columns being assigned.
         rows, cols = self._index_to_rows_cols(index)
+        # It is not a singleton if it has a defined iterator *and* 
+        # it has a differing type from one of the columns
+        singleton = not ( hasattr(value, '__iter__') and
+                any((type(value) != self.types[c]) for c in cols) )
+        if not singleton: value_iter = value.__iter__()
+        # Iterate over rows and perform assignment
+        step = 0
         new_type = type(None)
         for row in rows:
             if type(row) != int:
@@ -515,6 +525,10 @@ class Data(list):
                 # The existing column doesn't have a type, assign it.
                 elif (self.types[col] == type(None)):
                     self.types[col] = type(value)
+                # Mark this row as contianing a missing value if assigned 'None'.
+                elif (type(value) == type(None)):
+                    if (id(self[row]) not in self.missing):
+                        self.missing.add(id(self[row]))
                 # Check against the existing column type (for verification).
                 elif (type(value) != self.types[col]):
                     raise(self.BadAssignment(f"Provided value {value} of type {type(value)} does not match expected type {self.types[col]}."))
@@ -589,8 +603,8 @@ class Data(list):
     def __iadd__(self, data):
         self.numeric = None # Reset the numeric representation (if it existed)
         # Check for improper usage
-        if type(data) != type(self):
-            raise(self.Unsupported(f"In-place addition only supports type {type(self)}, but {type(data)} was given."))
+        if type(data) != Data:
+            raise(self.Unsupported(f"In-place addition only supports type {Data}, but {type(data)} was given."))
         # Copy names *only* if this data does not have any
         if type(self.names) == type(None):
             self.names = data.names[:]
@@ -599,6 +613,22 @@ class Data(list):
             self.append(row)
         # Return self
         return self
+
+    # Make sure the copy of this data is a deep copy.
+    def copy(self): return self[:]
+
+    # Overwrite the 'pop' method to track missing values.
+    def pop(self, index=-1):
+        if (id(self[index]) in self.missing):
+            self.missing.remove( id(self[index]) )
+        return super().pop(index)
+
+    # Overwrite the 'remove' method to track missing values.
+    def remove(self, index):
+        if (id(index) in self.missing):
+            self.missing.remove( id(index) )
+        return super().remove( index )
+
 
     # ========================
     #      Custom Methods     
@@ -620,14 +650,14 @@ class Data(list):
             if index not in self.names:
                 raise(self.UnknownName(f"This data does not have a column named '{index}'."))
             cols = [self.names.index(index)]
-        if ((type(index) == tuple) and (len(index) == 2) and 
+        elif ((type(index) == tuple) and (len(index) == 2) and 
             (all(type(i) == int for i in index))):
             # This index is accessing a (row,col) entry
             rows = [index[0]]
             cols = [index[1]]
         elif (type(index) == slice):
             # Construct a new "data" with just the specified rows (deep copy)
-            rows = range(len(self))[index]
+            rows = list(range(len(self))[index])
             cols = list(range(len(self.names)))
         elif (hasattr(index, "__iter__")):
             index = tuple(index)
@@ -637,7 +667,7 @@ class Data(list):
                 cols = list(range(len(self.names)))
             # Special case for when a list of strings is used to access columns
             elif all(type(i)==str for i in index):
-                rows = range(len(self))
+                rows = list(range(len(self)))
                 cols = []
                 for i in index:
                     if i not in self.names:
@@ -650,15 +680,19 @@ class Data(list):
                 # Create row index
                 if type(index[0]) == int:
                     rows = [index[0]]
-                elif hasattr(index[0], "__iter__"):
-                    rows = index[0]
                 elif type(index[0]) == slice:
-                    rows = range(len(self))[index[0]]
+                    rows = list(range(len(self))[index[0]])
+                elif hasattr(index[0], "__iter__"):
+                    rows = list(index[0])
                 else:
                     raise(self.BadIndex(f"The provided index, {index}, is not understood."))
                 # Create column index
                 if type(index[1]) == int:
                     cols = [index[1]]
+                elif type(index[1]) == str:
+                    if (index[1] not in self.names):
+                        raise(self.UnknownName(f"This data does not have a column named '{index[1]}'."))
+                    cols = [self.names.index(index[1])]
                 elif hasattr(index[1], "__iter__"):
                     cols = []
                     for i in index[1]:
@@ -747,24 +781,33 @@ class Data(list):
 
     # Given a new list of types, re-cast all elements of columns with
     # changed types into the newly specified type.
-    def retype(self, types):
+    def retype(self, types, columns=None):
+        # Special case for being empty.
+        if ((type(self.names) == type(None)) or 
+            (type(self.types) == type(None))):
+            raise(self.Empty("Cannot retype empty data."))
         self.numeric = None # Reset the numeric representation (if it existed)
-        if type(self.types) == type(None): self.types = types
-        if (len(self.types) != len(types)):
-            raise(self.BadSpecifiedType(f"{type(self).retype} given {len(types)} types, this data requires {len(self.types)}."))
-        for c, (new_t, old_t) in enumerate(zip(types, self.types)):
+        if (type(columns) == type(None)):
+            columns = self.names[:]
+        if (len(types) != len(columns)):
+            raise(self.BadSpecifiedType(f"{Data.retype} given {len(types)} types, epxected {len(columns)}."))
+        for (new_t, col) in zip(types, columns):
+            if (col not in self.names):
+                raise(self.BadSpecifiedName(f"No column named '{col}' exists in this data."))
+            c = self.names.index(col)
+            old_t = self.types[c]
             if (new_t == old_t): continue
             # Update the stored type
             self.types[c] = new_t
             # Retype all non-missing elements in that column (in place)
             for i in range(len(self)):
-                if (type(self[i][c]) == type(None)): continue
+                if (type(self[i,c]) == type(None)): continue
                 try:
-                    self[i][c] = new_t(self[i][c])
+                    self[i,c] = new_t(self[i,c])
                 except ValueError:
-                    raise(self.BadSpecifiedType(f"Type casting {new_t} for column {c} is not compatible with existing value '{self[i][c]}' on row {i}."))
+                    raise(self.BadSpecifiedType(f"Type casting {new_t} for column {c} is not compatible with existing value '{self[i,c]}' on row {i}."))
 
-    # Given a new column of data, add it to this Data
+    # Given a new column, add it to this Data.
     def add_column(self, column, name=None):
         self.numeric = None # Reset the numeric representation (if it existed)
         # Verify the name
@@ -777,7 +820,7 @@ class Data(list):
         else:
             self.names.append(name)
         # Verify the column type dynamically. Add new values to all rows.
-        new_type = type(None)
+        new_type = type(None);
         for i,val in enumerate(column):
             # Verify valid index first..
             if (i >= len(self)):
@@ -816,16 +859,9 @@ class Data(list):
         # Get those categoricals that need to be converted to reals
         names = self.names[:]
         types = self.types[:]
+        cat_constants = {}
         cat_names = [n for (n,t) in zip(names,types) if (t == str)]
         cat_values = {n:sorted(set(self[n])-{None}) for n in cat_names}
-        # Identify those categories that should be removed (only 1 option)
-        to_remove = []
-        for n in cat_names:
-            if len(cat_values[n]) == 1:
-                to_remove.append(n)
-                cat_values[n] = []
-        for n in to_remove:
-            cat_names.remove(n)
         # Get the categorical simplex mappings.
         cat_mappings = {n:regular_simplex(len(cat_values[n]))
                         for n in cat_names}
@@ -845,11 +881,10 @@ class Data(list):
                 # Record the indices of categorical mappings
                 cat_inds += list(counter+i for i in range(len(cat_values[n])-1))
                 counter = cat_inds[-1] + 1
-        real_dim = len(real_names)
 
         # Generate a function that takes a row in the original space
         # and generates a row in the associated real-valued space.
-        def to_real(row):
+        def to_real(row, fill=False):
             # Check for row length
             if (len(row) != len(names)):
                 raise(self.BadElement(f"Provided row has {len(row)} elements, expected {len(names)}."))
@@ -863,43 +898,65 @@ class Data(list):
                     else:
                         real_row += [None]
                     continue
-                elif (type(v) != t):
-                    raise(self.BadValue(f"Value '{v}' in provided row has wrong type. Got {type(v)}, expected {t}."))
+                elif (type(v) != t) and (t != type(None)):
+                    try:    v = t(v)
+                    except: raise(self.BadValue(f"Value '{v}' in provided row has wrong type. Got {type(v)}, expected {t} and could not succesfully cast."))
                 # Handle the addition of a proper value
                 if (t == str):
                     # WARNING: Not handling "unrecognized categories"
-                    cat_index = cat_values[n].index(v)
-                    mapped_vec = cat_mappings[n][cat_index]
-                    real_row += list(mapped_vec)
+                    if v in cat_values[n]:
+                        cat_index = cat_values[n].index(v)
+                        mapped_vec = cat_mappings[n][cat_index]
+                        real_row += list(mapped_vec)
+                    elif (not fill):
+                        # Only raise an error if it's wanted
+                        raise(self.BadValue(f"Unrecognized categorical value {v} for column {n}."))
+                    else:
+                        # Put a filler value in for the unknown (middle category)
+                        real_row += [0.] * (len(cat_values[n]) - 1)
                 else:
                     real_row += [float(v)]
+            # Check for row length
+            if (len(real_row) != len(real_names)):
+                raise(self.BadElement(f"Provided row has {len(row)} elements, translation to {len(real_names)} unsuccesful, only created {len(real_row)}."))
             # Return the real-valued vector
             return real_row
 
         # Generate a function that takes a row in the real-valued
         # space and generates a row in the original space.
-        def real_to(real_row):
+        def real_to(real_row, bias={}):
             import numpy as np
-            real_row = list(real_row)
             # Verify length of real-vector
-            if (len(real_row) != real_dim):
-                raise(self.BadElement(f"Provided real vector has {len(real_row)} elements, expected {real_dim}."))
+            real_row = list(real_row)
+            if (len(real_row) != len(real_names)):
+                raise(self.BadElement(f"Provided real vector has {len(real_row)} elements, expected {len(real_names)}."))
             # Build the original row
             row = []
             for (n,t) in zip(names, types):
                 if (t == str):
                     num_categories = len(cat_values[n])
                     vec = np.array(real_row[:num_categories-1])
+                    # Get the weights for each of the categorical values.
+                    cat_weights = np.array(
+                        [(bias[n][c] if (n in bias and c in bias[n]) else 1.0)
+                         for c in cat_values[n]])
                     # Handle reverse-categorical mapping
-                    closest_cat = np.argmin(np.sum((cat_mappings[n] - vec)**2,axis=1))
+                    closest_cat = np.argmin(np.sum((cat_mappings[n] - vec)**2, axis=1) / cat_weights)
                     category = cat_values[n][closest_cat]
                     row += [category]
                     # Reduce the length of the real-valued row
                     real_row = real_row[num_categories-1:]
                 elif (t == int):
+                    # Use the rounded version of the integer
                     row += [int(real_row.pop(0) + .5)]
                 else:
+                    # Use the float representation of the numpy floatf
                     row += [float(real_row.pop(0))]
+            if (len(real_row) > 0):
+                raise("Left over values!")
+            # Check for row length
+            if (len(row) != len(names)):
+                raise(self.BadElement(f"Provided row has {len(real_row)} elements, translation to {len(names)} unsuccesful, only created {len(row)}."))
             return row
         # Return the two mapping functions and some info
         return to_real, real_to, real_names, num_inds, cat_inds
@@ -944,11 +1001,15 @@ class Data(list):
         # Numeric.nums    -- standard numerical indices
         # Numeric.cats    -- translated categorical indices
         # Numeric.data    -- The numeric version of the data.
+        # Numeric.shift   -- How to shift this data to have min 0.
+        # Numeric.scale   -- How to scale this data (after shift) to 
+        #                    have a domain of [0., 1.]
         class Numeric:
             def __str__(self):
-                str_real_names = ["  ["]
+                opener = "  ["
+                str_real_names = [opener]
                 for n in real_names:
-                    if not ((len(str_real_names[0]) == 3) or
+                    if not ((len(str_real_names[0]) == len(opener)) or
                             (len(str_real_names[-1]) + len(n) < print_column_width)):
                         str_real_names.append("   ")
                     str_real_names[-1] += f"'{n}', "
@@ -963,6 +1024,11 @@ class Data(list):
         numeric.nums = num_inds
         numeric.cats = cat_inds
         numeric.data = array
+        # Compute the shift and scale for normalization (of numeric values)
+        numeric.shift = np.min(array, axis=0)
+        numeric.scale = np.max(array, axis=0) - numeric.shift
+        numeric.shift[cat_inds] = 0.
+        numeric.scale[cat_inds] = 1.
         # Return the container object
         return numeric
 
@@ -984,7 +1050,7 @@ class Data(list):
 
     # Generate a new data with only the unique rows (by content) from this data.
     def unique(self):
-        unique = type(self)(names=self.names, types=self.types)
+        unique = Data(names=self.names, types=self.types)
         found = set()
         for row in self:
             t_row = tuple(row)
@@ -1045,68 +1111,110 @@ class Data(list):
         random.seed()
         # Store some variables for generating the folds
         total = len(self)
-        source = self
+        if (type(self) != Data): only_indices = True
+        if not only_indices:     source = self
         for batch in range(k):
             # Find the indices for training and testing
             first = int(.5 + batch * total / k)
             last = int(.5 + (batch + 1) * total / k)
             fold = indices[first : last]
             rest = indices[:first] + indices[last:]
-            if only_indices:
-                yield rest, fold
-            else:
-                yield source[rest], source[fold]
+            if only_indices: yield rest, fold
+            else:            yield source[rest], source[fold]
 
-    # Use a prediction method to fill missing values in a provided row.
-    def fill(self, row, method=None):
+    # Use a prediction model to fill missing values in a provided row.
+    def fill(self, row, model=None, weights=None, bias={}):
         import numpy as np
         # Get the numeric representation of self.
         if type(self.numeric) == type(None):
             self.numeric = self.to_matrix()
-        # Pick the filling method based on data size.
-        if (type(method) == type(None)):
-            # Use Delaunay if a simplex can be formed and there are fewer than 50 dimensions.
-            if ((self.numeric.data.shape[1] < 10) and 
-                (len(self) > self.numeric.data.shape[1])):
-                from util.algorithms import Delaunay
-                method = Delaunay()
-            # Use Voronoi if there are fewer than 1000 points.
-            elif (self.numeric.data.shape[0] < 20000):
+        # Pick the filling model based on data size.
+        if (type(model) == type(None)):
+            # Use Voronoi if there are fewer than 10000 points.
+            if (len(self) <= 10000):
                 from util.algorithms import Voronoi
-                method = Voronoi()
+                model = Voronoi()
             # Otherwise use nearest neighbor (can't get points + weights from NN)
             else:
                 from util.algorithms import NearestNeighbor
-                method = NearestNeighbor()
+                model = NearestNeighbor()
+        # Set the weights accordingly
+        if (type(weights) == type(None)):
+            weights = np.ones(self.numeric.data.shape[1])
+        elif (len(weights) != len(self.names)):
+            raise(self.BadValue("Weights vector is length {len(weights)}, expected length {len(self.names)}."))
+        else:
+            # Convert the provided weight to the correct shape.
+            col_weights, weights = weights, []
+            col_inds = list(range(len(self.numeric.names)))
+            while (len(col_inds) > 0):
+                if (col_inds[0] not in self.numeric.cats):
+                    col_inds.pop(0)
+                    weights.append( col_weights.pop(0) )
+                else:
+                    for i in range(1,len(col_inds)):
+                        not_categorical = (col_inds[i] not in self.numeric.cats)
+                        beginning_of_next = ("1" == 
+                            self.numeric.names[col_inds[i]].split('-')[-1])
+                        if (not_categorical or beginning_of_next): break
+                    else: i += 1
+                    col_inds = col_inds[i:]
+                    weights += [col_weights.pop(0)] * i
+            weights = np.array(weights)
+        # Get the indices of the known and unknown values in this row.
+        row_known = [i for i in range(len(row)) if (type(row[i]) != type(None))]
+        row_unknown = [i for i in range(len(row)) if (type(row[i]) == type(None))]
         # Get the numeric version of the provided row.
-        numeric_row = self.numeric.to_real(row)
+        numeric_row = self.numeric.to_real(row, fill=True)
         # Identify the indices of known values and unknown values.
-        known_values = [i for i in range(len(numeric_row))
-                        if (type(numeric_row[i]) != type(None))]
-        unknown_values = [i for i in range(len(numeric_row))
-                          if (type(numeric_row[i]) == type(None))]
-        # Collect the unique numeric rows for training (and source locations)
-        unique_numeric_pts = {}
-        for i,pt in enumerate(self.numeric.data[:,known_values]):
-            pt = tuple(pt)
-            unique_numeric_pts[pt] = unique_numeric_pts.get(pt,[])+[i]
-        unique_numeric_data = np.array([pt for pt in unique_numeric_pts])
+        known_values = np.array([i for i in range(len(numeric_row))
+                                 if (type(numeric_row[i]) != type(None))])
+        unknown_values = np.array([i for i in range(len(numeric_row))
+                                   if (type(numeric_row[i]) == type(None))])
         # Get the part of the numeric row
-        no_none_numeric_row = [v for v in numeric_row if (type(v) != type(None))]
-        # Fit a method and make a prediction for this row.
-        method.fit(unique_numeric_data)
-        pts, wts = method.points_and_weights(np.array(no_none_numeric_row))
-        fill_row = np.zeros(len(numeric_row))
-        all_sources = []
-        # Average the source (unique) points and weights (only 1)
-        for pt_idx, wt in zip(pts, wts):
-            pt = tuple(unique_numeric_data[pt_idx])
-            src_pts = unique_numeric_pts[pt]
-            avg = self.numeric.data[src_pts].mean(axis=0)
-            fill_row += avg * wt
-            all_sources += src_pts
+        no_none_numeric_row = np.array([numeric_row[i] for i in known_values])
+        # Normalize the numeric row (to debias numeric scale differences)
+        no_none_numeric_row = ((no_none_numeric_row - self.numeric.shift[known_values])
+                               / self.numeric.scale[known_values]) * weights[known_values]
+        # Fit the model and make a prediction for this row.
+        if hasattr(model, 'points_and_weights'):
+            # Collect the unique numeric rows for training (and source locations)
+            unique_numeric_pts = {}
+            for i,pt in enumerate(self.numeric.data[:,known_values]):
+                pt = tuple(pt)
+                unique_numeric_pts[pt] = unique_numeric_pts.get(pt,[])+[i]
+            unique_numeric_data = np.array([pt for pt in unique_numeric_pts])
+            # Normalize the numeric points (to debias numerical scale differences).
+            normalized_numeric_data = ((unique_numeric_data - self.numeric.shift[known_values])
+                                       / self.numeric.scale[known_values]) * weights[known_values]
+            # Fit the model (just to the points)
+            model.fit(normalized_numeric_data)
+            del(normalized_numeric_data)
+            pts, wts = model.points_and_weights(np.array(no_none_numeric_row))
+            fill_row = np.zeros(self.numeric.data.shape[1])
+            all_sources = []
+            # Average the source (unique) points and weights (only 1)
+            for pt_idx, wt in zip(pts, wts):
+                pt = tuple(unique_numeric_data[pt_idx])
+                src_pts = unique_numeric_pts[pt]
+                avg = self.numeric.data[src_pts].mean(axis=0)
+                fill_row += avg * wt
+                all_sources += [src_pts]
+        else:
+            # The model does not have a '.points_and_weights' function.
+            # Get the normalized training point locations.
+            normalized_numeric_data = (
+                (self.numeric.data[:,known_values] - self.numeric.shift[known_values])
+                / self.numeric.scale[known_values]) * weights[known_values]
+            # Fit the model to the input points and output points.
+            model.fit(normalized_numeric_data, self.numeric.data[:,unknown_values])
+            del(normalized_numeric_data)
+            all_sources = list(range(self.numeric.data.shape[0]))
+            wts = [None]
+            # Use the model to make a prediction.
+            fill_row = model.predict(no_none_numeric_row)
         # Transfer the filled numeric row into the original row
-        fill_row = self.numeric.real_to(fill_row)
+        fill_row = self.numeric.real_to(fill_row, bias=bias)
         for i,val in enumerate(fill_row):
             if type(row[i]) == type(None):
                 # Set the value in the row to be the predicted fill value.
@@ -1114,18 +1222,49 @@ class Data(list):
             else:
                 # Backwards correct predicted output to have known values.
                 fill_row[i] = row[i]
-        prediction_method = str(method)
+        prediction_model = str(model)
         # Construct a "Prediction" object with info about the prediction.
         class Prediction:
-            given = known_values
-            filled = unknown_values
+            parent = self
+            model = prediction_model
+            given = row_known
+            filled = row_unknown
             predictors = all_sources
             weights = list(wts)
             data = fill_row
-            method = prediction_method
-            def __str__(self): return f"{fill_row}"
+            def __str__(self): 
+                string =  f"Prediction made with {self.model}\n"
+                string += f"  Given {[self.parent.names[i] for i in self.given]}\n"
+                string += f"   {[self.data[i] for i in self.given]}\n"
+                string += f"  Filled {[self.parent.names[i] for i in self.filled]}\n"
+                string += f"   {[self.data[i] for i in self.filled]}\n"
+                string += f"  Indices of source row (collections)\n"
+                string += f"   {self.predictors}\n"
+                string += f"  Weights of source row (collections)\n"
+                string += f"   {self.weights}\n"
+                return string
         return Prediction()
 
+    # Given a single column of this data to try and predict, run a
+    # k-fold cross validation over predictions using 'fill'.
+    def predict(self, target_columns, model=None, weights=None, bias={}):
+        results = []
+        for k,(train, test) in enumerate(self.k_fold(only_indices=True)):
+            # Get the training and testing data
+            train_data = self[train]
+            test_data = self[test]
+            # Reassign target value to be 'missing'
+            test_data[target] = None
+            # Re-fill the rows by predicting.
+            for i,row in enumerate(test_data):
+                print(f"  {k} -- {i}:{len(test)}",end="\r",flush=True)
+                output = train_data.fill(row, bias=bias)
+            results += list(zip(test, test_data[target]))
+        print(" "*70, end="\r", flush=True)
+        # Sort the results by the original indices
+        results.sort()
+        results = [guess for (i,guess) in results]
+        return results
 
     # Give an overview (more detailed than just "str") of the contents
     # of this data. Useful for quickly understanding how data looks.
@@ -1384,19 +1523,30 @@ def test_data():
     b = a[:]
     b[-2,1] = 'd'
     b.append( b[0] )
-    assert(str(b.fill(b[-2])) == str([-1,'a',1.8]))
-    assert(str(a.fill(a[-1])) == str([-1,'2',2.1]))
+    assert(str(b.fill(b[-2]).data) == str([-1,'a',1.8]))
+    assert(str(a.fill(a[-1]).data) == str([-1,'2',2.1]))
+
+    # Test cases for using "fill" with weights.
+    b.pop(-2)
+    b["3"] = b["2"]
+    b["2"] = b["1"]
+    b[-1,-2] = 'b'
+    b[-1,-1] = None
+    condense = lambda v: str(v)[:4]
+    assert(tuple(map(condense, b.fill(b[-1], weights=[1., 2., 3., 4.]).data))
+           == ('1', 'a', 'b', '2.50'))
+    b[-1,-1] = None
+    assert(tuple(map(condense, b.fill(b[-1], weights=[100., 10., 1., 1000.]).data))
+           == ('1', 'a', 'b', '1.21'))
 
     # Attempt to index an empty data
     b = Data()
-    try:
-        b[0]
+    try:   b[0]
     except Data.Empty: pass
     else: assert(False)
 
     # Try providing a generator that does not give strictly integers
-    try:
-        a[(v for v in ('a',1,'b'))]
+    try:   a[(v for v in ('a',1,'b'))]
     except Data.BadIndex: pass
     else: assert(False)
 
@@ -1443,62 +1593,52 @@ def test_data():
     else: assert(False)
 
     # Try a mismatched-type column assignment operation
-    try:
-        a["0"] = list(a["0"])[:-1] + ["0"]
+    try:   a["0"] = list(a["0"])[:-1] + ["0"]
     except Data.BadAssignment: pass
     else: assert(False)
 
     # Try a too-short column assignment operation
-    try:
-        a["0"] = list(map(str,a["0"]))[:-1]
+    try:   a["0"] = list(map(str,a["0"]))[:-1]
     except Data.BadValue: pass
     else: assert(False)
 
     # Try a too-long column assignment operation
-    try:
-        a["0"] = list(map(str,a["0"])) + [1]
+    try:   a["0"] = list(map(str,a["0"])) + [1]
     except Data.BadAssignment: pass
     else: assert(False)
 
     # Try a bad combination of names and types
-    try:
-        Data(names=["a","b","c"], types=[str, str])
+    try:   Data(names=["a","b","c"], types=[str, str])
     except Data.NameTypeMismatch: pass
     else: assert(False)
 
     # Try a bad value in "names"
-    try:
-        Data(names=[1,2,3], types=["a","b","c"])
+    try:   Data(names=[1,2,3], types=["a","b","c"])
     except Data.BadSpecifiedName: pass
     else: assert(False)
 
     # Try a bad value in "types"
-    try:
-        Data(names=["a","b","c"], types=[1,2,3])
+    try:   Data(names=["a","b","c"], types=[1,2,3])
     except Data.BadSpecifiedType: pass
     else: assert(False)
 
     # Try bad value
-    try:
-        a.append(["a","b","c"])
+    try:   a.append(["a","b","c"])
     except Data.BadValue: pass
     else: assert(False)
 
     # Try bad element
-    try:
-        a.append([1,2])
+    try:   a.append([1,2])
     except Data.BadElement: pass
     else: assert(False)
 
     # Try non-existing column index
-    try:
-        a["hello"]
+    try:   a["hello"]
     except Data.UnknownName: pass
     else: assert(False)
 
     # Try column indexing an uninitialized data
-    try:
-        Data()["a"]
+    try:   Data()["a"]
     except Data.Empty: pass
     else: assert(False)
 
