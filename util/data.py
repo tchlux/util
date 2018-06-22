@@ -1,6 +1,7 @@
 from util import COMMON_SEPERATORS, UPDATE_FREQUENCY, \
     MAX_ERROR_PRINTOUT, NP_TYPES, PY_TYPES, GENERATOR_TYPE
 from util.system import AtomicOpen
+from util.algorithms import WeightedApproximator
 
 # TODO:  Add tests for empty data object.
 # TODO:  Add "Descriptor" class for Data.names and Data.types so that
@@ -270,6 +271,7 @@ class Data(list):
     class Unsupported(Exception): pass
     class BadAssignment(Exception): pass
     class BadElement(Exception): pass
+    class BadTarget(Exception): pass
     class BadValue(Exception): pass
     class BadIndex(Exception): pass
     class BadData(Exception): pass
@@ -598,6 +600,11 @@ class Data(list):
         string += "="*len(rows[0]) + "\n"
         return string
 
+    # Return True if empty.
+    def empty(self):
+        return ((type(self.names) == type(None)) or 
+                (type(self.types) == type(None)))
+
     # Define a convenience funciton for concatenating another
     # similarly typed and named data to self.
     def __iadd__(self, data):
@@ -605,12 +612,25 @@ class Data(list):
         # Check for improper usage
         if type(data) != Data:
             raise(self.Unsupported(f"In-place addition only supports type {Data}, but {type(data)} was given."))
-        # Copy names *only* if this data does not have any
-        if type(self.names) == type(None):
+        # Special case for being empty.
+        if data.empty(): 
+            return self
+        # Special case for being empty.
+        elif self.empty():
             self.names = data.names[:]
-        # Load in the data
-        for row in data:
-            self.append(row)
+            self.types = data.types[:]
+            # Load in the data
+            for row in data:
+                self.append(row)
+        # Add rows to this from the provided Data
+        elif all(n1 == n2 for (n1,n2) in zip(self.names, data.names)):
+            # Load in the data
+            for row in data:
+                self.append(row)            
+        # Add columns to this from the provided Data
+        elif len(data) == len(self):
+            for col in data.names:
+                self[col] = data[col]
         # Return self
         return self
 
@@ -619,9 +639,28 @@ class Data(list):
 
     # Overwrite the 'pop' method to track missing values.
     def pop(self, index=-1):
-        if (id(self[index]) in self.missing):
-            self.missing.remove( id(self[index]) )
-        return super().pop(index)
+        # Popping of a column
+        if type(index) == int:
+            if (id(self[index]) in self.missing):
+                self.missing.remove( id(self[index]) )
+            return super().pop(index)
+        # Popping of a column
+        elif (type(index) == str):
+            if index not in self.names:
+                raise(self.BadSpecifiedName(f"There is no column named {index} in this Data."))
+            col = self.names.index(index)
+            self.names.pop(col)
+            self.types.pop(col)
+            values = []
+            for row in self:
+                values.append( row.pop(col) )
+                # Check for removal from missing values.
+                if (id(row) in self.missing):
+                    if all(type(v) != type(None) for v in row):
+                        self.missing.remove(id(row))
+            return values
+        else:
+            raise(self.BadIndex(f"Index {index} of type {type(index)} is not recognized."))
 
     # Overwrite the 'remove' method to track missing values.
     def remove(self, index):
@@ -990,6 +1029,8 @@ class Data(list):
             # How to handle rows with missing values?
             if (id(row) in self.missing): continue
             data.append( to_real(row) )
+        if (len(data) == 0):
+            raise(self.BadData("No rows in this data are complete, resulting matrix empty."))
         array = np.array(data)
         # Container for important post-processing information. 
         # 
@@ -1132,12 +1173,12 @@ class Data(list):
         if (type(model) == type(None)):
             # Use Voronoi if there are fewer than 10000 points.
             if (len(self) <= 10000):
-                from util.algorithms import Voronoi
-                model = Voronoi()
+                from util.algorithms import Voronoi, uniqueify
+                model = uniqueify(Voronoi)()
             # Otherwise use nearest neighbor (can't get points + weights from NN)
             else:
-                from util.algorithms import NearestNeighbor
-                model = NearestNeighbor()
+                from util.algorithms import NearestNeighbor, uniqueify
+                model = uniqueify(NearestNeighbor)()
         # Set the weights accordingly
         if (type(weights) == type(None)):
             weights = np.ones(self.numeric.data.shape[1])
@@ -1164,6 +1205,7 @@ class Data(list):
         # Get the indices of the known and unknown values in this row.
         row_known = [i for i in range(len(row)) if (type(row[i]) != type(None))]
         row_unknown = [i for i in range(len(row)) if (type(row[i]) == type(None))]
+        if len(row_unknown) == 0: raise(self.BadValue("Provided row had no missing values."))
         # Get the numeric version of the provided row.
         numeric_row = self.numeric.to_real(row, fill=True)
         # Identify the indices of known values and unknown values.
@@ -1176,43 +1218,38 @@ class Data(list):
         # Normalize the numeric row (to debias numeric scale differences)
         no_none_numeric_row = ((no_none_numeric_row - self.numeric.shift[known_values])
                                / self.numeric.scale[known_values]) * weights[known_values]
+        # Get the normalized training point locations.
+        normalized_numeric_data = ((self.numeric.data - self.numeric.shift)
+                                   / self.numeric.scale) * weights
         # Fit the model and make a prediction for this row.
-        if hasattr(model, 'points_and_weights'):
-            # Collect the unique numeric rows for training (and source locations)
-            unique_numeric_pts = {}
-            for i,pt in enumerate(self.numeric.data[:,known_values]):
-                pt = tuple(pt)
-                unique_numeric_pts[pt] = unique_numeric_pts.get(pt,[])+[i]
-            unique_numeric_data = np.array([pt for pt in unique_numeric_pts])
-            # Normalize the numeric points (to debias numerical scale differences).
-            normalized_numeric_data = ((unique_numeric_data - self.numeric.shift[known_values])
-                                       / self.numeric.scale[known_values]) * weights[known_values]
+        if hasattr(model, "WeightedApproximator"):
             # Fit the model (just to the points)
-            model.fit(normalized_numeric_data)
+            model.fit(normalized_numeric_data[:,known_values])
             del(normalized_numeric_data)
-            pts, wts = model.points_and_weights(np.array(no_none_numeric_row))
-            fill_row = np.zeros(self.numeric.data.shape[1])
-            all_sources = []
-            # Average the source (unique) points and weights (only 1)
-            for pt_idx, wt in zip(pts, wts):
-                pt = tuple(unique_numeric_data[pt_idx])
-                src_pts = unique_numeric_pts[pt]
-                avg = self.numeric.data[src_pts].mean(axis=0)
-                fill_row += avg * wt
-                all_sources += [src_pts]
+            # Get the source points and source weights for the prediction
+            pts, wts = model.predict(np.array(no_none_numeric_row))
+            # Compute the fill row by performing the weighted sum.
+            fill_row = np.sum((self.numeric.data[pts,:][:,unknown_values].T * wts), axis=1)
+            # Convert points and weights into python list (in case they're not)
+            pts = list(pts)
+            wts = list(wts)
         else:
-            # The model does not have a '.points_and_weights' function.
-            # Get the normalized training point locations.
-            normalized_numeric_data = (
-                (self.numeric.data[:,known_values] - self.numeric.shift[known_values])
-                / self.numeric.scale[known_values]) * weights[known_values]
+            # The model makes predictions using all points.
             # Fit the model to the input points and output points.
-            model.fit(normalized_numeric_data, self.numeric.data[:,unknown_values])
+            model.fit(normalized_numeric_data[:,known_values], 
+                      normalized_numeric_data[:,unknown_values])
             del(normalized_numeric_data)
-            all_sources = list(range(self.numeric.data.shape[0]))
-            wts = [None]
+            pts = list(range(self.numeric.data.shape[0]))
+            wts = [1 / len(pts)] * len(pts)
             # Use the model to make a prediction.
             fill_row = model.predict(no_none_numeric_row)
+            # De-normalize the predicted output.
+            fill_row = ((fill_row / weights[unknown_values]) * 
+                        self.numeric.scale[unknown_values] - 
+                        self.numeric.shift[unknown_values])
+        # Pad fill row with 0's so that it is the correct length for conversion.
+        fill_row = [0.] * len(known_values) + list(fill_row)
+        # python3 -m pytest data.py
         # Transfer the filled numeric row into the original row
         fill_row = self.numeric.real_to(fill_row, bias=bias)
         for i,val in enumerate(fill_row):
@@ -1229,8 +1266,8 @@ class Data(list):
             model = prediction_model
             given = row_known
             filled = row_unknown
-            predictors = all_sources
-            weights = list(wts)
+            predictors = pts
+            weights = wts
             data = fill_row
             def __str__(self): 
                 string =  f"Prediction made with {self.model}\n"
@@ -1247,23 +1284,89 @@ class Data(list):
 
     # Given a single column of this data to try and predict, run a
     # k-fold cross validation over predictions using 'fill'.
-    def predict(self, target_columns, model=None, weights=None, bias={}):
-        results = []
-        for k,(train, test) in enumerate(self.k_fold(only_indices=True)):
-            # Get the training and testing data
-            train_data = self[train]
-            test_data = self[test]
-            # Reassign target value to be 'missing'
-            test_data[target] = None
-            # Re-fill the rows by predicting.
-            for i,row in enumerate(test_data):
-                print(f"  {k} -- {i}:{len(test)}",end="\r",flush=True)
-                output = train_data.fill(row, bias=bias)
-            results += list(zip(test, test_data[target]))
-        print(" "*70, end="\r", flush=True)
-        # Sort the results by the original indices
-        results.sort()
-        results = [guess for (i,guess) in results]
+    def predict(self, target_columns, model=None, weights=None, bias={}, k=10):
+        import numpy as np
+        # Get the numeric representation of self.
+        if (type(self.numeric) == type(None)):
+            self.numeric = self.to_matrix()
+        # Pick the filling model based on data size.
+        if (type(model) == type(None)):
+            # Use Voronoi if there are fewer than 10000 points.
+            if (len(self) <= 10000):
+                from util.algorithms import Voronoi, uniqueify
+                model = uniqueify(Voronoi)()
+            # Otherwise use nearest neighbor (can't get points + weights from NN)
+            else:
+                from util.algorithms import NearestNeighbor, uniqueify
+                model = uniqueify(NearestNeighbor)()
+        # Set the weights accordingly
+        if (type(weights) == type(None)):
+            weights = np.ones(self.numeric.data.shape[1])
+        elif (len(weights) != len(self.names)):
+            raise(self.BadValue("Weights vector is length {len(weights)}, expected length {len(self.names)}."))
+        else:
+            # Convert the provided weight to the correct shape.
+            col_weights, weights = weights, []
+            col_inds = list(range(len(self.numeric.names)))
+            while (len(col_inds) > 0):
+                if (col_inds[0] not in self.numeric.cats):
+                    col_inds.pop(0)
+                    weights.append( col_weights.pop(0) )
+                else:
+                    for i in range(1,len(col_inds)):
+                        not_categorical = (col_inds[i] not in self.numeric.cats)
+                        beginning_of_next = ("1" == 
+                            self.numeric.names[col_inds[i]].split('-')[-1])
+                        if (not_categorical or beginning_of_next): break
+                    else: i += 1
+                    col_inds = col_inds[i:]
+                    weights += [col_weights.pop(0)] * i
+            weights = np.array(weights)
+        # Make sure the targets are in a list
+        if type(target_columns) == str: 
+            target_columns = [target_columns]
+        elif type(target_columns) != list: 
+            raise(self.BadTarget("Target must either be a string (column name) or list of strings (column names)."))
+        # Get the data all normalized (and weighted)
+        normalized_data = weights * (self.numeric.data - self.numeric.shift) / self.numeric.scale
+        # Identify those columns that are being predicted
+        target_column_indices = [self.names.index(c) for c in target_columns]
+        results = Data(names=[c + " Predicted" for c in target_columns]+["Prediction Index"],
+                       types=[self.types[i] for i in target_column_indices]+[int])
+        # Identify the numeric ranges of those columns
+        indices = set(target_column_indices)
+        sample = self.numeric.to_real([
+            (v if i in indices else None)
+            for i,v in enumerate(self[0])])
+        del(indices)
+        train_cols = np.array([i for (i,v) in enumerate(sample) if type(v) == type(None)])
+        test_cols =  np.array([i for (i,v) in enumerate(sample) if type(v) != type(None)])
+        del(sample)
+        # Cycle through and make predictions.
+        for i,(train_rows, test_rows) in enumerate(
+                Data.k_fold(range(self.numeric.data.shape[0]), k=k)):
+            print(f"  Fold {i+1} of {k}.. ", end="", flush=True)
+            train_data = normalized_data[train_rows]
+            print("fitting.. ", end="", flush=True)
+            model.fit( normalized_data[train_rows,:][:,train_cols], 
+                       normalized_data[train_rows,:][:,test_cols]   )
+            print("predicting.. ", end="", flush=True)
+            predictions = model.predict( normalized_data[test_rows,:][:,train_cols] )
+            # De-normalize predictions
+            predictions = ( (predictions / weights[test_cols]) * 
+                            self.numeric.scale[test_cols] + 
+                            self.numeric.shift[test_cols] )
+            print("storing.. ", end="\r", flush=True)
+            # Store the prediction results.
+            for j,i in enumerate(test_rows):
+                row = list(self.numeric.data[i,train_cols]) + list(predictions[j,:])
+                row = self.numeric.real_to(row, bias=bias)
+                results.append( [row[i] for i in target_column_indices] + [i] )
+        print(" "*70,end="\r",flush=True)
+        # Sort results by the original index
+        results.sort(key=lambda r: r[-1])
+        results.pop("Prediction Index")
+        # Return the results in a new Data object.
         return results
 
     # Give an overview (more detailed than just "str") of the contents
@@ -1523,7 +1626,7 @@ def test_data():
     b = a[:]
     b[-2,1] = 'd'
     b.append( b[0] )
-    assert(str(b.fill(b[-2]).data) == str([-1,'a',1.8]))
+    assert(str(b.fill(b[-2]).data) == str([-1,'a',1.7999999999999998]))
     assert(str(a.fill(a[-1]).data) == str([-1,'2',2.1]))
 
     # Test cases for using "fill" with weights.

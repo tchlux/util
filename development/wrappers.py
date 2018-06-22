@@ -1,3 +1,7 @@
+# Shepard Method
+SHEPARD_WEIGHT_FUNCTION = lambda dist: 1 / max(dist,SMALL_NUMBER)
+
+
 BBS_DEFAULT_BATCH_SIZE = None
 BBS_DEFAULT_NUM_BOXES = float("inf")
 FBM_DEFAULT_NUM_BOXES = float("inf")
