@@ -57,7 +57,6 @@ class Approximator:
         
     # Predict y at new x locations from fit model.
     def predict(self, x, *args, **kwargs):
-        print("Using Approximator predictions..")
         if ((type(x) != np.ndarray) or (0 >= len(x.shape) < 2)):
             raise(UnexpectedType("Provided 'x' should be a 1D or 2D numpy array."))
         single_response = len(x.shape) == 1
@@ -109,7 +108,6 @@ class WeightedApproximator(Approximator):
         
     # Predict y at new x locations from fit model.
     def predict(self, x, *args, **kwargs):
-        print("Using Weighted Approximator predictions..")
         if ((type(x) != np.ndarray) or (0 >= len(x.shape) < 2)):
             raise(UnexpectedType("Provided 'x' should be a 1D or 2D numpy array."))
         single_response = len(x.shape) == 1
@@ -288,10 +286,13 @@ def test_support(model, low=0, upp=1, plot_points=3000, p=None,
 from util.algorithms.voronoi import Voronoi
 from util.algorithms.nearest_neighbor import NearestNeighbor
 from util.algorithms.delaunay import Delaunay, qHullDelaunay
+from util.algorithms.neural_network import MLPRegressor
 
 if __name__ == "__main__":
     print("Adding surface to plot..")
-    p,_,_ = test_plot(Voronoi(), N=20, D=2, low=-.1, upp=1.1,
+    model = Voronoi
+    model = MLPRegressor
+    p,_,_ = test_plot(model(), N=20, D=2, low=-.1, upp=1.1,
                       random=True, plot_points=4000) # 6, 8
     print("Generating plot HTML..")
     p.show()

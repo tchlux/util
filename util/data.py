@@ -1,7 +1,6 @@
 from util import COMMON_SEPERATORS, UPDATE_FREQUENCY, \
     MAX_ERROR_PRINTOUT, NP_TYPES, PY_TYPES, GENERATOR_TYPE
 from util.system import AtomicOpen
-from util.algorithms import WeightedApproximator
 
 # TODO:  Add tests for empty data object.
 # TODO:  Add "Descriptor" class for Data.names and Data.types so that
@@ -11,11 +10,9 @@ from util.algorithms import WeightedApproximator
 # TODO:  Non-singleton comparison operator for Column Column comparison.
 # TODO:  Add addition, subtraction, multiplication, and division
 #        operators to column objects.
-# TODO:  "Data.fill" needs to take a Data object, group by common
-#        missing values, run rounds of prediction on each of those
-#        groups. Also needs to utilize parallelism with pmap.
-# WARNING: Doing batch-assigment to column with type
 
+QUOTES = {'"'}
+DEFAULT_DISPLAY_WAIT = 3.
 
 # Given "d" categories that need to be converted into real space,
 # generate a regular simplex in (d-1)-dimensional space. (all points
@@ -94,6 +91,24 @@ def without_quotes(s):
                 return s[1:-1]
     return s
 
+
+# Remove nested seperators inside of quotes in the line
+def remove_quoted_seperators(line, sep=None):
+    cleaned_line = ""
+    in_quotes = False
+    for char in line:
+        # Toggle 'inside' quotes.
+        if (char in QUOTES):
+            in_quotes = not in_quotes
+            if (sep == None): char = ""
+        # Add quoted bits without separ
+        if (not in_quotes):
+            cleaned_line += char
+        elif (char != sep) and (sep != None):
+            cleaned_line += char
+    return cleaned_line
+
+
 # Pre:  "filename" is the name of an existing file (including path)
 # Post: "filename" is scanned for viable seperators, those are all
 #       characters used the same number of times on each line. If at
@@ -102,6 +117,7 @@ def without_quotes(s):
 #       COMMON_SEPERATORS exist in the set, it is used, otherwise the
 #       most occurring seperator is used.
 def detect_seperator(filename="<no_provided_file>", verbose=False, opened_file=None):
+    import time
     lines = []
     not_viable = set()
     if not opened_file:
@@ -109,10 +125,20 @@ def detect_seperator(filename="<no_provided_file>", verbose=False, opened_file=N
     else:
         f = opened_file
     # Identify the potential seperators from the first line
-    first_line = f.readline().strip()
+    first_line = remove_quoted_seperators(f.readline().strip())
     seperators = {char:first_line.count(char) for char in set(first_line)}
+    # Update the user
+    last_update = 0
+    should_update = lambda: (verbose and ((time.time() - last_update) > UPDATE_FREQUENCY))
+    raw_data = f.readlines()
     # Cycle the file (narrowing down the list of potential seperators
-    for line in f.readlines():
+    for i,line in enumerate(raw_data):
+        # Update the user on progress if appropriate
+        if should_update():
+            last_update = time.time()
+            print("\r%0.1f%% complete"% (100.0*i/len(raw_data)), flush=True, end="")
+        # Clean the line of quoted strings.
+        line = remove_quoted_seperators(line)
         line_chars = set(line.strip())
         # Make sure all tracked seperators appear the correct
         # number of times in the line
@@ -165,10 +191,11 @@ def read_data(filename="<no_provided_file>", sep=None, types=None,
         f = opened_file
         file_name = f.name
     # Get the first line, assuming it's the header
-    line = f.readline()
+    line = remove_quoted_seperators(f.readline(), sep)
     header = [without_quotes(n.strip()).strip() for n in line.strip().split(sep)]
     # Get the first line of data and learn the types of each column
-    line = [without_quotes(v.strip()).strip() for v in f.readline().strip().split(sep)]
+    line = [without_quotes(v.strip()).strip() for v in 
+            remove_quoted_seperators(f.readline().strip(), sep).split(sep)]
     # Automatically detect types (if necessary)
     type_digression = False
     if type(types) == type(None):
@@ -201,6 +228,8 @@ def read_data(filename="<no_provided_file>", sep=None, types=None,
     last_update = 0
     should_update = lambda: (verbose and ((time.time() - last_update) > UPDATE_FREQUENCY))
     for i,line in enumerate(raw_data):
+        # Clean up the line (in case there are nested seperators)
+        line = remove_quoted_seperators(line, sep)
         # Update the user on progress if appropriate
         if should_update():
             last_update = time.time()
@@ -258,8 +287,10 @@ class Data(list):
     types = None
     # Default values for "numeric" representation of self.
     numeric = None
-    # Default maximum printed rows of this data
+    # Default maximum printed rows of this data.
     _max_display = 10
+    # Default maximum string length of printed column values.
+    _max_str_len = 50
 
     # Local descriptive exceptions
     class NameTypeMismatch(Exception): pass
@@ -460,6 +491,12 @@ class Data(list):
             (all(type(i) == int for i in index))):
             # This index is accessing a (row,col) entry
             return super().__getitem__(index[0])[index[1]]
+        elif ((type(index) == tuple) and (len(index) == 2) and 
+              (type(index[0]) == int and type(index[1]) == str)):
+            if (index[1] not in self.names):
+                raise(self.BadIndex(f"Column index {index[1]} is not a recognized column name."))
+            # This index is accessing a (row,col) entry
+            return super().__getitem__(index[0])[self.names.index(index[1])]
         elif (type(index) == int):
             # This index is accessing a Data row
             return super().__getitem__(index)
@@ -552,6 +589,20 @@ class Data(list):
                 raise(self.BadAssignment(f"Column assignment requires a column of length {len(self)}, provided values iterable was too long."))
             except StopIteration: pass
 
+    # Custom function for mapping values to strings in the printout of self.
+    def _val_to_str(self, v): 
+        # Get the string version of the value.
+        if type(v) != type(self):
+            string = str(v).replace("\n"," ")
+        else:
+            # Custom string for a 'data' type object.
+            string = f"Data ({len(v.names)} x {len(v)})"
+            string += f" -- {v.names}"
+        # Shorten the string if it needs to be done.
+        if len(string) > self._max_str_len: 
+            string = string[:self._max_str_len]+".."
+        return string
+
     # Printout a brief table-format summary of this data.
     def __str__(self):
         # Special case for being empty.
@@ -565,7 +616,7 @@ class Data(list):
         for i,row in enumerate(self):
             rows += [ row ]
             if i >= self._max_display: break
-        rows = [list(map(str,r)) for r in rows]
+        rows = [list(map(self._val_to_str,r)) for r in rows]
         lens = [max(len(r[c]) for r in rows)
                 for c in range(len(self.names))]
         rows = [[v + " "*(lens[i]-len(v)) for i,v in enumerate(row)]
@@ -672,6 +723,13 @@ class Data(list):
     # ========================
     #      Custom Methods     
     # ========================
+
+    # Generate hash values using a near-zero probability of conflich
+    # hashing mechanism that can handle non-hashable types. Does this
+    # by hashing the raw bytes (from pickl) with sha256.
+    def _hash(self, something):
+        import hashlib, pickle
+        return hashlib.sha256(pickle.dumps(something)).hexdigest()
 
     # Given an index (of any acceptable type), convert it into an
     # iterable of integer rows and a list of integer columns.
@@ -892,6 +950,7 @@ class Data(list):
     # of Data to a real-valued list. The second function will map
     # real-valued lists back to rows in the original space.
     def generate_mapping(self):
+        if self.empty(): raise(self.ImproperUsage("Cannot map empty Data."))
         # Make sure we can handle this type of data
         if not all(t in {int,float,str} for t in self.types):
             raise(self.Unsupported("A mapping is only designed for Data composed of <float>, <int>, and <str> typed values."))
@@ -904,22 +963,32 @@ class Data(list):
         # Get the categorical simplex mappings.
         cat_mappings = {n:regular_simplex(len(cat_values[n]))
                         for n in cat_names}
+        # Get the real values that have more than one unique value.
+        real_values = {n:None for n in names if n not in cat_values}
+        for n in real_values:
+            unique = set()
+            # Identify those columns (of reals) that have >1 unique value.
+            for v in self[n]:
+                unique.add(v)
+                if len(unique) > 1: break
+            else: real_values[n] = unique.pop()
+        # Initialize stoarge for the indices
         num_inds = []
         cat_inds = []
         # Calculate the dimension of the real space (and the column names)
         real_names = []
         counter = 0
         for (n,t) in zip(names, types):
-            if (t in {int, float}):
+            if (t == str):
+                real_names += [f"{n}-{i+1}" for i in range(len(cat_values[n])-1)]
+                # Record the indices of categorical mappings
+                cat_inds += list(counter+i for i in range(len(cat_values[n])-1))
+                if (len(cat_inds) > 0): counter = cat_inds[-1] + 1
+            elif (real_values[n] == None):
                 real_names.append( n )
                 # Record the indices of numerical values
                 num_inds.append( counter )
                 counter += 1
-            else:
-                real_names += [f"{n}-{i+1}" for i in range(len(cat_values[n])-1)]
-                # Record the indices of categorical mappings
-                cat_inds += list(counter+i for i in range(len(cat_values[n])-1))
-                counter = cat_inds[-1] + 1
 
         # Generate a function that takes a row in the original space
         # and generates a row in the associated real-valued space.
@@ -934,7 +1003,7 @@ class Data(list):
                 if (type(v) == type(None)):
                     if (t == str):
                         real_row += [None] * len(cat_mappings[n][0])
-                    else:
+                    elif (real_values[n] == None):
                         real_row += [None]
                     continue
                 elif (type(v) != t) and (t != type(None)):
@@ -953,7 +1022,7 @@ class Data(list):
                     else:
                         # Put a filler value in for the unknown (middle category)
                         real_row += [0.] * (len(cat_values[n]) - 1)
-                else:
+                elif (real_values[n] == None):
                     real_row += [float(v)]
             # Check for row length
             if (len(real_row) != len(real_names)):
@@ -985,12 +1054,16 @@ class Data(list):
                     row += [category]
                     # Reduce the length of the real-valued row
                     real_row = real_row[num_categories-1:]
-                elif (t == int):
-                    # Use the rounded version of the integer
-                    row += [int(real_row.pop(0) + .5)]
+                elif (real_values[n] == None):
+                    if (t == int):
+                        # Use the rounded version of the integer
+                        row += [int(real_row.pop(0) + .5)]
+                    else:
+                        # Use the float representation of the numpy floatf
+                        row += [float(real_row.pop(0))]
                 else:
-                    # Use the float representation of the numpy floatf
-                    row += [float(real_row.pop(0))]
+                    # Fill with the only value that was provided.
+                    row += [real_values[n]]
             if (len(real_row) > 0):
                 raise("Left over values!")
             # Check for row length
@@ -1090,13 +1163,20 @@ class Data(list):
         return column_info
 
     # Generate a new data with only the unique rows (by content) from this data.
-    def unique(self):
+    def unique(self, display_wait_sec=DEFAULT_DISPLAY_WAIT):
+        import time
         unique = Data(names=self.names, types=self.types)
         found = set()
-        for row in self:
-            t_row = tuple(row)
-            if t_row not in found:
-                found.add(t_row)
+        start = time.time()
+        for i,row in enumerate(self):
+            # Update user on progress if too much time has elapsed..
+            if (time.time() - start) > display_wait_sec:
+                print(f" {100.*i/len(self):.2f}%", end="\r", flush=True)
+                start = time.time()
+            # Get the hashed value, check to see if its been found.
+            hashed = self._hash(row)
+            if hashed not in found:
+                found.add(hashed)
                 unique.append(row)
         return unique
 
@@ -1113,29 +1193,41 @@ class Data(list):
     # 
     #   densified_data = data[some_columns].unique().collect(data)
     # 
-    def collect(self, data):
+    def collect(self, data, display_wait_sec=DEFAULT_DISPLAY_WAIT):
+        import time
         # Get the names of shared columns and indices in each.
         match_names = set(n for n in self.names if n in data.names)
         self_columns = [i for (i,n) in enumerate(self.names) if n in match_names]
         other_columns = [i for (i,n) in enumerate(data.names) if n in match_names]
         # Collection columns
-        collections_names = [n for n in data.names if n not in match_names]
-        collections_columns  = [i for (i,n) in enumerate(data.names) if n not in match_names]
-        collections = {n:[] for n in collections_names}
+        names_to_collect = [n for n in data.names if n not in match_names]
+        indices_to_collect  = [i for (i,n) in enumerate(data.names) if n not in match_names]
+        collections = {n:[] for n in names_to_collect}
+        # Add columns for holding the matches
+        for n in names_to_collect:
+            self.add_column(([] for i in range(len(self))), name=n)
+        # Generate a set of lookups (hashed values even for mutable types)
+        index_of_row = {}
+        for i,row in enumerate(self):
+            hash_value = self._hash([row[c] for c in self_columns])
+            index_of_row[hash_value] = i
+        # Paired list of source -> destination indices for copying.
+        source_dest = list(zip(indices_to_collect, names_to_collect))
+        start = time.time()
         # Perform the serach process
-        for search in self:
-            # Initialize storage for all matches
-            for n in collections_names:
-                collections[n].append([])
-            # Cycle all the rows of data
-            for match in data:
-                if all(search[sc] == match[oc] for (sc,oc) in zip(self_columns,other_columns)):
-                    # Add these unique values to collections
-                    for n,i in zip(collections_names, collections_columns):
-                        collections[n][-1].append( match[i] )
-        # Add the columns of matches to self
-        for n in collections_names:
-            self.add_column(collections[n], name=n)
+        for i,row in enumerate(data):
+            # Update user on progress if too much time has elapsed..
+            if (time.time() - start) > display_wait_sec:
+                print(f" {100.*i/len(data):.2f}%", end="\r", flush=True)
+                start = time.time()
+            # Convert row into its hash value, lookup storage location.
+            hash_value = self._hash([row[c] for c in other_columns])
+            if hash_value in index_of_row:
+                row_idx = index_of_row[hash_value]
+                for source, dest in source_dest:
+                    self[row_idx, dest].append(row[source])
+            else:
+                print("Could not find:", row)
         # Return the self (that has been modified)
         return self
 
@@ -1362,7 +1454,7 @@ class Data(list):
                 row = list(self.numeric.data[i,train_cols]) + list(predictions[j,:])
                 row = self.numeric.real_to(row, bias=bias)
                 results.append( [row[i] for i in target_column_indices] + [i] )
-        print(" "*70,end="\r",flush=True)
+            print(" "*70,end="\r",flush=True)
         # Sort results by the original index
         results.sort(key=lambda r: r[-1])
         results.pop("Prediction Index")

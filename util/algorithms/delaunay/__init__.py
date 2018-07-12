@@ -32,9 +32,11 @@ class qHullDelaunay(WeightedApproximator):
         if (self.pts.shape[1] > 1):
             self.surf = self.Delaunay_via_qHull(self.pts)
         else:
-            self.surf = self.interpolate.interp1d(self.pts[:,0],
-                                                  self.values,
-                                                  fill_value="extrapolate")
+            self.sorted_pts = list(np.argsort(self.pts[:,0]))
+            self.surf = None
+            # self.surf = self.interpolate.interp1d(self.pts[:,0],
+            #                                       self.y,
+            #                                       fill_value="extrapolate")
 
     # Function that returns the indices of points and the weights that
     # should be used to make associated predictions for each point in
@@ -44,21 +46,42 @@ class qHullDelaunay(WeightedApproximator):
         wts = []
         # Body
         for x in points:
-            # Solve for the weights in the old Delaunay model
-            simp_ind = self.surf.find_simplex(x)
-            # If a point is outside the convex hull, use the
-            # closest simplex to extrapolate the value
-            if simp_ind < 0: 
-                # Calculate the distance between the x each simplex
-                simp_dists = self.surf.plane_distance(x)
-                # Find the index of the closest simplex
-                simp_ind = np.argmax(simp_dists)
-            # Solve for the response value
-            simp = self.surf.simplices[simp_ind]
+            if hasattr(self.surf, "find_simplex"):
+                # Solve for the weights in the old Delaunay model
+                simp_ind = self.surf.find_simplex(x)
+                # If a point is outside the convex hull, use the
+                # closest simplex to extrapolate the value
+                if simp_ind < 0: 
+                    # Calculate the distance between the x each simplex
+                    simp_dists = self.surf.plane_distance(x)
+                    # Find the index of the closest simplex
+                    simp_ind = np.argmax(simp_dists)
+                # Solve for the response value
+                simp = self.surf.simplices[simp_ind]
+            else:
+                # This is a 1-d problem
+                simp = [np.argmin(np.sum((self.pts-x)**2,axis=1))]
+                if (x[0] < self.pts[self.sorted_pts[0],0]):
+                    simp += [self.sorted_pts[1]]
+                    x = self.pts[self.sorted_pts[0],:]
+                elif (x[0] > self.pts[self.sorted_pts[-1],0]):
+                    simp += [self.sorted_pts[0]]
+                    x = self.pts[self.sorted_pts[-1],:]
+                elif (x[0] > self.pts[simp[0],0]):
+                    simp += [self.sorted_pts[self.sorted_pts.index(simp[0])+1]]
+                elif (x[0] <= self.pts[simp[0],0]):
+                    simp += [self.sorted_pts[self.sorted_pts.index(simp[0])-1]]
+                simp = np.array(simp)
             system = np.concatenate((self.pts[simp],
                 np.ones((simp.shape[0],1))), axis=1).T
             x_pt = np.concatenate((x,[1]))
-            weights = np.linalg.solve(system, x_pt)
+            try:
+                weights = np.linalg.solve(system, x_pt)
+            except np.linalg.linalg.LinAlgError:
+                print(system)
+                print(x_pt)
+                print(simp)
+                raise(Exception("Uh oh.."))
             # weights = np.where(weights > 0, weights, 0)
             # / sum(weights)
             pts.append( simp )

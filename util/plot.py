@@ -256,7 +256,7 @@ class Plot:
         # Remove the extra color attribute stored for easy access
         # any_heatmaps = any(d.get("type","") == "heatmap" for d in data)
         for d in data:
-            d.pop("color")
+            d.pop("color","")
             if d["type"] == "heatmap":
                 d.pop("marker","")
                 d.pop("mode","")
@@ -580,9 +580,9 @@ class Plot:
     #                 multi-series histograms will be non-overlapping.
     #                 When set "overlay", histogram series can overlap.
     #  opacity     -- See "add" function.
-    def add_histogram(self, name, values, bar_spacing="x",
-                      num_bins=100, start=None, end=None,
-                      padding=0.03, opacity=0.7, histnorm='count',
+    def add_histogram(self, name, values, start_end=(None,None),
+                      bar_spacing="x", num_bins=100, padding=0.03,
+                      opacity=0.7, histnorm='count',
                       barmode='overlay', **kwargs):
         # Check for errors in usage.
         if bar_spacing not in ("x", "y"):
@@ -591,6 +591,7 @@ class Plot:
             raise(Exception("ERROR: Invalid 'num_bins', must be a positive integer."))
         if len(values) == 0:
             raise(Exception("ERROR: Empty list passed in for 'values'."))
+        start, end = start_end
         values_name = bar_spacing + "_values"
         autobin = "autobin" + bar_spacing
         bins = bar_spacing + "bins"
@@ -835,16 +836,16 @@ class Plot:
                                                          brightness=brightness, 
                                                          alpha=opacity) )
                 else:
-                    marker_colors = None
+                    marker_colors = color
             else:
-                marker_colors = None
+                marker_colors = color
 
         # Special plotly failure mode, need to reverse data for
         # 'tonext' to actually mean 'next' instead of 'previous'. This
         # bug has been reported, but no one in the plotly community is
         # addressing it (or even noticing it) as a problem.
         self.to_reverse.append((type(fill) == str) and ("tonext" in fill))
-
+        # print("Using color:", color)
         # Now add the standard plotly "data" object to local storage
         self.data.append(dict(
             type = plot_type,
@@ -1330,6 +1331,8 @@ def create_html(fig, file_name=None, show=True, append=False,
             with tempfile.NamedTemporaryFile(
                     mode="w", suffix=".html", delete=False) as f:
                 file_name = f.name
+    # Add 'html' extension if necessary.
+    if (file_name[-len('.html'):] != ".html"): file_name += ".html"
     # Load the pypi package "plotly" that interfaces with plotly.js
     # only once this is called, otherwise it slows down the import
     plotly = import_package("plotly")
@@ -1827,3 +1830,14 @@ if __name__ == "__main__":
     p2 = p2.plot(data_easing=True, bounce=True, html=False, loop_duration=2.5)
     multiplot([[p1, p2]], append=True)
 
+
+    # legend_settings = dict(
+    #     xanchor = "center",
+    #     yanchor = "top",
+    #     x = .5,
+    #     y = -.15,
+    #     orientation = "h",
+    # )
+    # layout_settings = dict(
+    #     margin = dict(l=60, t=30, b=30),
+    # )
