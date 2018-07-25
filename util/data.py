@@ -10,6 +10,16 @@ from util.system import AtomicOpen
 # TODO:  Non-singleton comparison operator for Column Column comparison.
 # TODO:  Add addition, subtraction, multiplication, and division
 #        operators to column objects.
+# TODO:  Make "predict" not require that target columns be convertible
+#        to numeric form, only that they operate under a weighted sum.
+# TODO:  Make printout shorter for data with lots of columns.
+# TODO:  Check the __iadd__ for data object columns, breaking "missing".
+# TODO:  Update __iadd__ to behave differently when adding data:
+#        when adding data with subset of known columns, add rows and
+#        columns (for unknown) and None for missing.
+# TODO:  Make "to_matrix" automatically flatten columns that are typed
+#        as numeric numpy arrays.
+
 
 QUOTES = {'"'}
 DEFAULT_DISPLAY_WAIT = 3.
@@ -534,7 +544,8 @@ class Data(list):
         # It is not a singleton if it has a defined iterator *and* 
         # it has a differing type from one of the columns
         singleton = not ( hasattr(value, '__iter__') and
-                any((type(value) != self.types[c]) for c in cols) )
+                any((self.types[c] != type(None)) and (type(value) != self.types[c])
+                    for c in cols) )
         if not singleton: value_iter = value.__iter__()
         # Iterate over rows and perform assignment
         step = 0
@@ -549,10 +560,6 @@ class Data(list):
                         value = value_iter.__next__()
                     except StopIteration:
                         raise(self.BadValue(f"Provided iterable only contained {step} elements, expected more."))
-                # Log missing value if that is what was provided
-                if (type(value) == type(None)):
-                    if (id(self[row]) not in self.missing):
-                        self.missing.add(id(self[row]))
                 # Handle type of new value appropriately
                 if (len(rows) == len(self)):
                     # Check to find the type of the new column (if appropriate)
@@ -592,23 +599,24 @@ class Data(list):
     # Custom function for mapping values to strings in the printout of self.
     def _val_to_str(self, v): 
         # Get the string version of the value.
-        if type(v) != type(self):
+        if not ((type(v) == type(self)) or (issubclass(type(v),type(self)))):
             string = str(v).replace("\n"," ")
         else:
             # Custom string for a 'data' type object.
-            string = f"Data ({len(v.names)} x {len(v)})"
-            string += f" -- {v.names}"
+            string = v.__str__(short=True)
         # Shorten the string if it needs to be done.
         if len(string) > self._max_str_len: 
             string = string[:self._max_str_len]+".."
         return string
 
     # Printout a brief table-format summary of this data.
-    def __str__(self):
+    def __str__(self, short=False):
         # Special case for being empty.
         if ((type(self.names) == type(None)) or 
             (type(self.types) == type(None))):
             return "This Data has no contents.\n"
+        # Custom short string for a 'data' type object.
+        if short: return f"Data ({len(self.names)} x {len(self)}) -- {self.names}"
         # Make a pretty table formatted output
         rows = []
         rows += [ self.names ]
@@ -635,18 +643,17 @@ class Data(list):
             # Get the indices of missing elements
             indices = []
             for i in range(len(self)):
-                if (id(self[i]) in self.missing):
+                if any(v == type(None) for v in map(type,self[i])): 
                     indices.append(i)
-                if len(indices) > self._max_display: break
-            # Print out the missing values
-            string += f" missing values ({len(self.missing)}) at rows:\n  ["
+                # WARNING: This ^^ is inefficient and is being done
+                #          because the "missing" id's are bugged.
+                if len(indices) > self._max_display:
+                    break
             # Print out the indices of the rows with missing values
-            for i in indices[:self._max_display]:
-                string += f"{i}, "
-            if (len(indices) > self._max_display):
-                string += "..."
-            else:
-                string = string[:-2]
+            print_indices = ', '.join(map(str, indices[:self._max_display]))
+            string += f" missing values ({len(self.missing)}) at rows: \n  [{print_indices}"
+            # Add elipses if there are a lot of missing values.
+            if (len(indices) > self._max_display): string += ", ..."
             string += "]\n"
         string += "="*len(rows[0]) + "\n"
         return string

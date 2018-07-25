@@ -132,6 +132,7 @@ class WeightedApproximator(Approximator):
     def __call__(self, *args, **kwargs): return self.predict(*args, **kwargs)    
 
 
+
 # A wrapper for an approximator that must fit unique points.
 def uniqueify(weighted_approximator):
     # A class for wrapping an approximator.

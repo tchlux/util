@@ -101,12 +101,12 @@ def cdf_fit_func(data, cubic=False):
     if not cubic:
         # Generate linear function
         fit_params = splrep(data_pts[:,0], data_pts[:,1], k=1)
-        fit = lambda x_val: splev(x_val, fit_params)
-        fit.derivative = lambda x_val, d=1: splev(x_val, fit_params, der=d)
+        fit = lambda x_val: splev(x_val, fit_params, ext=3)
+        fit.derivative = lambda x_val, d=1: splev(x_val, fit_params, der=d, ext=3)
         # Generate inverse linear function
         inv_fit_params = splrep(data_pts[:,1], data_pts[:,0], k=1)
-        inv_fit = lambda y_val: splev(y_val, inv_fit_params)
-        inv_fit.derivative = lambda y_val, d=1: splev(y_val, inv_fit_params, der=d)
+        inv_fit = lambda y_val: splev(y_val, inv_fit_params, ext=3)
+        inv_fit.derivative = lambda y_val, d=1: splev(y_val, inv_fit_params, der=d, ext=3)
         fit.inverse = inv_fit
     else:
         # Generate piecewise cubic monotone increasing spline
@@ -116,7 +116,7 @@ def cdf_fit_func(data, cubic=False):
     # Generate a function that computes this CDF's points
     def cdf_func(x_val=None):
         if type(x_val) == type(None):
-            return (min_pt, max_pt)        
+            return (min_pt, max_pt)
         else:
             y_val = fit(x_val)
             if (type(x_val) == np.ndarray):
@@ -312,7 +312,8 @@ def robust_percentile(values, perc):
 def percentile_funcs(x_points, y_points, percentiles):
     # Generate the points for the percentile CDF's
     perc_points = np.array([
-        [robust_percentile(y_points[:,i], p) for i in range(len(x_points))]
+        [robust_percentile([row[i] for row in y_points], p) 
+         for i in range(len(x_points))]
         for p in percentiles ])
     # Generate the CDF functions for each percentile and
     # return the fit functions for each of the percentiles
@@ -323,9 +324,8 @@ def percentile_funcs(x_points, y_points, percentiles):
 # y_points at each point in x_points.
 def percentile_points(x_points, y_points, percentiles):
     # Generate the points for the percentile CDF's
-    perc_points = [
-        [robust_percentile(y_points[:,i], p) for i in range(len(x_points))]
-        for p in percentiles ]
+    perc_points = [ [robust_percentile(row, p) for row in y_points]
+                    for p in percentiles ]
     # Generate the CDF functions for each percentile and
     # return the fit functions for each of the percentiles
     return perc_points
@@ -339,7 +339,7 @@ def plot_percentiles(plot, name, x_points, y_points, color=None,
                      # center_color = np.array([255,70,0,0.6]),
                      # outer_color = np.array([255,150,50,0.3])):
                      center_color=None, outer_color=None, **kwargs):
-    from util.plotly import color_string_to_array
+    from util.plot import color_string_to_array
     # If there are multiple percentiles, use shading to depict them all.
     if (len(percentiles) > 1):
         # Generate the color spectrum if necessary
@@ -376,10 +376,7 @@ def plot_percentiles(plot, name, x_points, y_points, color=None,
                      color=text_color, fill_color=color,
                      group=group_id, show_in_legend=False,
                      mode="lines", textfont=textfont, **kwargs)
-
-        # Add a master legend entry
-        x_val = sum(x_points) / len(x_points)
-        y_val = sum(perc_pts[len(perc_pts)//2]) / len(perc_pts[len(perc_pts)//2])
+        # Add a master legend entry.
         plot.add(name + " Percentiles", [None], [None],
                  color='rgba(%i,%i,%i,%f)'%tuple(center_color),
                  group=group_id, **kwargs)
@@ -396,7 +393,7 @@ def plot_percentiles(plot, name, x_points, y_points, color=None,
 
 
 if __name__ == "__main__":
-    from util.plotly import Plot
+    from util.plot import Plot
     import pickle, os
 
     # num_distrs = 1000

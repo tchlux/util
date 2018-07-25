@@ -528,7 +528,7 @@ class Plot:
             raise(Exception("The provided function returned a non-numeric value."))
         response = np.array(response).flatten()
 
-        if "hoverinfo" not in kwargs: kwargs["hoverinfo"] = "name+x+y+z"
+        if "hoverinfo" not in kwargs: kwargs["hoverinfo"] = "name+x+y"+("+z" if self.is_3d else "")
         # Call the standard plot function
         self.add(name, *x_vals, response, mode=mode,
                  plot_type=plot_type, **kwargs)
@@ -746,7 +746,7 @@ class Plot:
             fill_color=None, fill_opacity=0.6, symbol='circle',
             dash=None, marker_size=None, marker_colors=None,
             marker_line_width=0, marker_line_color='rgba(50,50,50,0.8)', 
-            hoverinfo='name+text', frame=None, **kwargs):
+            hoverinfo='name+x+y+z', frame=None, **kwargs):
 
         # Convert the x, y (and z) values into numpy arrays and
         # store 'values' for creating marker colors based on magnitude
