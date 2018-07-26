@@ -2,6 +2,9 @@ from util import COMMON_SEPERATORS, UPDATE_FREQUENCY, \
     MAX_ERROR_PRINTOUT, NP_TYPES, PY_TYPES, GENERATOR_TYPE
 from util.system import AtomicOpen
 
+# coding: future_fstrings
+# from future import print_function
+
 # TODO:  Add tests for empty data object.
 # TODO:  Add "Descriptor" class for Data.names and Data.types so that
 #        they can be directly modified by users safely (with checks).
@@ -19,7 +22,6 @@ from util.system import AtomicOpen
 #        columns (for unknown) and None for missing.
 # TODO:  Make "to_matrix" automatically flatten columns that are typed
 #        as numeric numpy arrays.
-
 
 QUOTES = {'"'}
 DEFAULT_DISPLAY_WAIT = 3.
@@ -146,7 +148,7 @@ def detect_seperator(filename="<no_provided_file>", verbose=False, opened_file=N
         # Update the user on progress if appropriate
         if should_update():
             last_update = time.time()
-            print("\r%0.1f%% complete"% (100.0*i/len(raw_data)), flush=True, end="")
+            print(f"\r{(100.0*i/len(raw_data)):0.1f}% complete", flush=True, end="")
         # Clean the line of quoted strings.
         line = remove_quoted_seperators(line)
         line_chars = set(line.strip())
@@ -541,11 +543,14 @@ class Data(list):
             return self.add_column(value, name=index)
         # Get the list of rows and list of columns being assigned.
         rows, cols = self._index_to_rows_cols(index)
-        # It is not a singleton if it has a defined iterator *and* 
-        # it has a differing type from one of the columns
-        singleton = not ( hasattr(value, '__iter__') and
-                any((self.types[c] != type(None)) and (type(value) != self.types[c])
-                    for c in cols) )
+        # Assume if it has an iterator that is not a singleton.
+        # Assume that if the value type matches all assigned types it is a singleton.
+        singleton = (not hasattr(value, '__iter__')) or \
+                    (all(self.types[c] in {type(value), type(None)} for c in cols))
+        # If it has a "length" then use that to verify singleton status.
+        if (singleton and hasattr(value, "__len__")):
+            singleton = len(value) != (len(rows)*len(cols))
+        # Assume singleton status is correct.
         if not singleton: value_iter = value.__iter__()
         # Iterate over rows and perform assignment
         step = 0
@@ -750,7 +755,7 @@ class Data(list):
             rows = [index]
             cols = list(range(len(self.names)))
         elif (type(index) == str):
-            rows = range(len(self))
+            rows = list(range(len(self)))
             if index not in self.names:
                 raise(self.UnknownName(f"This data does not have a column named '{index}'."))
             cols = [self.names.index(index)]
@@ -1205,6 +1210,8 @@ class Data(list):
         # Get the names of shared columns and indices in each.
         match_names = set(n for n in self.names if n in data.names)
         self_columns = [i for (i,n) in enumerate(self.names) if n in match_names]
+        # Sort the columns of self to be in the same order as that of other.
+        self_columns = sorted(self_columns, key=lambda i: data.names.index(self.names[i]))
         other_columns = [i for (i,n) in enumerate(data.names) if n in match_names]
         # Collection columns
         names_to_collect = [n for n in data.names if n not in match_names]
@@ -1234,7 +1241,7 @@ class Data(list):
                 for source, dest in source_dest:
                     self[row_idx, dest].append(row[source])
             else:
-                print("Could not find:", row)
+                print("Could not find:", [row[c] for c in other_columns])
         # Return the self (that has been modified)
         return self
 
@@ -1493,6 +1500,7 @@ class Data(list):
             # Count the number of elements for each value
             counts = {}
             for val in self[n]:
+                if type(val) in {list, dict, set}: val = str(val)
                 counts[val] = counts.get(val,0) + 1
             print(f"  {c:{len(str(len(self.names)))}d} -- \"{n}\"{'':{1+name_len-len(n)}s}{str(t):{type_len}s} ({len(counts)} unique value{'s' if (len(counts) != 1) else ''})")
             # Remove the "None" count from "counts" to prevent sorting problems
