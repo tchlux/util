@@ -816,6 +816,8 @@ class Data(list):
                     cols = list(range(len(self.names))[index[1]])
                 else:
                     raise(self.BadIndex(f"The provided index, {index}, is not understood."))
+        else:
+            raise(self.BadIndex(f"The provided index, {index}, is not understood."))
         return rows, cols
 
     # Convenience method for loading from file.
@@ -950,11 +952,11 @@ class Data(list):
                 # This is a new type, problem!
                 raise(self.BadValue(f"Provided column has multiple types. Original type {new_type}, but '{val}' has type {type(val)}."))
         # Verify the column length
-        if (i != len(self)-1):
+        if (i < len(self)-1):
             # Remove the added elements if the length was not right
             for j in range(i+1): self[j].pop(-1)
             # Raise error for too short of a column
-            raise(self.BadData(f"Provided column has length greater than {len(self)}, the length of this data."))
+            raise(self.BadData(f"Provided column has length less than {len(self)}, the length of this data."))
         # Finally, record the new type
         self.types.append(new_type)
 

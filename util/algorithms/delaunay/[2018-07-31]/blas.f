@@ -1056,6 +1056,349 @@
       RETURN
       END
 
+      SUBROUTINE drotm(N,DX,INCX,DY,INCY,DPARAM)
+*
+*  -- Reference BLAS level1 routine (version 3.8.0) --
+*  -- Reference BLAS is a software package provided by Univ. of Tennessee,    --
+*  -- Univ. of California Berkeley, Univ. of Colorado Denver and NAG Ltd..--
+*     November 2017
+*
+*     .. Scalar Arguments ..
+      INTEGER INCX,INCY,N
+*     ..
+*     .. Array Arguments ..
+      DOUBLE PRECISION DPARAM(5),DX(*),DY(*)
+*     ..
+*
+* Purpose:
+* =============
+*
+*    APPLY THE MODIFIED GIVENS TRANSFORMATION, H, TO THE 2 BY N MATRIX
+*
+*    (DX**T) , WHERE **T INDICATES TRANSPOSE. THE ELEMENTS OF DX ARE IN
+*    (DY**T)
+*
+*    DX(LX+I*INCX), I = 0 TO N-1, WHERE LX = 1 IF INCX .GE. 0, ELSE
+*    LX = (-INCX)*N, AND SIMILARLY FOR SY USING LY AND INCY.
+*    WITH DPARAM(1)=DFLAG, H HAS ONE OF THE FOLLOWING FORMS..
+*
+*    DFLAG=-1.D0     DFLAG=0.D0        DFLAG=1.D0     DFLAG=-2.D0
+*
+*      (DH11  DH12)    (1.D0  DH12)    (DH11  1.D0)    (1.D0  0.D0)
+*    H=(          )    (          )    (          )    (          )
+*      (DH21  DH22),   (DH21  1.D0),   (-1.D0 DH22),   (0.D0  1.D0).
+*    SEE DROTMG FOR A DESCRIPTION OF DATA STORAGE IN DPARAM.
+*
+* Arguments:
+* ==========
+*
+*          N is INTEGER
+*         number of elements in input vector(s)
+*
+*          DX is DOUBLE PRECISION array, dimension ( 1 + ( N - 1 )*abs( INCX ) )
+*
+*          INCX is INTEGER
+*         storage spacing between elements of DX
+*
+*          DY is DOUBLE PRECISION array, dimension ( 1 + ( N - 1 )*abs( INCY ) )
+*
+*          INCY is INTEGER
+*         storage spacing between elements of DY
+*
+*          DPARAM is DOUBLE PRECISION array, dimension (5)
+*     DPARAM(1)=DFLAG
+*     DPARAM(2)=DH11
+*     DPARAM(3)=DH21
+*     DPARAM(4)=DH12
+*     DPARAM(5)=DH22
+*
+*  =====================================================================
+*
+*     .. Local Scalars ..
+      DOUBLE PRECISION DFLAG,DH11,DH12,DH21,DH22,TWO,W,Z,ZERO
+      INTEGER I,KX,KY,NSTEPS
+*     ..
+*     .. Data statements ..
+      DATA zero,two/0.d0,2.d0/
+*     ..
+*
+      dflag = dparam(1)
+      IF (n.LE.0 .OR. (dflag+two.EQ.zero)) RETURN
+      IF (incx.EQ.incy.AND.incx.GT.0) THEN
+*
+         nsteps = n*incx
+         IF (dflag.LT.zero) THEN
+            dh11 = dparam(2)
+            dh12 = dparam(4)
+            dh21 = dparam(3)
+            dh22 = dparam(5)
+            DO i = 1,nsteps,incx
+               w = dx(i)
+               z = dy(i)
+               dx(i) = w*dh11 + z*dh12
+               dy(i) = w*dh21 + z*dh22
+            END DO
+         ELSE IF (dflag.EQ.zero) THEN
+            dh12 = dparam(4)
+            dh21 = dparam(3)
+            DO i = 1,nsteps,incx
+               w = dx(i)
+               z = dy(i)
+               dx(i) = w + z*dh12
+               dy(i) = w*dh21 + z
+            END DO
+         ELSE
+            dh11 = dparam(2)
+            dh22 = dparam(5)
+            DO i = 1,nsteps,incx
+               w = dx(i)
+               z = dy(i)
+               dx(i) = w*dh11 + z
+               dy(i) = -w + dh22*z
+            END DO
+         END IF
+      ELSE
+         kx = 1
+         ky = 1
+         IF (incx.LT.0) kx = 1 + (1-n)*incx
+         IF (incy.LT.0) ky = 1 + (1-n)*incy
+*
+         IF (dflag.LT.zero) THEN
+            dh11 = dparam(2)
+            dh12 = dparam(4)
+            dh21 = dparam(3)
+            dh22 = dparam(5)
+            DO i = 1,n
+               w = dx(kx)
+               z = dy(ky)
+               dx(kx) = w*dh11 + z*dh12
+               dy(ky) = w*dh21 + z*dh22
+               kx = kx + incx
+               ky = ky + incy
+            END DO
+         ELSE IF (dflag.EQ.zero) THEN
+            dh12 = dparam(4)
+            dh21 = dparam(3)
+            DO i = 1,n
+               w = dx(kx)
+               z = dy(ky)
+               dx(kx) = w + z*dh12
+               dy(ky) = w*dh21 + z
+               kx = kx + incx
+               ky = ky + incy
+            END DO
+         ELSE
+             dh11 = dparam(2)
+             dh22 = dparam(5)
+             DO i = 1,n
+                w = dx(kx)
+                z = dy(ky)
+                dx(kx) = w*dh11 + z
+                dy(ky) = -w + dh22*z
+                kx = kx + incx
+                ky = ky + incy
+            END DO
+         END IF
+      END IF
+      RETURN
+      END
+
+      SUBROUTINE drotmg(DD1,DD2,DX1,DY1,DPARAM)
+*
+*  -- Reference BLAS level1 routine (version 3.8.0) --
+*  -- Reference BLAS is a software package provided by Univ. of Tennessee,    --
+*  -- Univ. of California Berkeley, Univ. of Colorado Denver and NAG Ltd..--
+*     November 2017
+*
+*     .. Scalar Arguments ..
+      DOUBLE PRECISION DD1,DD2,DX1,DY1
+*     ..
+*     .. Array Arguments ..
+      DOUBLE PRECISION DPARAM(5)
+*     ..
+*
+* Purpose:
+* =============
+*
+*    CONSTRUCT THE MODIFIED GIVENS TRANSFORMATION MATRIX H WHICH ZEROS
+*    THE SECOND COMPONENT OF THE 2-VECTOR  (DSQRT(DD1)*DX1,DSQRT(DD2)*>    DY2)**T.
+*    WITH DPARAM(1)=DFLAG, H HAS ONE OF THE FOLLOWING FORMS..
+*
+*    DFLAG=-1.D0     DFLAG=0.D0        DFLAG=1.D0     DFLAG=-2.D0
+*
+*      (DH11  DH12)    (1.D0  DH12)    (DH11  1.D0)    (1.D0  0.D0)
+*    H=(          )    (          )    (          )    (          )
+*      (DH21  DH22),   (DH21  1.D0),   (-1.D0 DH22),   (0.D0  1.D0).
+*    LOCATIONS 2-4 OF DPARAM CONTAIN DH11, DH21, DH12, AND DH22
+*    RESPECTIVELY. (VALUES OF 1.D0, -1.D0, OR 0.D0 IMPLIED BY THE
+*    VALUE OF DPARAM(1) ARE NOT STORED IN DPARAM.)
+*
+*    THE VALUES OF GAMSQ AND RGAMSQ SET IN THE DATA STATEMENT MAY BE
+*    INEXACT.  THIS IS OK AS THEY ARE ONLY USED FOR TESTING THE SIZE
+*    OF DD1 AND DD2.  ALL ACTUAL SCALING OF DATA IS DONE USING GAM.
+*
+* Arguments:
+* ==========
+*
+*    DD1 is DOUBLE PRECISION
+*
+*    DD2 is DOUBLE PRECISION
+*
+*    DX1 is DOUBLE PRECISION
+*
+*    DY1 is DOUBLE PRECISION
+*
+*    DPARAM is DOUBLE PRECISION array, dimension (5)
+*     DPARAM(1)=DFLAG
+*     DPARAM(2)=DH11
+*     DPARAM(3)=DH21
+*     DPARAM(4)=DH12
+*     DPARAM(5)=DH22
+*
+*  =====================================================================
+*
+*     .. Local Scalars ..
+      DOUBLE PRECISION DFLAG,DH11,DH12,DH21,DH22,DP1,DP2,DQ1,DQ2,DTEMP,
+     $                 du,gam,gamsq,one,rgamsq,two,zero
+*     ..
+*     .. Intrinsic Functions ..
+      INTRINSIC dabs
+*     ..
+*     .. Data statements ..
+*
+      DATA zero,one,two/0.d0,1.d0,2.d0/
+      DATA gam,gamsq,rgamsq/4096.d0,16777216.d0,5.9604645d-8/
+*     ..
+
+      IF (dd1.LT.zero) THEN
+*        GO ZERO-H-D-AND-DX1..
+         dflag = -one
+         dh11 = zero
+         dh12 = zero
+         dh21 = zero
+         dh22 = zero
+*
+         dd1 = zero
+         dd2 = zero
+         dx1 = zero
+      ELSE
+*        CASE-DD1-NONNEGATIVE
+         dp2 = dd2*dy1
+         IF (dp2.EQ.zero) THEN
+            dflag = -two
+            dparam(1) = dflag
+            RETURN
+         END IF
+*        REGULAR-CASE..
+         dp1 = dd1*dx1
+         dq2 = dp2*dy1
+         dq1 = dp1*dx1
+*
+         IF (dabs(dq1).GT.dabs(dq2)) THEN
+            dh21 = -dy1/dx1
+            dh12 = dp2/dp1
+*
+            du = one - dh12*dh21
+*
+           IF (du.GT.zero) THEN
+             dflag = zero
+             dd1 = dd1/du
+             dd2 = dd2/du
+             dx1 = dx1*du
+           END IF
+         ELSE
+
+            IF (dq2.LT.zero) THEN
+*              GO ZERO-H-D-AND-DX1..
+               dflag = -one
+               dh11 = zero
+               dh12 = zero
+               dh21 = zero
+               dh22 = zero
+*
+               dd1 = zero
+               dd2 = zero
+               dx1 = zero
+            ELSE
+               dflag = one
+               dh11 = dp1/dp2
+               dh22 = dx1/dy1
+               du = one + dh11*dh22
+               dtemp = dd2/du
+               dd2 = dd1/du
+               dd1 = dtemp
+               dx1 = dy1*du
+            END IF
+         END IF
+
+*     PROCEDURE..SCALE-CHECK
+         IF (dd1.NE.zero) THEN
+            DO WHILE ((dd1.LE.rgamsq) .OR. (dd1.GE.gamsq))
+               IF (dflag.EQ.zero) THEN
+                  dh11 = one
+                  dh22 = one
+                  dflag = -one
+               ELSE
+                  dh21 = -one
+                  dh12 = one
+                  dflag = -one
+               END IF
+               IF (dd1.LE.rgamsq) THEN
+                  dd1 = dd1*gam**2
+                  dx1 = dx1/gam
+                  dh11 = dh11/gam
+                  dh12 = dh12/gam
+               ELSE
+                  dd1 = dd1/gam**2
+                  dx1 = dx1*gam
+                  dh11 = dh11*gam
+                  dh12 = dh12*gam
+               END IF
+            ENDDO
+         END IF
+
+         IF (dd2.NE.zero) THEN
+            DO WHILE ( (dabs(dd2).LE.rgamsq) .OR. (dabs(dd2).GE.gamsq) )
+               IF (dflag.EQ.zero) THEN
+                  dh11 = one
+                  dh22 = one
+                  dflag = -one
+               ELSE
+                  dh21 = -one
+                  dh12 = one
+                  dflag = -one
+               END IF
+               IF (dabs(dd2).LE.rgamsq) THEN
+                  dd2 = dd2*gam**2
+                  dh21 = dh21/gam
+                  dh22 = dh22/gam
+               ELSE
+                  dd2 = dd2/gam**2
+                  dh21 = dh21*gam
+                  dh22 = dh22*gam
+               END IF
+            END DO
+         END IF
+
+      END IF
+
+      IF (dflag.LT.zero) THEN
+         dparam(2) = dh11
+         dparam(3) = dh21
+         dparam(4) = dh12
+         dparam(5) = dh22
+      ELSE IF (dflag.EQ.zero) THEN
+         dparam(3) = dh21
+         dparam(4) = dh12
+      ELSE
+         dparam(2) = dh11
+         dparam(5) = dh22
+      END IF
+
+      dparam(1) = dflag
+      RETURN
+      END
+
       SUBROUTINE dscal(N,DA,DX,INCX)
 *
 *  -- Reference BLAS level1 routine (version 3.8.0) --
