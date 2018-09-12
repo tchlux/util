@@ -227,22 +227,25 @@ def test_time(model, ns=range(10,10011,1000), ds=range(2,11,2)):
 # Given a model, generate a test plot demonstrating the surface it procudes
 def test_plot(model, low=0, upp=1, plot_points=3000, p=None,
               fun=lambda x: 3*x[0]+.5*np.cos(8*x[0])+np.sin(5*x[-1]),
-              N=20, D=2, random=True, seed=0):
+              N=20, D=2, random=True, seed=0, x=None, y=None):
     np.random.seed(seed)
-    # Generate x points
-    if random:
-        x = np.random.random(size=(N,D))
-    else:
-        N = int(round(N ** (1/D)))
-        x = np.array([r.flatten() for r in np.meshgrid(*[np.linspace(0,1,N)]*D)]).T
-    # Calculate response values
-    y = np.array([fun(v) for v in x])
+    provided_points = (type(x) != type(None)) and (type(y) != type(None))
+    if (type(x) == type(None)):
+        # Generate x points
+        if random:
+            x = np.random.random(size=(N,D))
+        else:
+            N = int(round(N ** (1/D)))
+            x = np.array([r.flatten() for r in np.meshgrid(*[np.linspace(0,1,N)]*D)]).T
+    if (type(y) == type(None)):
+        # Calculate response values
+        y = np.array([fun(v) for v in x])
     # Fit the model to the points
     model.fit(x,y)
     # Generate the plot
     from util.plot import Plot
     if type(p) == type(None): p = Plot()
-    p.add("Training Points", *x.T, y)
+    if not provided_points: p.add("Training Points", *x.T, y)
     p.add_func(str(model), model, *([(low-.1,upp+.1)]*D),
                plot_points=plot_points, vectorized=True)
     return p, x, y
@@ -288,6 +291,8 @@ from util.algorithms.voronoi import Voronoi
 from util.algorithms.nearest_neighbor import NearestNeighbor
 from util.algorithms.delaunay import Delaunay, qHullDelaunay
 from util.algorithms.neural_network import MLPRegressor
+from util.algorithms.linear_shepard import LSHEP
+from util.algorithms.mars import MARS
 
 if __name__ == "__main__":
     print("Adding surface to plot..")

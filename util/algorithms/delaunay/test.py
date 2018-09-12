@@ -6,7 +6,7 @@ if __name__ == "__main__":
     # Settings for creating the example.
     N           = 20
     dim         = 2
-    random      = True
+    random      = False
     plot_points = 5000
 
     # Function for testing.

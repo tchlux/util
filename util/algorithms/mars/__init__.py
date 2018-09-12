@@ -1,3 +1,5 @@
+from util.algorithms import Approximator
+
 # MARS
 MARS_MAX_BASES = float('inf')
 MARS_MAX_INTERACTION = float('inf')
@@ -30,7 +32,7 @@ class MARS(Approximator):
 
     # Use fortran code to compute the MARS model for given data
     #  See 'marspack.f' for details as to what these poorly named variables mean.
-    def fit(self, control_points, values, max_bases=None, max_interaction=None):
+    def _fit(self, control_points, values, max_bases=None, max_interaction=None):
         if type(max_bases) != type(None):
             self.max_bases = max_bases
         if type(max_interaction) != type(None):
@@ -43,5 +45,7 @@ class MARS(Approximator):
         self.model.fit(control_points, values)
 
     # Use Earth to evaluate the computed boxes
-    def predict(self, x):
-        return self.model.predict(x)
+    def _predict(self, x):
+        response = self.model.predict(x)
+        if len(response.shape) == 1: response = response[:,None]
+        return response

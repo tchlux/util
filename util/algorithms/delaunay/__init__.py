@@ -102,9 +102,9 @@ class qHullDelaunay(WeightedApproximator):
 class Delaunay(WeightedApproximator):
     def __init__(self):
         # Get the source fortran code module
-        path_to_src = os.path.join(CWD,"delsparses.f90")
+        path_to_src = os.path.join(CWD,"delsparse.f90")
         self.delaunay = fmodpy.fimport(
-            path_to_src, output_directory=CWD).delaunaysparses
+            path_to_src, output_directory=CWD, verbose=True).delaunaysparses
         self.pts = None
         self.errs = {}
 

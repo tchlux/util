@@ -18,6 +18,8 @@
 
 # TODO: Plot.add_zero_line(func)
 # TODO: Plot.add_frame(..., persist=True)
+# TODO: Adding multiple frames where the first has no edges and the
+#       rest have edges causes all frames to look like first.
 
 import random, numbers, os, webbrowser, imp, sys, re, tempfile
 import numpy as np
@@ -1234,7 +1236,7 @@ class Plot:
 
     # Light wrapper for "add" which is designed to place graphical nodes.
     def add_node(self, name, x, y, *args, symbol="circle",
-                 display=True, white=True, size=30,
+                 display=True, white=True, size=30, hoverinfo="name",
                  marker_line_color="rgba(0,0,0,1))",
                  marker_line_width=2, label=False, label_y_offset=1,
                  label_x_offset=0, **kwargs):
@@ -1244,7 +1246,8 @@ class Plot:
                           y+label_y_offset, mode="text", text=name)
 
         # Disable "white" mode if color was provided
-        if ("color" in kwargs): white = False
+        if ("color" in kwargs) and (type(kwargs["color"]) != type(None)): 
+            white = False
         # Set to a default color if desired
         if white: kwargs["color"] = "rgba(255,255,255,1)"
         # Set the defaults for some other plotting arguments
@@ -1259,7 +1262,8 @@ class Plot:
                 color=kwargs.get("color","(0,0,0)"), alpha=0)
         return self.add(name, [x], [y], *args, symbol=symbol,
                         marker_line_width=marker_line_width,
-                        marker_line_color=marker_line_color, **kwargs)
+                        marker_line_color=marker_line_color, 
+                        hoverinfo=hoverinfo, **kwargs)
 
     # Wrapper for "plot" that draws lines between nodes in a sequence.
     def add_edge(self, nodes, color="rgba(0,0,0,1)", mode="lines", 
@@ -1652,8 +1656,10 @@ def multiplot(plots, x_domains=None, y_domains=None, html=True,
         for c,plot in enumerate(row):
             # Allows for empty spaces
             if type(plot) == type(None): continue
+            count = 0
             # Otherwise, continue assuming we have a figure!
             for d in plot['data']:
+                count += 1
                 # # Only add traces that are not redundant (same trace for different frames)
                 # if not any((d['name'] == f['name']) for f in fig['data']):
                 fig.append_trace(d, r+1, c+1)
@@ -1742,79 +1748,75 @@ if __name__ == "__main__":
     x = np.linspace(-10,10,100)
     y = x**2 / 10    
 
-    # # Decide randomly whether to make a 2D, 3D, or both
-    # selection = np.random.randint(3)
-    selection = 2
-    
-    # Plot the 2D
-    if selection in [0,2]:
-        plot = Plot("2D Title")
-        # Adding a 2D function
-        plot.add_func("Test Func 2D", fun,[-10,10], opacity=0.5, dash="dot")
-        # Adding lines with dots
-        plot.add("V Line", [0,0], [min(y), max(y)], mode="lines+markers")
-        # Adding a filled region
-        plot.add("Square", [-2,-2,2,2], [5,10,10,5], opacity=0.8,
-                 mode="none", fill="toself")
-        # Adding lines in arbitrary directions
-        plot.add("H Line", [-5,5], [1,1], mode="lines+markers",
-                 symbol='square', dash="1px,3px,1px")
-        plot.add("H Line 2", [-5,5], [2,2], mode="lines")
-        plot.add_annotation("2D Annotation", 10+.1, 10-.1, ax=40, ay=20,
-                            arrow_head=2, y_anchor="top")
-        plot1 = plot
+    # Simple straight forward 2D plotting.
+    plot = Plot("2D Plotting Different Types")
+    # Adding a 2D function
+    plot.add_func("Test Func 2D", fun,[-10,10], opacity=0.5, dash="dot")
+    # Adding lines with dots
+    plot.add("V Line", [0,0], [min(y), max(y)], mode="lines+markers")
+    # Adding a filled region
+    plot.add("Square", [-2,-2,2,2], [5,10,10,5], opacity=0.8,
+             mode="none", fill="toself")
+    # Adding lines in arbitrary directions
+    plot.add("H Line", [-5,5], [1,1], mode="lines+markers",
+             symbol='square', dash="1px,3px,1px")
+    plot.add("H Line 2", [-5,5], [2,2], mode="lines")
+    plot.add_annotation("2D Annotation", 10+.1, 10-.1, ax=9, ay=2,
+                        arrow_head=2, y_anchor="top")
+    plot1 = plot
 
-    # Plot the 3D
-    if selection in [1,2]:
-        plot = Plot("3D Title","X Axis", "Y Axis", "Z Axis")
-        rand_x = list(range(-5,6,2))
-        rand_y = np.random.randint(-3,4,size=6)
-        rand_z = np.random.randint(3,8,size=6)
-        # Adding a 3D line
-        plot.add("3D Line", rand_x, rand_y, rand_z, mode='lines')
-        dens = 5
-        x, y = np.meshgrid(np.linspace(-5,5,dens), np.linspace(-5,5,dens))
-        x = x.flatten()
-        y = y.flatten()
-        fun = lambda x: -.3*x[1] + 1/2*x[0] + 1
-        z = np.array(list(map(fun, zip(x,y))))
-        # Adding a 3D function, and demonstrating different marker styles
-        plot.add("3D Above", x, y, z+1.5, marker_size=3,
-                 marker_line_width=1, group="Small")
-        plot.add("3D Below", x, y, z-1.5, marker_size=2,
-                 marker_line_width=1, group="Small")
-        plot.add("3D B Next", x, y, z-1, marker_size=5, opacity=0.7,
-                 marker_line_width=1, group="Big" )
-        plot.add("3D A Next", x, y, z+1, marker_size=7, opacity=0.4,
-                 marker_line_width=1, group="Big")
-        plot.add_func("3D Surface", fun, [min(x),max(x)],
-                      [min(y),max(y)], opacity=0.7, use_gradient=True)
-        x_val, y_val = x[-5], y[-5]
-        plot.add_annotation("3D Annotation", x_val, y_val, 
-                            fun([x_val,y_val])+1.5, ax=-15)
-        plot2 = plot
+    # 3D plotting
+    plot = Plot("3D Title","X Axis", "Y Axis", "Z Axis")
+    rand_x = list(range(-5,6,2))
+    rand_y = np.random.randint(-3,4,size=6)
+    rand_z = np.random.randint(3,8,size=6)
+    # Adding a 3D line
+    plot.add("3D Line", rand_x, rand_y, rand_z, mode='lines')
+    dens = 5
+    x, y = np.meshgrid(np.linspace(-5,5,dens), np.linspace(-5,5,dens))
+    x = x.flatten()
+    y = y.flatten()
+    fun = lambda x: -.3*x[1] + 1/2*x[0] + 1
+    z = np.array(list(map(fun, zip(x,y))))
+    # Adding a 3D function, and demonstrating different marker styles
+    plot.add("3D Above", x, y, z+1.5, marker_size=3,
+             marker_line_width=1, group="Small")
+    plot.add("3D Below", x, y, z-1.5, marker_size=2,
+             marker_line_width=1, group="Small")
+    plot.add("3D B Next", x, y, z-1, marker_size=5, opacity=0.7,
+             marker_line_width=1, group="Big" )
+    plot.add("3D A Next", x, y, z+1, marker_size=7, opacity=0.4,
+             marker_line_width=1, group="Big")
+    plot.add_func("3D Surface", fun, [min(x),max(x)],
+                  [min(y),max(y)], opacity=0.7, use_gradient=True)
+    x_val, y_val = x[-5], y[-5]
+    plot.add_annotation("3D Annotation", x_val, y_val, 
+                        fun([x_val,y_val])+1.5, ax=-15)
+    plot2 = plot
 
     # Adding a histogram, notice they don't have the same ranges and
     # that will reflect in their respective bin sizes.
-    plot3 = Plot("Last Title", "x stuff", "y stuff")
+    plot3 = Plot("Using 'multiplot'", "x stuff", "y stuff")
     plot3.add_histogram("Histogram Series 1", np.random.normal(0,3,size=(400,)))
     plot3.add_histogram("Histogram Series 2", np.random.normal(15,1, size=(200,)))
     plot3.add_annotation("Histogram annotation", 0, 0.005)
 
-    # Showing multiple plots on one screen, a grid layout with the
-    # option for varying numbers of elements on each row.
-    multiplot([[plot1, plot2],[plot3]], gap=0.1)
-
+    # Render the plots in the browser.
+    plot1.plot(show=False)
     # Demonstrate how to put a full-screen plot beneath the first.
-    plot2.plot(title="'append=True' Plotting", append=True)
+    plot2.plot(title="'append=True' Plotting", append=True, show=False)
     # Demonstrate allowing plotly to auto-scale when series are
     # activated and deactivated (try turning off Histogram Series 1)
-    plot3.plot(title="'fixed=False' Plotting", fixed=False, append=True)
+    plot3.plot(title="'fixed=False' Plotting", fixed=False,
+               append=True, show=False)
+    # Showing multiple plots on one screen, a grid layout with the
+    # option for varying numbers of elements on each row.
+    multiplot([[plot1, plot2],[plot3]], gap=0.1, append=True, show=False)
 
 
     # Add an example of two plots being animated side-by-side
     p1 = Plot("","Plot 1")
-    p2 = Plot("","Plot 2")
+    p2 = Plot("Animation Plotting","Plot 2")
     # x values for each plot
     x = [-2,-1,0.01,1,2,3]
     for f in range(10):
@@ -1831,6 +1833,7 @@ if __name__ == "__main__":
     multiplot([[p1, p2]], append=True)
 
 
+    # This is an example of how to control the legend (flat, bottom).
     # legend_settings = dict(
     #     xanchor = "center",
     #     yanchor = "top",

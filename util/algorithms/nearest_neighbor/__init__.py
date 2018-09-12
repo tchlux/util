@@ -1,6 +1,19 @@
 import numpy as np
 from util.algorithms import WeightedApproximator
 
+# Construct an approximation algorithm that only returns the average
+# of the fit points.
+class Average(WeightedApproximator):
+    def _fit(self, points):
+        self.points = points.copy()
+    def _predict(self, points):
+        indices = [list(range(len(self.points)))] * len(points)
+        w = 1 / len(self.points)
+        weights = [[w]*len(self.points)] * len(points)
+        return np.array(indices), np.array(weights)
+# Import another approximation algorithm that reasonably blends points.
+from util.algorithms import Voronoi
+
 # Nearest neighbor
 NN_DEFAULT_NUM_NEIGHBORS = 1
     
@@ -10,14 +23,15 @@ NN_DEFAULT_NUM_NEIGHBORS = 1
 
 # Class for computing an interpolation between the nearest n neighbors
 class NearestNeighbor(WeightedApproximator):
-    def __init__(self, num_neighbors=NN_DEFAULT_NUM_NEIGHBORS):
+    def __init__(self, k=NN_DEFAULT_NUM_NEIGHBORS, method=Voronoi):
         self.points = None
-        self.num_neighbors = num_neighbors
+        self.method = method
+        self.num_neighbors = k
 
     # Use fortran code to compute the boxes for the given data
-    def _fit(self, control_points, num_neighbors=None):
-        if type(num_neighbors) != type(None):
-            self.num_neighbors = num_neighbors
+    def _fit(self, control_points, k=None):
+        if type(k) != type(None):
+            self.num_neighbors = k
         # Process and store local information
         self.points = control_points.copy()
 
@@ -36,10 +50,13 @@ class NearestNeighbor(WeightedApproximator):
                 pts.append( [closest[0]] )
                 wts.append( [1.0] )
             else:
-                # distances = 1 / distances
-                # weights = distances / sum(distances)
-                weights = np.ones(self.num_neighbors) / self.num_neighbors
-                points = closest
+                model = self.method()
+                model.fit(self.points[closest])
+                points, weights = model.predict(pt)
+                # # distances = 1 / distances
+                # # weights = distances / sum(distances)
+                # weights = np.ones(self.num_neighbors) / self.num_neighbors
+                # points = closest
                 pts.append( closest )
                 wts.append( weights )
         # Convert into array form

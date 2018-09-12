@@ -1,4 +1,3 @@
-
 SUBROUTINE DELAUNAYSPARSES( D, N, PTS, M, Q, SIMPS, WEIGHTS, IERR, &
      INTERP_IN, INTERP_OUT, EPS, EXTRAP, RNORM, IBUDGET, SEED )
   ! This is a serial implementation of an algorithm for efficiently performing

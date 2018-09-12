@@ -12,7 +12,7 @@ CWD = os.path.dirname(os.path.abspath(__file__))
 # ======================
 class BoxMesh(Approximator):
     meshes = fmodpy.fimport(
-        os.path.join(CWD,"meshes","meshes.f90"),
+        os.path.join(CWD,"meshes.f90"),
         module_link_args=["-lgfortran","-lblas","-llapack"], 
         output_directory=CWD)
     error_tolerance = 0.0

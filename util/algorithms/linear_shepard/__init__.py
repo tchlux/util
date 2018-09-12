@@ -1,3 +1,12 @@
+# Makes available all custom algorithms that I have worked with
+import os
+import numpy as np
+import fmodpy
+from util.algorithms import Approximator
+
+# This directory
+CWD = os.path.dirname(os.path.abspath(__file__))
+
 # =======================
 #      LSHEP Wrapper     
 # =======================
@@ -6,7 +15,7 @@
 class LSHEP(Approximator):
     def __init__(self):
         self.linear_shepard = fmodpy.fimport(
-            os.path.join(CWD,"linear_shepard","linear_shepard.f95"),
+            os.path.join(CWD,"linear_shepard.f95"),
             module_link_args=["-lgfortran","-lblas","-llapack"], 
             output_directory=CWD)
         self.lshep = self.linear_shepard.lshep
@@ -15,10 +24,11 @@ class LSHEP(Approximator):
         self.x = self.f = self.a = self.rw = None
 
     # Use fortran code to compute the boxes for the given data
-    def fit(self, control_points, values):
+    def _fit(self, control_points, values):
         # Local operations
         self.x = np.asfortranarray(control_points.T)
-        self.f = np.asfortranarray(values)
+        if values.shape[1] > 1: raise(Exception("LSHEP only does 1D response."))
+        self.f = np.asfortranarray(values.flatten())
         self.a = np.ones(shape=self.x.shape, order="F")
         self.rw = np.ones(shape=(self.x.shape[1],), order="F")
         # In-place update of self.a and self.rw
@@ -26,7 +36,7 @@ class LSHEP(Approximator):
                    self.x, self.f, self.a, self.rw)
 
     # Use fortran code to evaluate the computed boxes
-    def predict(self, x):
+    def _predict(self, x):
         # Calculate all of the response values
         response = []
         for x_pt in x:
@@ -37,7 +47,7 @@ class LSHEP(Approximator):
             response.append(resp)
             # self.ierrors[ier] = self.ierrors.get(ier,0) + 1
         # Return the response values
-        return response
+        return np.array(response)[:,None]
 
     # Print and return a summary of the errors experienced
     def errors(self):
