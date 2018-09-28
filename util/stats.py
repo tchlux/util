@@ -3,6 +3,152 @@ from scipy.interpolate import splrep, splev
 from scipy.interpolate import PchipInterpolator
 from scipy.integrate import quad as integrate
 from scipy.stats import kstest
+import os
+
+CWD = os.path.dirname(os.path.abspath(__file__))
+
+# =====================================================
+#      Principle Response and Principle Components     
+# =====================================================
+
+STANDARD_METRIC = lambda p1,p2: abs(p1-p2)
+
+# Find a set of (nearly) orthogonal vectors that maximize the one norm
+# of the vectors in "vec_iterator".
+def ortho_basis(vec_iterator, num_bases=None, steps=float('inf'), parallel=False):
+    # Determine the functions being used based on parallelism.
+    if not parallel:
+        from numpy import zeros
+        from util.parallel import builtin_map as map
+    else:
+        from util.parallel import map, killall
+        from util.parallel import shared_array as zeros
+    # Get the first vector from the iterator and store as the first basis.
+    for vec in vec_iterator: break
+    # Store the "dimension"
+    dim = len(vec)
+    # Automatically set the number of bases if not provided.
+    if type(num_bases) == type(None): num_bases = dim
+    else:                             num_bases = min(dim, num_bases)
+    bases_shape = (num_bases, len(vec))
+    # Create global arrays that  safe for multiprocessing (without copies)
+    if parallel: global _bases, _lengths, _counts
+    _bases = zeros(bases_shape)
+    _lengths = zeros((num_bases,))
+    _counts = zeros((num_bases,))
+    # Store the first basis vector (the vector that was pulled out).
+    _bases[0,:] = vec
+    _counts[0] = 1.0
+    _lengths[0] = np.sqrt(np.sum(vec**2))
+    # Given a vec, update the basis vectors iteratively according to
+    # the provided vector (ignore race conditions).
+    def update_bases(vec):
+        print("STATS: Starting with a vector..", vec[0], len(vec), flush=True)
+        for basis in range(num_bases):
+            vec_length = np.sqrt(np.sum(vec**2))
+            if (vec_length <= 0): return
+            # Flip the vector if appropriate.
+            if (np.dot(_bases[basis], vec) < 0): vec *= -1
+            # Update the current basis vector (count, then vec, the length).
+            _counts[basis] += 1
+            _bases[basis] += (vec - _bases[basis]) / _counts[basis]
+            _lengths[basis] += vec_length / _counts[basis]
+            if (np.sum(_lengths[basis]**2) <= 1e-100): return
+            # Remove this basis vector from "vec" (orthogonalize).
+            shift = np.dot(vec, _bases[basis]) * (_bases[basis] / np.sum(_bases[basis]**2)) 
+            vec -= shift
+    print("STATS: Beginning the update process..", flush=True)
+    # Perform rounds of updates using a (parallel) map operation.
+    step = 1
+    for _ in map(update_bases, vec_iterator):
+        print("STATS: Step",_,"started..", flush=True)
+        step += 1
+        if step >= steps: break
+    # Kill all hanging processes (because we may not have exausted the iterator).
+    if parallel: killall()
+    # Identify those bases that were actually computed, reduce to them.
+    to_keep = _counts > 0
+    bases = _bases[to_keep]
+    lengths = _lengths[to_keep]
+    # Normalize the bases and lengths (so that users can understand relative weight).
+    bases = (bases.T / np.sqrt(np.sum(bases**2, axis=1))).T
+    lengths /= np.sum(lengths)
+    # Delete the temporary global variables (used for parallelism)
+    if parallel: del _bases, _lengths, _counts
+    return bases, lengths
+        
+# Generate "count" random indices of pairs that are within "length" bounds.
+def gen_random_pairs(length, count=None, show_time=True, timeout=1):
+    import time
+    start = time.time()
+    if type(count) == type(None):
+        count = (length**2 - length) // 2
+    # Iterate over random pairs.
+    for _ in range(count):
+        if (time.time() - start) >= timeout:
+            print(f"{_: 7d} : {count: 7d}", end="\r")
+            start = time.time()
+        index_1 = np.random.randint(length)
+        index_2 = np.random.randint(length-1)
+        if (index_2 >= index_1): index_2 += 1
+        yield index_1, index_2
+
+# Generate vector between scaled by metric difference. Give the metric
+# the indices of "vectors" in the provided matrix.
+def gen_random_metric_diff(matrix, index_metric, count=None):
+    # Iterate over random pairs.
+    for (p1, p2) in gen_random_pairs(len(matrix), count):
+        vec = matrix[p1] - matrix[p2]
+        vec /= np.sqrt(np.sum(vec**2))
+        yield index_metric(p1, p2) * vec
+
+# Estimate the principle response directions using an iterative
+# technique to save on memory usage. This is an approximation to the
+# one-norm maximizers and may not converge.
+def pra(points, responses, metric=STANDARD_METRIC,
+        directions=100, steps=10000, parallel=False):
+    if (len(points[0].shape) != 1): raise(Exception("Points must be an indexed set of vectors."))
+    # Create a local "metric" based on the indices of row vectors.
+    def index_metric(p1, p2):
+        return metric(responses[p1], responses[p2])
+    # Create a "vector generator" and pass it to the one-norm basis finder.
+    vec_gen = gen_random_metric_diff(points, index_metric, steps)
+    components, lengths = ortho_basis(vec_gen, num_bases=directions,
+                                      steps=steps, parallel=parallel)
+    # Currently not doing anyting with the "lengths", but they can be
+    # returned too later if the code updates.
+    return components, lengths
+
+
+# Compute the principle components using sklearn.
+def sklearn_pca(points):
+    from sklearn.decomposition import PCA        
+    pca = PCA()
+    pca.fit(points)
+    principle_components = pca.components_
+    magnitudes = pca.singular_values_
+    # Normalize the component magnitudes to have sum 1.
+    magnitudes /= sum(magnitudes)
+    return principle_components, magnitudes
+
+# Compute the principle components of row points manually using NumPy.
+#  (Eigenpairs of the covariance matrix)
+def pca(points):
+    points = points - np.mean(points, axis=0)
+    # Compute the principle components of the (row) points.
+    covariance_matrix = np.cov(points, rowvar=False)
+    magnitudes, principle_components = np.linalg.eig(covariance_matrix)
+    # Normalize the component magnitudes to have sum 1.
+    magnitudes /= np.sum(magnitudes)
+    # Get the ordering of the principle components (by decreasing value).
+    order = np.argsort(-magnitudes)
+    # Order the principle components by (decreasing) magnitude.
+    magnitudes = magnitudes[order]
+    principle_components = principle_components[order]
+    # Return the components and their magnitudes.
+    return principle_components, magnitudes
+
+
 
 #      Functional Representations of Data     
 # ============================================
@@ -396,100 +542,217 @@ if __name__ == "__main__":
     from util.plot import Plot
     import pickle, os
 
-    # num_distrs = 1000
-    # for n in range(10,101,10):
+    TEST_CDF_PDF = False
+    TEST_PRA = True
 
-    # p = Plot()
-    # def c(a):
-    #     return (-np.log(a/2)/2)**(1/2)
-    # def f(n):
-    #     return ks_p_value(.1, n)
-    # def g(ks):
-    #     return ks_p_value(ks, 1000)
-    # p.add_func("c(a) changing a", c, [0.0001,.9999])
-    # p.add_func("KS=.1 changing N", f, [10,1000])
-    # p.add_func("N=1000 changing KS", g, [0,1])
-    # p.plot(fixed=False)
-    # exit()
+    if TEST_CDF_PDF:
+        # num_distrs = 1000
+        # for n in range(10,101,10):
 
-    # p = Plot()
-    # step_size = 1000
-    # steps = 10
-    # dist = []
-    # mean = 10.0
-    # std = 10.0
-    # for size in range(step_size,step_size*steps+1,step_size):
-    #     dist += list(np.random.normal(mean, std, size=(step_size,)))
-    #     # dist += list(np.random.random(size=(step_size,)))
-    #     new_dist = np.array(dist)
-    #     new_dist = (new_dist - mean) / std
-    #     func = cdf_fit_func(dist, cubic=False)
-    #     p.add_func("%i"%(len(dist)),func, [min(dist), max(dist)], group=str(len(dist)))
-    #     print( ("%i "+"%.2f "*3)%
-    #            (size, normal_confidence(dist), np.mean(dist), np.std(dist)) )
-    # p.plot()
-    # exit()
+        # p = Plot()
+        # def c(a):
+        #     return (-np.log(a/2)/2)**(1/2)
+        # def f(n):
+        #     return ks_p_value(.1, n)
+        # def g(ks):
+        #     return ks_p_value(ks, 1000)
+        # p.add_func("c(a) changing a", c, [0.0001,.9999])
+        # p.add_func("KS=.1 changing N", f, [10,1000])
+        # p.add_func("N=1000 changing KS", g, [0,1])
+        # p.plot(fixed=False)
+        # exit()
 
-    from util.plotly import Plot, multiplot
+        # p = Plot()
+        # step_size = 1000
+        # steps = 10
+        # dist = []
+        # mean = 10.0
+        # std = 10.0
+        # for size in range(step_size,step_size*steps+1,step_size):
+        #     dist += list(np.random.normal(mean, std, size=(step_size,)))
+        #     # dist += list(np.random.random(size=(step_size,)))
+        #     new_dist = np.array(dist)
+        #     new_dist = (new_dist - mean) / std
+        #     func = cdf_fit_func(dist, cubic=False)
+        #     p.add_func("%i"%(len(dist)),func, [min(dist), max(dist)], group=str(len(dist)))
+        #     print( ("%i "+"%.2f "*3)%
+        #            (size, normal_confidence(dist), np.mean(dist), np.std(dist)) )
+        # p.plot()
+        # exit()
 
-    # Testing out the mathematical routines
-    num_modes = 5
-    top_mode_color = "rgba(20,20,20,0.6)"
-    rest_mode_color = "rgba(210,210,210,0.4)"
-    size = 200
-    values = np.vstack((np.random.normal(0.4, 0.05, size=(size,)),
-                        np.random.normal(0.0, 0.02, size=(size,)))).flatten()
-    values.sort()
+        from util.plotly import Plot, multiplot
 
-    raw = Plot("", "Value", "Normalized Scale")
-    cdf = Plot("", "Value", "Percent Less")
-    pdf = Plot("CDF and PDF of random normal 2-mode data", "Value", "Probability of Occurrence")
+        # Testing out the mathematical routines
+        num_modes = 5
+        top_mode_color = "rgba(20,20,20,0.6)"
+        rest_mode_color = "rgba(210,210,210,0.4)"
+        size = 200
+        values = np.vstack((np.random.normal(0.4, 0.05, size=(size,)),
+                            np.random.normal(0.0, 0.02, size=(size,)))).flatten()
+        values.sort()
 
-    min_max = (min(values), max(values))
-    bin_size = (min_max[1]-min_max[0])/100
-    pdf.add("PDF Histogram", x_values=values, plot_type="histogram",group="1",
-            opacity=0.7, autobinx=False, histnorm='probability',
-            xbins=dict(start=min_max[0],end=min_max[1],size=bin_size))
-    cdf.add_func("CDF", cdf_fit_func(values, cubic=False), min_max,
-                 mode="markers+lines", marker_size=4, group="1")
+        raw = Plot("", "Value", "Normalized Scale")
+        cdf = Plot("", "Value", "Percent Less")
+        pdf = Plot("CDF and PDF of random normal 2-mode data", "Value", "Probability of Occurrence")
 
-    sd_pts = cdf_second_diff(values)
+        min_max = (min(values), max(values))
+        bin_size = (min_max[1]-min_max[0])/100
+        pdf.add("PDF Histogram", x_values=values, plot_type="histogram",group="1",
+                opacity=0.7, autobinx=False, histnorm='probability',
+                xbins=dict(start=min_max[0],end=min_max[1],size=bin_size))
+        cdf.add_func("CDF", cdf_fit_func(values, cubic=False), min_max,
+                     mode="markers+lines", marker_size=4, group="1")
 
-    # Add vertical lines for each of the mode locations
-    mode_pts = mode_points(sd_pts, thresh_perc=50.0)
-    # Add the rest of the modes as another series
-    mode_x_vals = []
-    mode_y_vals = []
-    for pt in mode_pts[num_modes:]:
-        mode_x_vals += [pt[0], pt[0], None]
-        mode_y_vals += [0,     1,     None]
-    cdf.add("Remaining %i Modes"%(len(mode_pts) - num_modes),
-            mode_x_vals, mode_y_vals, mode='lines', line_width=1,
-            color=rest_mode_color, group='modes')
-    # Add the 'num_modes' top modes as a series
-    mode_x_vals = []
-    mode_y_vals = []
-    for pt in mode_pts[:num_modes]:
-        mode_x_vals += [pt[0], pt[0], None]
-        mode_y_vals += [0,     1,     None]
-    cdf.add("Top %i Modes"%num_modes,mode_x_vals, mode_y_vals,
-            mode='lines', line_width=1, color=top_mode_color, group='modes')
+        sd_pts = cdf_second_diff(values)
 
-
-    # Generate the discrete CDF second derivative plot
-    mode_pts = [list(pt) for pt in mode_pts]
-    mode_pts.sort(key=lambda pt: pt[0])
-    mode_pts = np.array(mode_pts)
-    raw.add("Absolute Discrete CDF''", mode_pts[:,0], mode_pts[:,1],
-            mode='lines', fill='tozeroy', color=top_mode_color,
-            fill_color=rest_mode_color, line_width=1, group='modes')
+        # Add vertical lines for each of the mode locations
+        mode_pts = mode_points(sd_pts, thresh_perc=50.0)
+        # Add the rest of the modes as another series
+        mode_x_vals = []
+        mode_y_vals = []
+        for pt in mode_pts[num_modes:]:
+            mode_x_vals += [pt[0], pt[0], None]
+            mode_y_vals += [0,     1,     None]
+        cdf.add("Remaining %i Modes"%(len(mode_pts) - num_modes),
+                mode_x_vals, mode_y_vals, mode='lines', line_width=1,
+                color=rest_mode_color, group='modes')
+        # Add the 'num_modes' top modes as a series
+        mode_x_vals = []
+        mode_y_vals = []
+        for pt in mode_pts[:num_modes]:
+            mode_x_vals += [pt[0], pt[0], None]
+            mode_y_vals += [0,     1,     None]
+        cdf.add("Top %i Modes"%num_modes,mode_x_vals, mode_y_vals,
+                mode='lines', line_width=1, color=top_mode_color, group='modes')
 
 
-    # Plot all three of these stacked together
-    multiplot([[raw.plot(show=False, html=False)],
-               [cdf.plot(show=False, html=False)],
-               [pdf.plot(show=False, html=False)]
-    ], shared_x=True)
-    
-    exit()
+        # Generate the discrete CDF second derivative plot
+        mode_pts = [list(pt) for pt in mode_pts]
+        mode_pts.sort(key=lambda pt: pt[0])
+        mode_pts = np.array(mode_pts)
+        raw.add("Absolute Discrete CDF''", mode_pts[:,0], mode_pts[:,1],
+                mode='lines', fill='tozeroy', color=top_mode_color,
+                fill_color=rest_mode_color, line_width=1, group='modes')
 
+
+        # Plot all three of these stacked together
+        multiplot([[raw.plot(show=False, html=False)],
+                   [cdf.plot(show=False, html=False)],
+                   [pdf.plot(show=False, html=False)]
+        ], shared_x=True)
+
+    # Example / Test case of Principle Response Analyais
+    if TEST_PRA:
+        import numpy as np
+        # Generate some points for testing.
+        rgen = np.random.RandomState(10)
+        n = 1000
+        print("Number of points:", n)
+        points = (rgen.rand(n,2) - .5) * 2
+
+        # Create some testing functions (for learning different behaviors)
+        funcs = [
+            lambda x: x[0]               , # Linear on x
+            lambda x: abs(x[0] + x[1])   , # "V" function on 1:1 diagonal
+            lambda x: abs(2*x[0] + x[1]) , # "V" function on 2:1 diagonal
+            lambda x: x[0]**2            , # Quadratic on x
+            lambda x: x[1]**2            , # Quadratic on y
+            lambda x: (x[0] + x[1])**2   , # Quadratic on 1:1 diagonal
+            lambda x: (x[0] - x[1])**2   , # Quadratic on 1:-1 diagonal
+            lambda x: (2*x[0] + x[1])**3 , # Cubic on 2:1 diagonal
+            lambda x: rgen.rand()        , # Random function
+        ]
+        # Calculate the response values associated with each function.
+        responses = np.vstack(tuple(tuple(map(f, points)) for f in funcs)).T
+
+        # Reduce to just the first function
+        choice = 4
+        func = funcs[choice]
+        response = responses[:,choice]
+
+        print("Calculating PRA..")
+        # Run the princinple response analysis function.
+        components, lengths = pra(points, response, steps=100000, parallel=True)
+        exit()
+        conditioner = components.copy()
+        unconditioner = np.linalg.inv(components)
+        # unconditioner = np.matmul(np.linalg.inv(components), np.diag(values))
+
+        # Shorten the set of points and values for display purposes.
+        size = 1000
+        random_subset = np.arange(len(points))
+        rgen.shuffle(random_subset)
+        random_subset = random_subset[:size]
+        points = points[random_subset]
+        response = response[random_subset]
+
+        print()
+        print("Components")
+        print(components)
+        print()
+        print("Conditioner")
+        print(conditioner)
+        print()
+
+        # # ------------------------------------------------------------
+        # # Generate a plot of the response surfaces.
+        # from util.plot import Plot, multiplot
+        # print("Generating plots of source function..")
+        # # Add function 1
+        # p1 = Plot()
+        # p1.add("Points", *(points.T), response, opacity=.8)
+        # p1.add_func("Surface", func, [-1,1], [-1,1], plot_points=100)
+        # # Generate a regular approximation
+        # from util.algorithms import NearestNeighbor as Approximator
+        # model = Approximator()
+        # model.fit(points, response)
+        # p1.add_func("Unconditioned Approximation", model, [-1,1], [-1,1],
+        #             mode="markers", opacity=.8)
+        # # Generate a conditioned approximation
+        # model = Approximator()
+        # model.fit(np.matmul(points, conditioner), response)
+        # approx = lambda x: model(np.matmul(x, conditioner))
+        # p1.add_func("Best Approximation", approx, [-1,1], [-1,1],
+        #             mode="markers", opacity=.8)
+        # p1.plot(file_name="source_func.html", show=False)
+        # # ------------------------------------------------------------
+
+        # Return the set of (unique) vectors between points and the metric
+        # change in response between each (unique) pair of points.
+        def between(points, responses, metric=STANDARD_METRIC):
+            import numpy as np
+            vecs = []
+            diffs = []
+            for p1 in range(len(points)):
+                for p2 in range(p1+1, len(points)):
+                    vecs.append( points[p1] - points[p2] )
+                    diffs.append( metric(responses[p1], responses[p2]) )
+            return np.array(vecs, dtype=float), np.array(diffs, dtype=float)
+
+        print("Generating demo plot 2")
+        # Plot the between slopes to verify they are working.
+        # Calculate the between slopes
+        vecs, diffs = between(points, response)
+        vec_lengths = np.sqrt(np.sum(vecs**2, axis=1))
+        bs = (vecs.T * diffs / vec_lengths**2).T
+        # Get a random subset of the between slopes and plot them.
+        random_subset = np.arange(len(bs))
+        rgen.shuffle(random_subset)
+        random_subset = random_subset[:size]
+        # Add function 1
+        p2 = Plot()
+        # Add the points, transformed points, and betweens for demonstration.
+        new_pts = np.matmul(np.matmul(points, conditioner), unconditioner)
+        p2.add("Original Points", *(points.T))
+        # p2.add("Transformed Points", *(new_pts.T), color=p2.color(6, alpha=.7))
+        p2.add("Between Slopes", *(bs[random_subset].T),
+               color=p2.color(4, alpha=.4))
+        # Add the principle response components 
+        for i,vec in enumerate(components.T):
+            vec *= 2
+            p2.add(f"PC {i+1}", [0,vec[0]], [0,vec[1]], mode="lines")
+            ax, ay = (vec / sum(vec**2)**.5) * 3
+        p2.plot(file_name="source_func.html", 
+                x_range=[-8,8], y_range=[-5,5])
+        # ------------------------------------------------------------
+        

@@ -23,7 +23,7 @@ NN_DEFAULT_NUM_NEIGHBORS = 1
 
 # Class for computing an interpolation between the nearest n neighbors
 class NearestNeighbor(WeightedApproximator):
-    def __init__(self, k=NN_DEFAULT_NUM_NEIGHBORS, method=Voronoi):
+    def __init__(self, k=NN_DEFAULT_NUM_NEIGHBORS, method=Average):
         self.points = None
         self.method = method
         self.num_neighbors = k

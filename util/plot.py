@@ -1052,7 +1052,7 @@ class Plot:
     #                         slider positions (disable for long labels)
     #  show_play_pause     -- Whether or not to show the play and pause buttons.
     #  autoplay            -- Whether or not to autoplay on-load in browser.
-    #  loop_animation      -- Whether or not the animtation should
+    #  loop                -- Whether or not the animtation should
     #                         loop when playing, otherwise 1 play -> 1 loop.
     #  loop_pause          -- The pause in seconds between animation loops.
     # 
@@ -1071,7 +1071,7 @@ class Plot:
              slider_transition="linear", initial_frame=None,
              frame_label="Frame: ", show_frame_label=True,
              show_slider_labels=True, show_play_pause=True,
-             autoplay=False, loop_animation=False, loop_pause=0,
+             autoplay=False, loop=False, loop_pause=0,
              **kwargs):
         # Update title, and all plot axis ranges
         if title == None:
@@ -1207,7 +1207,7 @@ class Plot:
         # Create the html file and show in browser if appropriate
         if html: create_html(fig, file_name, show, append,
                              show_slider_labels, autoplay,
-                             loop_animation, loop_pause, **kwargs)
+                             loop, loop_pause, **kwargs)
         # Return the figure
         return fig
 
@@ -1318,7 +1318,7 @@ class Plot:
 #                        bar that must be done on the HTML.
 #  autoplay           -- Hack for preventing plot animation from
 #                        automatically playing once it is loaded.
-#  loop_animation     -- Hack for making animations automatically
+#  loop               -- Hack for making animations automatically
 #                        repeat by modifying raw javascript "animate".
 #  loop_pause         -- Amount of time waited before looping an
 #                        animation in seconds.
@@ -1326,7 +1326,7 @@ class Plot:
 #  ... <any additional plotly.offline.plot keyword arguments> ...
 def create_html(fig, file_name=None, show=True, append=False,
                 show_slider_labels=True, autoplay=False,
-                loop_animation=True, loop_pause=0, **kwargs):
+                loop=True, loop_pause=0, **kwargs):
     # Handle the creation of a file
     if (type(file_name) == type(None)):
         if append and (len(PREVIOUS_FILE_NAMES) > 0): 
@@ -1371,7 +1371,7 @@ def create_html(fig, file_name=None, show=True, append=False,
         # autoplay_substitution = '.then(function(){Plotly.animate([null], {"frame": {"duration": 0, "redraw": false}, "mode": "immediate", "transition": {"duration": 0}})})'
 
     # Cause animation to loop if the user wants
-    if loop_animation:
+    if loop:
         # Add a global parameter storage at the top of the file
         file_string = file_string.replace("*/\n!","*/\nvar ap=[];\n!")
         # Name the x.animate function for internal reference and store

@@ -282,13 +282,13 @@ class Tracker:
             # Recording the new solutions (record ones that are just as good as others)
             self.record.append((new_obj, self.tries, sol))
             self.min_obj = new_obj
-            self.best_sol = sol
+            self.best_sol = sol.copy()
             # Checkpointing and displaying solution progression should
             # only happen if the new solution is actually better.
             if (new_obj < old_min_obj): 
                 # Checkpoints for progression (always save the best solutions)
                 if self.checkpoint:
-                    formatted_sol = ", ".join(list(map(lambda f:"%e"%f,sol)))
+                    formatted_sol = ", ".join(list(map(lambda f:"%e"%f,self.best_sol)))
                     with open(self.checkpoint_file, "w") as f:
                         print("solution = [%s]"%(formatted_sol), file=f)
                         print("obj_value = %s"%(self.min_obj), file=f)
@@ -386,6 +386,8 @@ def minimize(objective, solution, bounds=None, args=tuple(),
     # Initialize a tracker for halting the optimization
     t = Tracker(objective, max_time, min_steps, min_improvement,
                 display, checkpoint, checkpoint_file)
+    # Get the initial objective value of the provided solution.
+    t.check(solution, *args)
 
     # Call the optimization function and get the best solution
 

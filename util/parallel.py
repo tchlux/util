@@ -1,8 +1,9 @@
 # Get functions required for establishing multiprocessing
 from multiprocessing import cpu_count, get_context, current_process
-# Imports for each process
+# Imports that are used by the processes.
 from queue import Empty
-import sys, dill
+import sys
+from dill import dumps, loads
 
 # Make sure new processes started are minimal (not complete copies)
 MAX_PROCS = cpu_count()
@@ -12,6 +13,17 @@ MAP_PROCESSES = []
 # Get a reference to the builtin "map" function, so it is not lost
 # when it is overwrittend by "def map" later in this file.
 builtin_map = map
+
+# Given a shape, create a numpy double array that is prepared to be
+# shared during multiprocessing, but behaves like a normal array.
+def shared_array(shape):
+    import numpy as np
+    from multiprocessing.sharedctypes import Array
+    from ctypes import c_double
+    # Allocate the memory in shared space.
+    memory = Array(c_double, int(np.prod(shape)))
+    # Create and return a structure to access the shared memory (numpy array).
+    return np.frombuffer(memory.get_obj(), dtype=float).reshape(shape)
 
 # Iterator that pulls jobs from a queue and stops iterating once the
 # queue is empty (and remains empty for "JOB_GET_TIMEOUT" seconds). On
@@ -27,12 +39,12 @@ class JobIterator:
             raise(StopIteration)
         return value
 
-
 # Given an iterable object and a queue, place jobs into the queue.
 def producer(jobs_iter, job_queue):
+    print("PARALLEL: Starting producer process..", flush=True)
     for job in jobs_iter:
+        print("PARALLEL: Producer placing job in queue", flush=True)
         job_queue.put(job)
-
 
 # Given an iterable object, a queue to place return values, and a
 # function, apply "func" to elements of "iterable" and put return
@@ -45,15 +57,17 @@ def producer(jobs_iter, job_queue):
 #   iterable     -- An iterable object (presumably a JobIterator).
 #   return_queue -- A Queue object with a 'put' method.
 def consumer(func, iterable, return_queue):
+    print("PARALLEL: Starting consumer process..", flush=True)
     # Retreive the function (because it's been dilled for transfer)
-    func = dill.loads(func)
+    func = loads(func)
     # Set the output file for this process so that all print statments
     # by default go there instead of to the terminal
     log_file_name = f"Process-{int(current_process().name.split('-')[1])-1}"
-    sys.stdout = open("%s.log"%log_file_name,"w")
+    # sys.stdout = open("%s.log"%log_file_name,"w")
     # Iterate over values and apply function.
     for value in iterable:
         try:
+            print("PARALLEL: About to evaluate function..")
             # Try executing the function on the value.
             return_queue.put(func(value))
         except Exception as exception:
@@ -63,19 +77,17 @@ def consumer(func, iterable, return_queue):
     # Once the iterable has been exhaused, put in a "StopIteration".
     return_queue.put(StopIteration)
     # Close the file object for output redirection
-    sys.stdout.close()
+    # sys.stdout.close()
 
 
 # A parallel OUT-OF-ORDER implementation of the builtin 'map' function
 # in Python. Provided a function and an iterable that is *not* a
-# generator, use the all cores on the current system to map "func" to
+# generator, use all the cores on the current system to map "func" to
 # all elements of "iterable".
 # 
 # INPUTS
 #   func     -- Any function that takes elements of "iterable" as an argument.
-#   iterable -- An iterable object that is NOT A GENERATOR. Pickle / Dill
-#               are not presently able to pass generators. The elements
-#               of this will be passed into "func".
+#   iterable -- An iterable object The elements of this will be passed into "func".
 # 
 # OPTIONALS:
 #   max_waiting_jobs    -- Integer, maximum number of jobs that can be
@@ -84,7 +96,7 @@ def consumer(func, iterable, return_queue):
 #                          the return queue at any given time.
 # 
 # RETURNS:
-#   An output generator, just like the builtin "map" function.
+#   An output generator, just like the builtin "map" function, but out-of-order.
 # 
 # WARNINGS:
 #   If iteration is not completed, then waiting idle processes will
@@ -99,7 +111,7 @@ def map(func, iterable, max_waiting_jobs=1, max_waiting_returns=1):
     return_queue = ctx.Queue(max_waiting_returns)
     # Create the shared set of arguments going to all consumer processes
     producer_args = (iterable, job_queue)
-    consumer_args = (dill.dumps(func), JobIterator(job_queue), return_queue)
+    consumer_args = (dumps(func), JobIterator(job_queue), return_queue)
     # Start a "producer" process that will add jobs to the queue,
     # create the set of "consumer" processes that will get jobs from the queue.
     producer_process = ctx.Process(target=producer, args=producer_args)
@@ -112,6 +124,7 @@ def map(func, iterable, max_waiting_jobs=1, max_waiting_returns=1):
     # Start the producer and consumer processes
     producer_process.start()
     for p in consumer_processes: p.start()
+    print("PARALLEL: Constructing a generator for the processes..", flush=True)
     # Construct a generator function for reading the returns
     def return_generator():
         stopped_consumers = 0
@@ -135,6 +148,7 @@ def map(func, iterable, max_waiting_jobs=1, max_waiting_returns=1):
             MAP_PROCESSES.remove(p)
         producer_process.join()
         MAP_PROCESSES.remove(producer_process)
+    print("PARALLEL: Returning the generator..", flush=True)
     # Return all results in a generator object
     return return_generator()
 
@@ -157,21 +171,25 @@ if __name__ == "__main__":
     # Generate a normal "map" and a parallel "map"
     start = time.time()
     s_gen = builtin_map(slow_func, [i for i in range(10)])
-    print("Standard map time:", time.time() - start)
+    print("Standard map construction time:", time.time() - start)
     start = time.time()
     p_gen = map(slow_func, [i for i in range(10)])
-    print("Parllel map time: ", time.time() - start)
+    print("Parllel map construction time: ", time.time() - start)
 
+    start = time.time()
     print()
     for value in s_gen:
         print(value, end=" ", flush=True)
         if value >= "5": break
     print()
+    print("Standard map time:", time.time() - start)
 
+    start = time.time()
     print()
     for value in p_gen:
         print(value, end=" ", flush=True)
         if value > "5": break
     print()
+    print("Parallel map time:", time.time() - start)
 
     killall()

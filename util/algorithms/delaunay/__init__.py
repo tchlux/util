@@ -104,7 +104,7 @@ class Delaunay(WeightedApproximator):
         # Get the source fortran code module
         path_to_src = os.path.join(CWD,"delsparse.f90")
         self.delaunay = fmodpy.fimport(
-            path_to_src, output_directory=CWD, verbose=True).delaunaysparses
+            path_to_src, output_directory=CWD).delaunaysparses
         self.pts = None
         self.errs = {}
 
