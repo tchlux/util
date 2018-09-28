@@ -41,9 +41,7 @@ class JobIterator:
 
 # Given an iterable object and a queue, place jobs into the queue.
 def producer(jobs_iter, job_queue):
-    print("PARALLEL: Starting producer process..", flush=True)
     for job in jobs_iter:
-        print("PARALLEL: Producer placing job in queue", flush=True)
         job_queue.put(job)
 
 # Given an iterable object, a queue to place return values, and a
@@ -57,7 +55,6 @@ def producer(jobs_iter, job_queue):
 #   iterable     -- An iterable object (presumably a JobIterator).
 #   return_queue -- A Queue object with a 'put' method.
 def consumer(func, iterable, return_queue):
-    print("PARALLEL: Starting consumer process..", flush=True)
     # Retreive the function (because it's been dilled for transfer)
     func = loads(func)
     # Set the output file for this process so that all print statments
@@ -67,7 +64,6 @@ def consumer(func, iterable, return_queue):
     # Iterate over values and apply function.
     for value in iterable:
         try:
-            print("PARALLEL: About to evaluate function..")
             # Try executing the function on the value.
             return_queue.put(func(value))
         except Exception as exception:
@@ -124,7 +120,6 @@ def map(func, iterable, max_waiting_jobs=1, max_waiting_returns=1):
     # Start the producer and consumer processes
     producer_process.start()
     for p in consumer_processes: p.start()
-    print("PARALLEL: Constructing a generator for the processes..", flush=True)
     # Construct a generator function for reading the returns
     def return_generator():
         stopped_consumers = 0
@@ -148,7 +143,6 @@ def map(func, iterable, max_waiting_jobs=1, max_waiting_returns=1):
             MAP_PROCESSES.remove(p)
         producer_process.join()
         MAP_PROCESSES.remove(producer_process)
-    print("PARALLEL: Returning the generator..", flush=True)
     # Return all results in a generator object
     return return_generator()
 

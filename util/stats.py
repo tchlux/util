@@ -43,7 +43,6 @@ def ortho_basis(vec_iterator, num_bases=None, steps=float('inf'), parallel=False
     # Given a vec, update the basis vectors iteratively according to
     # the provided vector (ignore race conditions).
     def update_bases(vec):
-        print("STATS: Starting with a vector..", vec[0], len(vec), flush=True)
         for basis in range(num_bases):
             vec_length = np.sqrt(np.sum(vec**2))
             if (vec_length <= 0): return
@@ -53,15 +52,13 @@ def ortho_basis(vec_iterator, num_bases=None, steps=float('inf'), parallel=False
             _counts[basis] += 1
             _bases[basis] += (vec - _bases[basis]) / _counts[basis]
             _lengths[basis] += vec_length / _counts[basis]
-            if (np.sum(_lengths[basis]**2) <= 1e-100): return
+            if (np.sum(_lengths[basis]**2) <= 1e-20): return
             # Remove this basis vector from "vec" (orthogonalize).
             shift = np.dot(vec, _bases[basis]) * (_bases[basis] / np.sum(_bases[basis]**2)) 
             vec -= shift
-    print("STATS: Beginning the update process..", flush=True)
     # Perform rounds of updates using a (parallel) map operation.
     step = 1
     for _ in map(update_bases, vec_iterator):
-        print("STATS: Step",_,"started..", flush=True)
         step += 1
         if step >= steps: break
     # Kill all hanging processes (because we may not have exausted the iterator).
@@ -92,6 +89,7 @@ def gen_random_pairs(length, count=None, show_time=True, timeout=1):
         index_2 = np.random.randint(length-1)
         if (index_2 >= index_1): index_2 += 1
         yield index_1, index_2
+    print(" "*40, end="\r")
 
 # Generate vector between scaled by metric difference. Give the metric
 # the indices of "vectors" in the provided matrix.
