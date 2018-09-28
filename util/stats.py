@@ -52,7 +52,7 @@ def ortho_basis(vec_iterator, num_bases=None, steps=float('inf'), parallel=False
             _counts[basis] += 1
             _bases[basis] += (vec - _bases[basis]) / _counts[basis]
             _lengths[basis] += vec_length / _counts[basis]
-            if (np.sum(_lengths[basis]**2) <= 1e-20): return
+            if (np.sum(_bases[basis]**2) <= 1e-10): continue
             # Remove this basis vector from "vec" (orthogonalize).
             shift = np.dot(vec, _bases[basis]) * (_bases[basis] / np.sum(_bases[basis]**2)) 
             vec -= shift
