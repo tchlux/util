@@ -13,9 +13,13 @@ CWD = os.path.dirname(os.path.abspath(__file__))
 
 STANDARD_METRIC = lambda p1,p2: abs(p1-p2)
 
+
 # Find a set of (nearly) orthogonal vectors that maximize the one norm
 # of the vectors in "vec_iterator".
 def ortho_basis(vec_iterator, num_bases=None, steps=float('inf'), parallel=False):
+    import fmodpy
+    path_to_src = os.path.join(CWD,"fort_stats.f90")
+    basis_update = fmodpy.fimport(path_to_src, output_directory=CWD).basis_update
     # Determine the functions being used based on parallelism.
     if not parallel:
         from numpy import zeros
@@ -44,18 +48,10 @@ def ortho_basis(vec_iterator, num_bases=None, steps=float('inf'), parallel=False
     # the provided vector (ignore race conditions).
     def update_bases(vec):
         for basis in range(num_bases):
-            vec_length = np.sqrt(np.sum(vec**2))
-            if (vec_length <= 0): return
-            # Flip the vector if appropriate.
-            if (np.dot(_bases[basis], vec) < 0): vec *= -1
-            # Update the current basis vector (count, then vec, the length).
             _counts[basis] += 1
-            _bases[basis] += (vec - _bases[basis]) / _counts[basis]
+            # Compute the basis update (with fortran code that's faster)
+            _,_,vec_length = basis_update(_counts[basis], _bases[basis], vec)
             _lengths[basis] += vec_length / _counts[basis]
-            if (np.sum(_bases[basis]**2) <= 1e-10): continue
-            # Remove this basis vector from "vec" (orthogonalize).
-            shift = np.dot(vec, _bases[basis]) * (_bases[basis] / np.sum(_bases[basis]**2)) 
-            vec -= shift
     # Perform rounds of updates using a (parallel) map operation.
     step = 1
     for _ in map(update_bases, vec_iterator):
@@ -670,8 +666,7 @@ if __name__ == "__main__":
 
         print("Calculating PRA..")
         # Run the princinple response analysis function.
-        components, lengths = pra(points, response, steps=100000, parallel=True)
-        exit()
+        components, lengths = pra(points, response, steps=100000, parallel=False)
         conditioner = components.copy()
         unconditioner = np.linalg.inv(components)
         # unconditioner = np.matmul(np.linalg.inv(components), np.diag(values))
