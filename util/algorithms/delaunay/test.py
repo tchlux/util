@@ -4,10 +4,10 @@ if __name__ == "__main__":
     from util.algorithms import Delaunay
 
     # Settings for creating the example.
-    N           = 20
+    N           = 3
     dim         = 2
     random      = False
-    plot_points = 5000
+    plot_points = 1000
 
     # Function for testing.
     mult = 5
@@ -19,9 +19,11 @@ if __name__ == "__main__":
     if random:
         x = np.random.random(size=(N,dim))
     else:
-        N = int(round(N ** (1/dim)))
+        width = int(round(N ** (1/dim)))
         x = np.array([r.flatten() for r in np.meshgrid(
-            * ((np.linspace(low,upp,N),)*dim) )]).T
+            * ((np.linspace(low,upp,width),)*dim) )]).T
+        x = x[:N]
+
     y = np.array([fun(v) for v in x])
 
     # Shift to add padding
@@ -30,8 +32,32 @@ if __name__ == "__main__":
     upp += (upp - low)*padding
 
     # Fit the Delaunay model to the points
-    surf = Delaunay()
+    surf = Delaunay(parallel=True)
     surf.fit(x,y)
+
+    # Manual test at a specific point.
+    # test = np.array([[.3587, .422]])
+    test = np.array([[.25, .25]])
+
+    # Parallel surface (wrong)
+    guess_surf = Delaunay(parallel=True)
+    guess_surf.fit(x,y)
+    guess_pts, guess_wts = guess_surf._predict(test.copy())
+    # Serial surface (right)
+    true_surf = Delaunay(parallel=False)
+    true_surf.fit(x,y)
+    true_pts, true_wts = true_surf._predict(test.copy())
+    # Display results
+    print()
+    print("True points: ", true_pts)
+    print("    weights: ", true_wts)
+    print("      value: ", np.sum(y[true_pts] * true_wts))
+    print()
+    print("Guess points:", guess_pts)
+    print("     weights:", guess_wts)
+    print("      value: ", np.sum(y[guess_pts] * guess_wts))
+    print()
+    exit()
 
     # Create the surface in the plot (calling Delaunay).
     p = Plot()

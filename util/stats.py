@@ -15,7 +15,8 @@ STANDARD_METRIC = lambda p1,p2: abs(p1-p2)
 
 
 # Find a set of (nearly) orthogonal vectors that maximize the one norm
-# of the vectors in "vec_iterator".
+# of the vectors in "vec_iterator". The elements of "vec_iterator" are
+# assumed to have a mean of zero!
 def ortho_basis(vec_iterator, num_bases=None, steps=float('inf'), parallel=False):
     import fmodpy
     path_to_src = os.path.join(CWD,"fort_stats.f90")
@@ -35,7 +36,7 @@ def ortho_basis(vec_iterator, num_bases=None, steps=float('inf'), parallel=False
     if type(num_bases) == type(None): num_bases = dim
     else:                             num_bases = min(dim, num_bases)
     bases_shape = (num_bases, len(vec))
-    # Create global arrays that  safe for multiprocessing (without copies)
+    # Create global arrays that are safe for multiprocessing (without copies)
     if parallel: global _bases, _lengths, _counts
     _bases = zeros(bases_shape)
     _lengths = zeros((num_bases,))
@@ -107,6 +108,7 @@ def pra(points, responses, metric=STANDARD_METRIC,
         return metric(responses[p1], responses[p2])
     # Create a "vector generator" and pass it to the one-norm basis finder.
     vec_gen = gen_random_metric_diff(points, index_metric, steps)
+    # Notice that this "vec_gen" has mean 0! That is important for ortho_basis.
     components, lengths = ortho_basis(vec_gen, num_bases=directions,
                                       steps=steps, parallel=parallel)
     # Currently not doing anyting with the "lengths", but they can be
@@ -115,9 +117,9 @@ def pra(points, responses, metric=STANDARD_METRIC,
 
 
 # Compute the principle components using sklearn.
-def sklearn_pca(points):
+def sklearn_pca(points, num_components=None):
     from sklearn.decomposition import PCA        
-    pca = PCA()
+    pca = PCA(n_components=num_components)
     pca.fit(points)
     principle_components = pca.components_
     magnitudes = pca.singular_values_
@@ -128,6 +130,7 @@ def sklearn_pca(points):
 # Compute the principle components of row points manually using NumPy.
 #  (Eigenpairs of the covariance matrix)
 def pca(points):
+    # Transform the points so that they have zero-mean.
     points = points - np.mean(points, axis=0)
     # Compute the principle components of the (row) points.
     covariance_matrix = np.cov(points, rowvar=False)

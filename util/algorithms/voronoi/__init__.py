@@ -26,7 +26,7 @@ class Voronoi(WeightedApproximator):
         path_to_src = os.path.join(CWD,"voronoi.f90")
         # Compile the fortran source (with OpenMP for acceleration)
         self.voronoi = fmodpy.fimport(path_to_src, output_directory=CWD,
-                                      fort_compiler_options=["-fPIC", "-O3","-fopenmp"],
+                                      f_compiler_options=["-fPIC", "-O3","-fopenmp"],
                                       module_link_args=["-lgfortran","-fopenmp"])
 
     # Given points, pre-calculate the inner products of all pairs.

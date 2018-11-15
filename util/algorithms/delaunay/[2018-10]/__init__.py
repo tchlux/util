@@ -100,19 +100,11 @@ class qHullDelaunay(WeightedApproximator):
 
 # Wrapper class for using the Delaunay fortran code
 class Delaunay(WeightedApproximator):
-    import delsparse
-    def __init__(self, parallel=False, pmode=None, chunksize=None):
+    def __init__(self):
         # Get the source fortran code module
         path_to_src = os.path.join(CWD,"delsparse.f90")
-        # Set up the algorithm for parallel or serial evaluation.
-        self.parallel = parallel
-        if parallel:
-            self.delaunay = self.delsparse.delaunaysparsep
-            self.pmode = pmode
-            self.chunksize = chunksize
-        else:
-            self.delaunay = self.delsparse.delaunaysparses
-        # Initialize containers.
+        self.delaunay = fmodpy.fimport(
+            path_to_src, output_directory=CWD).delaunaysparses
         self.pts = None
         self.errs = {}
 
@@ -132,15 +124,9 @@ class Delaunay(WeightedApproximator):
                               dtype=np.float64, order="F")
         error_out = np.ones(shape=(p_in.shape[1],), 
                             dtype=np.int32, order="F")
-        if self.parallel:
-            self.delaunay(self.pts.shape[0], self.pts.shape[1],
-                          pts_in, p_in.shape[1], p_in, simp_out,
-                          weights_out, error_out, extrap=100.0,
-                          pmode=self.pmode, chunksize=self.chunksize)
-        else:
-            self.delaunay(self.pts.shape[0], self.pts.shape[1],
-                          pts_in, p_in.shape[1], p_in, simp_out,
-                          weights_out, error_out, extrap=100.0)
+        self.delaunay(self.pts.shape[0], self.pts.shape[1],
+                      pts_in, p_in.shape[1], p_in, simp_out,
+                      weights_out, error_out, extrap=100.0)
         # Handle any errors that may have occurred.
         if (sum(np.where(error_out == 1, 0, error_out)) != 0):
             unique_errors = sorted(np.unique(error_out))

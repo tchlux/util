@@ -1601,6 +1601,7 @@ class Data(list):
                     ordered_vals = sorted(counts, key=lambda v: -counts[v])
                 val_len = max(map(lambda v: len(str(v)), counts))
                 val_len = max(val_len, len("None"))
+                val_len = min(val_len, self. _max_str_len)
                 if (t == str): val_len += 2
                 if (none_count > 0):
                     perc = 100. * (none_count / len(self))
@@ -1610,7 +1611,7 @@ class Data(list):
                     if (t == str):
                         print(f"    \"{val}\"{'':{1+val_len-len(str(val))}s}{counts[val]:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
                     else:
-                        print(f"    {str(val):{val_len}s} {counts[val]:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
+                        print(f"    {self._val_to_str(val):{val_len}s} {counts[val]:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
                 if (len(ordered_vals) > max_display):
                     print("    ... (increase 'max_display' to see more summary statistics).")
             print()
