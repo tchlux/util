@@ -362,6 +362,8 @@ from util.algorithms.shepard import Shepard
 # Rename the "NearestNeighbor" to be called "KNN".
 KNN = NearestNeighbor
 
+from util.algorithms.delaunay import DelaunayP1CN, DelaunayP2CN, DelaunayP3CN, DelaunayPNC10
+
 if __name__ == "__main__":
     print("Adding surface to plot..")
     # model = MLPRegressor

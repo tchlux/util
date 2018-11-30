@@ -20,23 +20,22 @@ def primes(num):
     if num > 1: factors.add(num)
     return sorted(factors)
 
-# Return a random sequence of "count" integers all in the range [0,"maximum")
-# by using a Linear Congruential Generator to produce the number sequence.
+# Return a randomized "range" using a Linear Congruential Generator
+# to produce the number sequence. Parameters are the same as for 
+# python builtin "range".
 #   Memory  -- storage for 8 integers, regardless of parameters.
 #   Compute -- at most 2*"maximum" steps required to generate sequence.
 # 
-# Parameters:
-#   "count"   -- The number of integers generated in this sequence. For 
-#                uniqueness, "count" <= "maximum".
-#   "maximum" -- (optional) The upper bound (non-inclusive) of the range
-#                from which random numbers will be drawn.
-#   "prime"   -- (optional) Any integer > 2 that does not have 2 as a prime factor.
-#                Preferably, "prime" > "maximum" to ensure pseudo-randomnesss.
-def random_range(count, maximum=None, prime=87178291199):
-    # Set a default value for "count".
-    if (maximum == None): maximum = count
-    # Seed with a random integer in the range.
+def random_range(start, stop=None, step=None):
     import random, math
+    # Set a default values the same way "range" does.
+    if (stop == None): start, stop = 0, start
+    if (step == None): step = 1
+    # Use a mapping to convert a standard range into the desired range.
+    mapping = lambda i: (i*step) + start
+    # Compute the number of numbers in this range.
+    maximum = (stop - start) // step
+    # Seed range with a random integer.
     value = random.randint(0,maximum)
     # 
     # Construct an offset, multiplier, and modulus for a linear
@@ -47,18 +46,38 @@ def random_range(count, maximum=None, prime=87178291199):
     #   2) ["multiplier" - 1] is divisible by all prime factors of "modulus".
     #   3) ["multiplier" - 1] is divisible by 4 if "modulus" is divisible by 4.
     # 
-    offset = prime # Pick an offset relatively prime to "modulus".
-    multiplier = 4*maximum + 1 # Pick a multiplier 1 greater than a multiple of 4.
-    modulus = int(2**math.ceil(math.log2(maximum))) # Pick a modulus big enough to generate all numbers.
+    offset = random.randint(0,maximum) * 2 + 1      # Pick a random odd-valued offset.
+    multiplier = 4*(maximum//4 + random.randint(0,maximum)) + 1                 # Pick a multiplier 1 greater than a multiple of 4.
+    modulus = int(2**math.ceil(math.log2(maximum))) # Pick a modulus just big enough to generate all numbers (power of 2).
     # Track how many random numbers have been returned.
     found = 0
-    while found < count:
+    while found < maximum:
         # If this is a valid value, yield it in generator fashion.
         if value < maximum:
             found += 1
-            yield value
+            yield mapping(value)
         # Calculate the next value in the sequence.
         value = (value*multiplier + offset) % modulus
+
+
+
+
+
+
+
+
+
+total = []
+for i in range(100000):
+    seq = tuple()
+    for k,v in enumerate(random_range(10)):
+        seq += (v,)
+        if (k >= 1): break
+    total.append(seq)
+print()
+for l in sorted(set(total)):
+    print(l)
+exit()
 
 # This function maps an index in the range [0, (count**2 - count) // 2] 
 # to a tuple of integers in the range [0,count). The mapping is complete.

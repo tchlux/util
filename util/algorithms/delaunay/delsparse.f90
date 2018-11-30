@@ -410,7 +410,6 @@ IERR(:) = 40
 
 ! Outer loop over all interpolation points (in Q).
 OUTER : DO MI = 1, M
-
    ! Check if this interpolation point was already found.
    IF (IERR(MI) .EQ. 0) CYCLE OUTER
 

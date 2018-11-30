@@ -161,3 +161,27 @@ class Delaunay(WeightedApproximator):
         # Return the appropriate shaped pair of points and weights
         return (points, weights)
         
+
+# Wrapper class for using the Delaunay fortran code
+class DelaunayP1CN(Delaunay):
+    from util.algorithms.delaunay import delsparse
+    def __init__(self, parallel=True, pmode=1, chunksize=None):
+        return super().__init__(parallel=parallel, pmode=pmode, chunksize=chunksize)
+
+# Wrapper class for using the Delaunay fortran code
+class DelaunayP2CN(Delaunay):
+    from util.algorithms.delaunay import delsparse
+    def __init__(self, parallel=True, pmode=2, chunksize=None):
+        return super().__init__(parallel=parallel, pmode=pmode, chunksize=chunksize)
+
+# Wrapper class for using the Delaunay fortran code
+class DelaunayP3CN(Delaunay):
+    from util.algorithms.delaunay import delsparse
+    def __init__(self, parallel=True, pmode=3, chunksize=None):
+        return super().__init__(parallel=parallel, pmode=pmode, chunksize=chunksize)
+
+# Wrapper class for using the Delaunay fortran code
+class DelaunayPNC10(Delaunay):
+    from util.algorithms.delaunay import delsparse
+    def __init__(self, parallel=True, pmode=None, chunksize=10):
+        return super().__init__(parallel=parallel, pmode=pmode, chunksize=chunksize)

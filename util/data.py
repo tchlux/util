@@ -7,6 +7,7 @@ COMMON_SEPERATORS = [" ", ",", ";", "	"]
 UPDATE_FREQUENCY = .1  # How much time (in seconds) between updates.
 MAX_ERROR_PRINTOUT = 10 # Only print out this many errors when processing data
 
+import numpy as np
 NP_TYPES = {str:(np.str_, 16),    # Which numpy types correspond to 
             int:(np.int64,),      # the python types of variables
             float:(np.float64,)}
