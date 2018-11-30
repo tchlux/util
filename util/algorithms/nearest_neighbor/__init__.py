@@ -50,14 +50,12 @@ class NearestNeighbor(WeightedApproximator):
                 pts.append( [closest[0]] )
                 wts.append( [1.0] )
             else:
+                # Use another weighted approximator to handle final prediction.
                 model = self.method()
                 model.fit(self.points[closest])
                 points, weights = model.predict(pt)
-                # # distances = 1 / distances
-                # # weights = distances / sum(distances)
-                # weights = np.ones(self.num_neighbors) / self.num_neighbors
-                # points = closest
-                pts.append( closest )
+                # Return the indices and weights associated with each.
+                pts.append( closest[points] )
                 wts.append( weights )
         # Convert into array form
         pts = np.array(pts)

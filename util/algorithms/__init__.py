@@ -44,6 +44,7 @@ class Approximator:
     def fit(self, x, y, *args, **kwargs):
         if ((type(x) != np.ndarray) or (len(x.shape) != 2)):
             raise(UnexpectedType("Provided 'x' should be a 2D numpy array."))
+        if (type(y) == list): y = np.array(y)
         if (type(y) != np.ndarray):
             raise(UnexpectedType("Provided 'y' should be a 1D or 2D numpy array."))
         elif (len(y.shape) == 1):
@@ -88,9 +89,12 @@ class Approximator:
 class WeightedApproximator(Approximator):
     WeightedApproximator = True
     y = None
+    classifier = False
 
     # Fit a 2D x and a 2D y with this model.
-    def fit(self, x, y=None, **kwargs):
+    def fit(self, x, y=None, classifier=None, **kwargs):
+        if type(classifier) != type(None):
+            self.classifier = classifier
         if ((type(x) != np.ndarray) or (len(x.shape) != 2)):
             raise(UnexpectedType("Provided 'x' should be a 2D numpy array."))
         if (not IS_NONE(y)):
@@ -121,7 +125,16 @@ class WeightedApproximator(Approximator):
             # Collect response values via weighted sums of self.y values
             response = []        
             for ids, wts in zip(indices, weights):
-                response.append( sum(self.y[i]*w for (i,w) in zip(ids, wts)) )
+                if self.classifier:
+                    val_weights = {}
+                    # Sum the weights associated with each category.
+                    for i, w in zip(ids, wts):
+                        val_weights[self.y[i]] = val_weights.get(self.y[i],0.)+w
+                    # Return the category with the largest sum of weight.
+                    response.append( max(val_weights.items(), key=lambda i: i[-1])[0] )
+                else:
+                    # Return the weighted sum of predictions.
+                    response.append( sum(self.y[i]*w for (i,w) in zip(ids, wts)) )
         # Reduce to one approximation point if that's what was provided.
         if single_response: response = response[0]
         # Return the response
@@ -133,10 +146,13 @@ class WeightedApproximator(Approximator):
 
 
 
-# A wrapper for an approximator that must fit unique points.
-def uniqueify(weighted_approximator):
+# A wrapper for an approximator that must fit unique points. Use this
+# wrapper on an un-initialized "weighted approximator" to inheret all
+# methods while modifying the "fit" and "predict" methods.
+def unique(weighted_approximator):
+    # ----------------------------------------------------------------
     # A class for wrapping an approximator.
-    class UniquePoints(weighted_approximator):
+    class UniquePointsApproximator(weighted_approximator):
         original_points = None
         unique_points = None
         unique_indices = None
@@ -199,9 +215,58 @@ def uniqueify(weighted_approximator):
                 response.append( (orig_ids, orig_wts) )
             if single_response: response = response[0]
             return response
-        
+    # ----------------------------------------------------------------        
     # Return the newly constructed class
-    return UniquePoints
+    return UniquePointsApproximator
+
+
+MAX_DIM = 50
+MAX_SAMPLES = 100000
+DEFAULT_COND_SCALE = False
+DEFAULT_CONDITIONER = "MPCA" # PCA, PRA
+ABS_DIFFERENCE = lambda v1, v2: abs(v1 - v2)
+
+# A wrapper for an approximator that must fit unique points. Use this
+# wrapper on an un-initialized "weighted approximator" to inheret all
+# methods while modifying the "fit" and "predict" methods.
+def condition(approximator, metric=ABS_DIFFERENCE, method=DEFAULT_CONDITIONER,
+              max_dim=MAX_DIM, max_samples=MAX_SAMPLES,
+              scale=DEFAULT_COND_SCALE, **cond_kwargs):
+    if method == "PCA":
+        from util.stats import pca
+    elif method == "MPCA":
+        from util.stats import gen_random_metric_diff, pca
+    elif method == "PRA":
+        from util.stats import pra
+    # ----------------------------------------------------------------
+    class ConditionedApproximator(approximator):
+        # Wrapped "fit" method, this incorporates dimension reduction
+        # and approximation conditioning based on the selected method.
+        def fit(self, x, y, *args, **kwargs):
+            samples = min(max_samples,x.shape[0])
+            dim = min(max_dim,x.shape[1])
+            # Compute the components and the lengths.
+            if method == "PCA":
+                components, lengths = pca(x, num_components=dim, **cond_kwargs)
+            elif method == "MPCA":
+                components, lengths = mpca(x, y, metric=metric,
+                                           directions=dim,
+                                           steps=samples, **cond_kwargs)
+            elif method == "PRA":
+                components, lengths = pra(x, y, metric=metric,
+                                          directions=dim, **cond_kwargs)
+            # Reset the lengths if scale should not be used.
+            if not scale: lengths[:] = 1.
+            # Generate the conditioning matrix.
+            self.conditioner = np.matmul(components.T, np.diag(lengths))
+            # Return the normal fit operation.
+            return super().fit(np.matmul(x, self.conditioner), y, *args, **kwargs)
+
+        # Return the predictions made on the similarly conditioned points.
+        def predict(self, x, *args, **kwargs):
+            return super().predict(np.matmul(x, self.conditioner), *args, **kwargs)
+    # ----------------------------------------------------------------
+    return ConditionedApproximator
 
 
 # Given a model, test the time it takes to make a prediction
@@ -293,12 +358,19 @@ from util.algorithms.delaunay import Delaunay, qHullDelaunay
 from util.algorithms.neural_network import MLPRegressor
 from util.algorithms.linear_shepard import LSHEP
 from util.algorithms.mars import MARS
+from util.algorithms.shepard import Shepard
+# Rename the "NearestNeighbor" to be called "KNN".
+KNN = NearestNeighbor
 
 if __name__ == "__main__":
     print("Adding surface to plot..")
-    model = Voronoi
-    model = MLPRegressor
-    p,_,_ = test_plot(model(), N=20, D=2, low=-.1, upp=1.1,
+    # model = MLPRegressor
+    # model = Voronoi
+    # model = condition(Delaunay, method="PRA", scale=False)
+    # model = Shepard
+    model = NearestNeighbor(k=4, method=Voronoi)
+    # f = lambda x: (x[0] - .5)**2
+    p,_,_ = test_plot(model, N=20, D=2, low=-.1, upp=1.1, #fun=f,
                       random=True, plot_points=4000) # 6, 8
     print("Generating plot HTML..")
     p.show()

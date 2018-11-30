@@ -360,7 +360,7 @@ IF (PRESENT(INTERP_IN)) THEN ! Sizes must agree.
       IERR(:) = 25; RETURN; END IF
    INTERP_OUT(:,:) = 0.0_R8 ! Initialize output to zeros.
 END IF
-EPSL = SQRT(EPSILON(1.0_R8)) ! Get the machine unit roundoff constant.
+EPSL = SQRT(EPSILON(0.0_R8)) ! Get the machine unit roundoff constant.
 IF (PRESENT(EPS)) THEN
    IF (EPSL < EPS) THEN ! If the given precision is too small, ignore it.
       EPSL = EPS
@@ -517,7 +517,7 @@ OUTER : DO MI = 1, M
 
 END DO OUTER  ! End of outer loop over all interpolation points.
 
-! Compute interpolation point response values.
+! If INTERP_IN and INTERP_OUT are present, compute all values f(q).
 IF (PRESENT(INTERP_IN)) THEN
    ! Loop over all interpolation points.
    DO MI = 1, M
@@ -568,14 +568,14 @@ SUBROUTINE MAKEFIRSTSIMP()
 
 ! Find the first point, i.e., the closest point to Q(:,MI).
 SIMPS(:,MI) = 0
-MINRAD = HUGE(MINRAD)
+MINRAD = HUGE(0.0_R8)
 DO I = 1, N
    ! Check the distance to Q(:,MI)
    CURRRAD = DNRM2(D, PTS(:,I) - PROJ(:), 1)
    IF (CURRRAD < MINRAD) THEN; MINRAD = CURRRAD; SIMPS(1,MI) = I; END IF
 END DO
 ! Find the second point, i.e., the closest point to PTS(:,SIMPS(1,MI)).
-MINRAD = HUGE(MINRAD)
+MINRAD = HUGE(0.0_R8)
 DO I = 1, N
    ! Skip repeated vertices.
    IF (I .EQ. SIMPS(1,MI)) CYCLE
@@ -588,7 +588,7 @@ A(:,1) = PTS(:,SIMPS(2,MI)) - PTS(:,SIMPS(1,MI))
 B(1) = DDOT(D, A(:,1), 1, A(:,1), 1) / 2.0_R8
 ! Loop to collect the remaining D+1 vertices for the first simplex.
 DO I = 2, D
-   MINRAD = HUGE(MINRAD) ! Re-initialize the radius for each iteration.
+   MINRAD = HUGE(0.0_R8) ! Re-initialize the radius for each iteration.
    ! Check each point P* in PTS.
    DO J = 1, N
       ! Check that this point is not already in the simplex.
@@ -676,7 +676,7 @@ SIDE1 = SIGN(1.0_R8,SIDE1)
 ! Initialize the center, radius, and simplex.
 SIMPS(D+1,MI) = 0
 CENTER(:) = 0.0_R8
-MINRAD = HUGE(MINRAD)
+MINRAD = HUGE(0.0_R8)
 ! Loop through all points P* in PTS.
 DO I = 1, N
    ! Check that P* is inside the current ball.
@@ -724,8 +724,8 @@ SUBROUTINE MAKEPLANE()
 ! A^T = [ P_2 - P_1, P_3 - P_1, ..., P_D - P_1 ].
 ! 
 ! Since rank A^T = D-1, dim ker(A^T) = 1, and ker(A^T) can be found from a QR
-! factorization of A^T:  A^T P = QR, where P permutes the columns of A^T.  Then
-! the last column of Q is orthonormal to the range of A^T.
+! factorization of A^T:  A^T P = QR, where P permutes the columns of A^T. 
+! Then the last column of Q is orthonormal to the range of A^T.
 ! 
 ! Upon output, PLANE(1:D) contains the normal vector c and PLANE(D+1)
 ! contains \alpha defining the plane.
@@ -886,7 +886,7 @@ REAL(KIND=R8) :: PTS_CENTER(D) ! The center of the data points PTS.
 REAL(KIND=R8) :: DISTANCE ! The current distance.
 
 ! Initialize local values.
-MINDIST = HUGE(MINDIST)
+MINDIST = HUGE(0.0_R8)
 DIAMETER = 0.0_R8
 SCALE = 0.0_R8
 
@@ -1249,7 +1249,7 @@ IF (PRESENT(INTERP_IN)) THEN ! Sizes must agree.
       IERR(:) = 25; RETURN; END IF
    INTERP_OUT(:,:) = 0.0_R8 ! Initialize output to zeros.
 END IF
-EPSL = SQRT(EPSILON(1.0_R8)) ! Get the machine unit roundoff constant.
+EPSL = SQRT(EPSILON(0.0_R8)) ! Get the machine unit roundoff constant.
 IF (PRESENT(EPS)) THEN
    IF (EPSL < EPS) THEN ! If the given precision is too small, ignore it.
       EPSL = EPS
@@ -1377,8 +1377,8 @@ OUTER : DO MI = 1, M
 
 ! Initialize simplex and shared variables.
 SIMPS(:,MI) = 0
-MINRAD_PRIV = HUGE(MINRAD)
-MINRAD = HUGE(MINRAD)
+MINRAD_PRIV = HUGE(0.0_R8)
+MINRAD = HUGE(0.0_R8)
 
 ! Below is a Level 2 parallel region over N data points to find the
 ! first and second vertices SIMPS(1,MI) and SIMPS(2,MI).
@@ -1398,9 +1398,12 @@ IF (MINRAD_PRIV < MINRAD) THEN
    MINRAD = MINRAD_PRIV; SIMPS(1,MI) = VERTEX_PRIV;
 END IF
 ! Find the second point, i.e., the closest point to PTS(:,SIMPS(1,MI)).
-MINRAD_PRIV = HUGE(MINRAD)
+MINRAD_PRIV = HUGE(0.0_R8)
 !$OMP END CRITICAL
-MINRAD = HUGE(MINRAD)
+!$OMP BARRIER
+!$OMP SINGLE
+MINRAD = HUGE(0.0_R8)
+!$OMP END SINGLE
 !$OMP DO SCHEDULE(STATIC)
 DO I = 1, N
    ! Skip repeated vertices.
@@ -1428,8 +1431,8 @@ IERR(MI) = 0
 ! Loop to collect the remaining D+1 vertices for the first simplex.
 DO I = 2, D
    ! Re-initialize the radius for each iteration.
-   MINRAD = HUGE(MINRAD)
-   MINRAD_PRIV = HUGE(MINRAD)
+   MINRAD = HUGE(0.0_R8)
+   MINRAD_PRIV = HUGE(0.0_R8)
    VERTEX_PRIV = 0
 
    ! This is another Level 2 parallel block over all P* in PTS.
@@ -1694,8 +1697,8 @@ SIMPS(D+1,MI) = 0
 CENTER(:) = 0.0_R8
 TAU(:) = 0.0_R8
 IERR(MI) = 0
-MINRAD = HUGE(MINRAD)
-MINRAD_PRIV = HUGE(MINRAD)
+MINRAD = HUGE(0.0_R8)
+MINRAD_PRIV = HUGE(0.0_R8)
 VERTEX_PRIV = 0
 
 ! Begin Level 2 parallel loop over all points P* in PTS.
@@ -1906,7 +1909,7 @@ REAL(KIND=R8) :: PTS_CENTER(D) ! The center of the data points PTS.
 REAL(KIND=R8) :: DISTANCE ! The current distance.
 
 ! Initialize local values.
-MINDIST = HUGE(MINDIST)
+MINDIST = HUGE(0.0_R8)
 DIAMETER = 0.0_R8
 SCALE = 0.0_R8
 

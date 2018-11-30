@@ -1,91 +1,87 @@
 import numpy as np
-from scipy.interpolate import splrep, splev
-from scipy.interpolate import PchipInterpolator
-from scipy.integrate import quad as integrate
-from scipy.stats import kstest
 import os
 
-CWD = os.path.dirname(os.path.abspath(__file__))
+# =============================================
+#      Metric Principle Component Analysis     
+# =============================================
 
-# =====================================================
-#      Principle Response and Principle Components     
-# =====================================================
-
-STANDARD_METRIC = lambda p1,p2: abs(p1-p2)
-
-
-# Find a set of (nearly) orthogonal vectors that maximize the one norm
-# of the vectors in "vec_iterator". The elements of "vec_iterator" are
-# assumed to have a mean of zero!
-def ortho_basis(vec_iterator, num_bases=None, steps=float('inf'), parallel=False):
-    import fmodpy
-    path_to_src = os.path.join(CWD,"fort_stats.f90")
-    basis_update = fmodpy.fimport(path_to_src, output_directory=CWD).basis_update
-    # Determine the functions being used based on parallelism.
-    if not parallel:
-        from numpy import zeros
-        from util.parallel import builtin_map as map
-    else:
-        from util.parallel import map, killall
-        from util.parallel import shared_array as zeros
-    # Get the first vector from the iterator and store as the first basis.
-    for vec in vec_iterator: break
-    # Store the "dimension"
-    dim = len(vec)
-    # Automatically set the number of bases if not provided.
-    if type(num_bases) == type(None): num_bases = dim
-    else:                             num_bases = min(dim, num_bases)
-    bases_shape = (num_bases, len(vec))
-    # Create global arrays that are safe for multiprocessing (without copies)
-    if parallel: global _bases, _lengths, _counts
-    _bases = zeros(bases_shape)
-    _lengths = zeros((num_bases,))
-    _counts = zeros((num_bases,))
-    # Store the first basis vector (the vector that was pulled out).
-    _bases[0,:] = vec
-    _counts[0] = 1.0
-    _lengths[0] = np.sqrt(np.sum(vec**2))
-    # Given a vec, update the basis vectors iteratively according to
-    # the provided vector (ignore race conditions).
-    def update_bases(vec):
-        for basis in range(num_bases):
-            _counts[basis] += 1
-            # Compute the basis update (with fortran code that's faster)
-            _,_,vec_length = basis_update(_counts[basis], _bases[basis], vec)
-            _lengths[basis] += vec_length / _counts[basis]
-    # Perform rounds of updates using a (parallel) map operation.
-    step = 1
-    for _ in map(update_bases, vec_iterator):
-        step += 1
-        if step >= steps: break
-    # Kill all hanging processes (because we may not have exausted the iterator).
-    if parallel: killall()
-    # Identify those bases that were actually computed, reduce to them.
-    to_keep = _counts > 0
-    bases = _bases[to_keep]
-    lengths = _lengths[to_keep]
-    # Normalize the bases and lengths (so that users can understand relative weight).
-    bases = (bases.T / np.sqrt(np.sum(bases**2, axis=1))).T
-    lengths /= np.sum(lengths)
-    # Delete the temporary global variables (used for parallelism)
-    if parallel: del _bases, _lengths, _counts
-    return bases, lengths
+# Prime number used for generating random sequences.
+ABS_DIFF = lambda p1,p2: abs(p1-p2)
         
+# Return all unique prime factors of a number in sorted order.
+def primes(num):
+    factors = set()
+    candidate = 2
+    while candidate**2 <= num:
+        while (num % candidate) == 0:
+            factors.add(candidate)
+            num //= candidate
+        candidate += 1
+    if num > 1: factors.add(num)
+    return sorted(factors)
+
+# Return a random sequence of "count" integers all in the range [0,"maximum")
+# by using a Linear Congruential Generator to produce the number sequence.
+#   Memory  -- storage for 8 integers, regardless of parameters.
+#   Compute -- at most 2*"maximum" steps required to generate sequence.
+# 
+# Parameters:
+#   "count"   -- The number of integers generated in this sequence. For 
+#                uniqueness, "count" <= "maximum".
+#   "maximum" -- (optional) The upper bound (non-inclusive) of the range
+#                from which random numbers will be drawn.
+#   "prime"   -- (optional) Any integer > 2 that does not have 2 as a prime factor.
+#                Preferably, "prime" > "maximum" to ensure pseudo-randomnesss.
+def random_range(count, maximum=None, prime=87178291199):
+    # Set a default value for "count".
+    if (maximum == None): maximum = count
+    # Seed with a random integer in the range.
+    import random, math
+    value = random.randint(0,maximum)
+    # 
+    # Construct an offset, multiplier, and modulus for a linear
+    # congruential generator. These generators are cyclic and
+    # non-repeating when they maintain the properties:
+    # 
+    #   1) "modulus" and "offset" are relatively prime.
+    #   2) ["multiplier" - 1] is divisible by all prime factors of "modulus".
+    #   3) ["multiplier" - 1] is divisible by 4 if "modulus" is divisible by 4.
+    # 
+    offset = prime # Pick an offset relatively prime to "modulus".
+    multiplier = 4*maximum + 1 # Pick a multiplier 1 greater than a multiple of 4.
+    modulus = int(2**math.ceil(math.log2(maximum))) # Pick a modulus big enough to generate all numbers.
+    # Track how many random numbers have been returned.
+    found = 0
+    while found < count:
+        # If this is a valid value, yield it in generator fashion.
+        if value < maximum:
+            found += 1
+            yield value
+        # Calculate the next value in the sequence.
+        value = (value*multiplier + offset) % modulus
+
+# This function maps an index in the range [0, (count**2 - count) // 2] 
+# to a tuple of integers in the range [0,count). The mapping is complete.
+def index_to_pair(index):
+    val = int(((1/4 + 2*index)**(1/2) + 1/2))
+    remainder = index - val*(val - 1)//2
+    return (val, remainder)
+
 # Generate "count" random indices of pairs that are within "length" bounds.
 def gen_random_pairs(length, count=None, show_time=True, timeout=1):
     import time
     start = time.time()
-    if type(count) == type(None):
-        count = (length**2 - length) // 2
-    # Iterate over random pairs.
-    for _ in range(count):
+    # Compute the hard maximum in the number of pairs.
+    max_pairs = length*(length - 1) // 2
+    # Initialize count if it wasn't provided.
+    if type(count) == type(None): count = max_pairs
+    count = min(count, max_pairs)
+    # Get a random set of pairs (no repeats).
+    for i in random_range(count, maximum=max_pairs):
         if (time.time() - start) >= timeout:
-            print(f"{_: 7d} : {count: 7d}", end="\r")
+            print(f"{i: 7d} : {count: 7d}", end="\r")
             start = time.time()
-        index_1 = np.random.randint(length)
-        index_2 = np.random.randint(length-1)
-        if (index_2 >= index_1): index_2 += 1
-        yield index_1, index_2
+        yield index_to_pair(i)
     print(" "*40, end="\r")
 
 # Generate vector between scaled by metric difference. Give the metric
@@ -97,27 +93,21 @@ def gen_random_metric_diff(matrix, index_metric, count=None):
         vec /= np.sqrt(np.sum(vec**2))
         yield index_metric(p1, p2) * vec
 
-# Estimate the principle response directions using an iterative
-# technique to save on memory usage. This is an approximation to the
-# one-norm maximizers and may not converge.
-def pra(points, responses, metric=STANDARD_METRIC,
-        directions=100, steps=10000, parallel=False):
-    if (len(points[0].shape) != 1): raise(Exception("Points must be an indexed set of vectors."))
-    # Create a local "metric" based on the indices of row vectors.
-    def index_metric(p1, p2):
-        return metric(responses[p1], responses[p2])
-    # Create a "vector generator" and pass it to the one-norm basis finder.
-    vec_gen = gen_random_metric_diff(points, index_metric, steps)
-    # Notice that this "vec_gen" has mean 0! That is important for ortho_basis.
-    components, lengths = ortho_basis(vec_gen, num_bases=directions,
-                                      steps=steps, parallel=parallel)
-    # Currently not doing anyting with the "lengths", but they can be
-    # returned too later if the code updates.
-    return components, lengths
-
+# Compute the metric PCA (pca of the between vectors scaled by 
+# metric difference slope).
+def mpca(points, values, metric=ABS_DIFF, num_components=None, num_vecs=None):
+    # Set default values for steps and directions.
+    if type(num_vecs) == type(None):       num_vecs = 10 * points.shape[0]
+    if type(num_components) == type(None): num_components = points.shape[1]
+    # Function that takes two indices and returns metric difference.
+    index_metric = lambda i1, i2: metric(values[i1], values[i2])
+    # Generator that produces "between vectors".
+    vec_gen = gen_random_metric_diff(points, index_metric, count=num_vecs)
+    # Return the principle components of the metric slope vectors.
+    return pca(np.array([v for v in vec_gen]), num_components=num_components)
 
 # Compute the principle components using sklearn.
-def sklearn_pca(points, num_components=None):
+def pca(points, num_components=None):
     from sklearn.decomposition import PCA        
     pca = PCA(n_components=num_components)
     pca.fit(points)
@@ -127,146 +117,110 @@ def sklearn_pca(points, num_components=None):
     magnitudes /= sum(magnitudes)
     return principle_components, magnitudes
 
-# Compute the principle components of row points manually using NumPy.
-#  (Eigenpairs of the covariance matrix)
-def pca(points):
-    # Transform the points so that they have zero-mean.
-    points = points - np.mean(points, axis=0)
-    # Compute the principle components of the (row) points.
-    covariance_matrix = np.cov(points, rowvar=False)
-    magnitudes, principle_components = np.linalg.eig(covariance_matrix)
-    # Normalize the component magnitudes to have sum 1.
-    magnitudes /= np.sum(magnitudes)
-    # Get the ordering of the principle components (by decreasing value).
-    order = np.argsort(-magnitudes)
-    # Order the principle components by (decreasing) magnitude.
-    magnitudes = magnitudes[order]
-    principle_components = principle_components[order]
-    # Return the components and their magnitudes.
-    return principle_components, magnitudes
-
-
-
-#      Functional Representations of Data     
-# ============================================
-
-# Given three points, this will solve the equation for the quadratic
-# function which intercepts all 3
-def solve_quadratic(x, y):
-    if len(x) != len(y): raise(Exception("X and Y must be the same length."))
-    if len(x) != 3: raise(Exception("Exactly 3 (x,y) coordinates must be given."))
-    x1, x2, x3 = x
-    y1, y2, y3 = y
-    a = -((-x2 * y1 + x3 * y1 + x1 * y2 - x3 * y2 - x1 * y3 + x2 * y3)/((-x1 + x2) * (x2 - x3) * (-x1 + x3)))
-    b = -(( x2**2 * y1 - x3**2 * y1 - x1**2 * y2 + x3**2 * y2 + x1**2 * y3 - x2**2 * y3)/((x1 - x2) * (x1 - x3) * (x2 - x3)))
-    c = -((-x2**2 * x3 * y1 + x2 * x3**2 * y1 + x1**2 * x3 * y2 - x1 * x3**2 * y2 - x1**2 * x2 * y3 + x1 * x2**2 * y3)/((x1 - x2) * (x1 - x3) * (x2 - x3)))
-    return (a,b,c)
-
-# Returns the set of mode points given the CDF second difference list,
-# mode points are sorted in order of magnitude of relative differences
-def mode_points(second_diff, thresh_perc=0.0):
-    # Collect together the maximum absolute values in each
-    # group of signs (find local peaks)
-    sign_maxes = []
-    curr_max = second_diff[0]
-    thresh = np.percentile(second_diff[:,1], thresh_perc)
-    for val in second_diff:
-        if (abs(val[1]) > thresh) and (val[1] * curr_max[1] < 0):
-            sign_maxes.append(curr_max)
-            curr_max = val
-        elif abs(val[1]) > abs(curr_max[1]):
-            curr_max = val
-    sign_maxes = np.array(sign_maxes)
-    # Record the magnitude of the difference between the peaks
-    # as well as the location in the middle of the two peaks    
-    sign_changes = []
-    for i in range(1,len(sign_maxes)):
-        x_val = (sign_maxes[i][0] + sign_maxes[i-1][0]) / 2
-        y_val = abs(sign_maxes[i][1] - sign_maxes[i-1][1])
-        sign_changes.append([x_val, y_val])
-    # Sort the valley
-    sign_changes.sort(key=lambda i: -i[1])
-    sign_changes = np.array(sign_changes)
-    shift = min(sign_changes[:,1])
-    scale = max(sign_changes[:,1]) - shift
-    sign_changes[:,1] = (sign_changes[:,1] - shift) / scale
-    return sign_changes
-
-# CDF Second Difference
-def cdf_second_diff(data):
-    # Sort the data and get the min and max
-    data = list(data); data.sort()
-    data = np.array(data)
-    min_pt = data[0]
-    max_pt = data[-1]
-    # Initialize a holder for all CDF points
-    data_pts = []
-    # Add all of the CDF points for the data set
-    for i,val in enumerate(data):
-        if ((i > 0) and (val == data[i-1])): continue
-        data_pts.append( [val, i/(len(data) - 1)] )
-    # Add the 100 percentile point if it was not added already
-    if data_pts[-1][1] != 1.0: data_pts[-1][1] = 1.0
-    # Convert it all to numpy format for ease of processing
-    data_pts = np.array(data_pts)
-    second_diff_pts = []
-    for i in range(1,len(data_pts)-1):
-        a,_,_ = solve_quadratic(data_pts[i-1:i+2,0],
-                                data_pts[i-1:i+2,1])
-        second_deriv = 2*a
-        second_diff_pts.append( [data_pts[i,0], second_deriv] )
-    # # Sort the second_diff points by the magnitude of the second derivative
-    # second_diff_pts.sort(key=lambda pt: -abs(pt[1]))
-    return np.array(second_diff_pts)
-        
+# ===================================
+#      CDF and PDF Fit Functions     
+# ===================================
 
 # Returns the CDF function value for any given x-value
-def cdf_fit_func(data, cubic=False):
+#   fit -- "linear" linearly interpolates between Emperical Dist points.
+#          "cubic" constructs a monotonic piecewise cubic interpolating spline
+#          <other> returns the raw Emperical Distribution Function.
+def cdf_fit_func(data, fit="linear"):
+    fit_type = fit
+    # Scipy functions for spline fits.
+    from scipy.interpolate import splrep, splev
+    from scipy.interpolate import PchipInterpolator
+
     # Sort the data (without changing it) and get the min and max
-    data = sorted(data)
+    data = np.array(sorted(data))
     min_pt = data[0]
     max_pt = data[-1]
 
     # Initialize a holder for all CDF points
-    data_pts = []
+    data_vals = []
 
     # Add all of the CDF points for the data set
     for i,val in enumerate(data):
         if ((i > 0) and (val == data[i-1])): continue
-        data_pts.append( [val, i/(len(data) - 1)] )
+        data_vals.append( i/(len(data) - 1) )
     # Add the 100 percentile point if it was not added already
-    if data_pts[-1][1] != 1.0: data_pts[-1][1] = 1.0
+    if (data_vals[-1] != 1.0): data_vals[-1] = 1.0
 
     # Convert it all to numpy format for ease of processing
-    data_pts = np.array(data_pts)
+    data_vals = np.array(data_vals)
 
     # Generate a fit for the data points
-    if not cubic:
+    if (fit_type == "linear"):
         # Generate linear function
-        fit_params = splrep(data_pts[:,0], data_pts[:,1], k=1)
+        fit_params = splrep(data, data_vals, k=1)
         fit = lambda x_val: splev(x_val, fit_params, ext=3)
-        fit.derivative = lambda x_val, d=1: splev(x_val, fit_params, der=d, ext=3)
+        fit.derivative = lambda d=1: lambda x_val: splev(x_val, fit_params, der=d, ext=3)
         # Generate inverse linear function
-        inv_fit_params = splrep(data_pts[:,1], data_pts[:,0], k=1)
+        inv_fit_params = splrep(data_vals, data, k=1)
         inv_fit = lambda y_val: splev(y_val, inv_fit_params, ext=3)
-        inv_fit.derivative = lambda y_val, d=1: splev(y_val, inv_fit_params, der=d, ext=3)
+        inv_fit.derivative = lambda d=1: lambda y_val: splev(y_val, inv_fit_params, der=d, ext=3)
         fit.inverse = inv_fit
-    else:
+    elif (fit_type == "cubic"):
         # Generate piecewise cubic monotone increasing spline
-        fit = PchipInterpolator(data_pts[:,0], data_pts[:,1])
-        fit.inverse = PchipInterpolator(data_pts[:,1], data_pts[:,0])
+        fit = PchipInterpolator(data, data_vals)
+        fit.inverse = PchipInterpolator(data_vals, data)
+    else:
+        # Construct the empirical distribution fit.
+        def fit(x_val, data=data, data_vals=data_vals):
+            try:
+                # Handle the vector valued case
+                len(x_val)
+                return np.array([np.searchsorted(data, x, side="right") 
+                                 / len(data) for x in x_val])
+            except TypeError:
+                # Handle the single value case
+                return np.searchsorted(data, x_val, side="right") / len(data)
+        # Construct an inverse function for the EDF.
+        def inverse(perc, data=data, data_vals=data_vals):
+            try:
+                # Handle the vector valued case
+                len(perc)
+                indices = []
+                for p in perc:
+                    index = np.searchsorted(data_vals, max(0,min(p,1)), side="right")
+                    indices.append( data[min(index, len(data)-1)] )
+                return np.array(indices)
+            except TypeError:
+                # Handle the single value case
+                index = np.searchsorted(data_vals, max(0,min(perc,1)), side="right")
+                return data[min(index, len(data)-1)]
+        # Construct a derivative function for the EDF.
+        def derivative(x_val):
+            try:
+                # Handle the vector valued case
+                len(x_val)
+                vals = []
+                for x in x_val:
+                    vals.append( float(x in data) )
+                return np.array(vals)
+            except TypeError:
+                # Handle the single value case
+                return float(x_val in data)
+        # Store the inverse and derivative as attributes.
+        fit.inverse = inverse
+        fit.derivative = lambda d=1: (derivative) if (d == 1) else (lambda: 0.)
     
     # Generate a function that computes this CDF's points
     def cdf_func(x_val=None):
+        # Make the function return a min and max if nothing is provided.
         if type(x_val) == type(None):
             return (min_pt, max_pt)
         else:
+            # Treat this like a normal spline interpolation.
             y_val = fit(x_val)
             if (type(x_val) == np.ndarray):
                 y_val = np.where(x_val < min_pt, 0.0, y_val)
                 y_val = np.where(x_val > max_pt, 1.0, y_val)
             return y_val
 
+    # Set the min and max of the data.
+    cdf_func.min = min_pt
+    cdf_func.max = max_pt
     # Set the derivative function
     cdf_func.derivative = fit.derivative
     # Set the inverse function
@@ -275,33 +229,59 @@ def cdf_fit_func(data, cubic=False):
     # Return the custom function for this set of points
     return cdf_func
 
-# Returns the PDF function for the data
-def pdf_fit_func(data=None):
+# Construct a version of a function that has been smoothed with a gaussian.
+def gauss_smooth(func, stdev=1., n=100):
+    # We must incorporate ssome smoothing.
+    from scipy.stats import norm
+    # Construct a set of gaussian weights (to apply nearby on the function).
+    eval_pts = np.linspace(-5 * stdev, 5 * stdev, n)
+    weights = norm(0, stdev).pdf(eval_pts)
+    # Return the smoothed function.
+    return lambda x: sum(weights * func(eval_pts + x)) / sum(weights)
+
+# Return a PDF fit function that is smoothed with a gaussian kernel.
+# "smooth" is the percentage of the data width to use as the standard
+# deviation of the gaussian kernel. "n" is the number of samples to
+# make when doing the gaussian kernel smoothing.
+def pdf_fit_func(data, smooth=.05, n=1000, **cdf_fit_kwargs):
+    cdf_fit = cdf_fit_func(data, **cdf_fit_kwargs)
+    pdf_func = cdf_fit.derivative(1)
     # Take the first derivative of the CDF function to get the PDF
-    return cdf_fit_func(data).derivative(1)
+    def pdf_fit(x=None):
+        # Return the min and max when nothing is provided.
+        if (type(x) == type(None)): return (cdf_fit.min, cdf_fit.max)
+        try:
+            # Handle the vector valued case.
+            len(x)                
+            vals = np.array([pdf_func(v) for v in x])
+            vals[x < cdf_fit.min] = 0.
+            vals[x > cdf_fit.max] = 0.
+            # Return array of results.
+            return vals
+        except TypeError:
+            # Return zeros for queries outside the range.
+            if (cdf_fit.min > x) or (cdf_fit.max < x): return 0.0
+            # Return the smoothed evaluation.
+            return pdf_func(x)
+        return pdf_func(x)
+    # Smooth the pdf fit if that was requested.
+    if smooth:
+        width = (cdf_fit.max - cdf_fit.min)
+        stdev = smooth * width
+        smooth_cdf_fit = gauss_smooth(cdf_fit, stdev, n)
+        eps = .01 * width
+        def pdf_fit(x):
+            return smooth_cdf_fit(x + eps) - smooth_cdf_fit(x - eps)
+    # Set the "min" and "max" attributes of this function.
+    pdf_fit.min = cdf_fit.min
+    pdf_fit.max = cdf_fit.max
+    pdf_fit.integral = cdf_fit
+    return pdf_fit
 
-# The normal pdf function at a given x
-def normal_pdf(x, mean=0, stdev=1):
-    return np.exp(-((x - mean)**2 / (2 * stdev**2)) ) / (np.sqrt(2*np.pi)*stdev)
 
-# The normal cdf function at a given x
-def normal_cdf(data, mean=0, stdev=1):
-    try:
-        len(data)
-        return np.array([normal_cdf(row,mean,stdev) for row in data])
-    except TypeError:
-        return integrate(lambda x: normal_pdf(x,mean,stdev),
-                         -np.inf, data)[0]
-
-# Return the function of a normal cdf that has the mean and standard deviation
-def normal_cdf_func(data):
-    mean = np.mean(data)
-    std = np.std(data)
-    def cdf_func(x=None):
-        if type(x) == type(None):
-            return (min(data), max(data))
-        return normal_cdf(x)
-    return cdf_func
+# ===============================================
+#      Statistical Measurements Involving KS     
+# ===============================================
 
 # Given a ks-statistic and the sample sizes of the two distributions
 # compared, return the largest confidence with which the two
@@ -336,31 +316,8 @@ def ks_p_value(ks_stat, n1, n2=float('inf')):
     #                                                                 
     return min(1.0, 2 * np.exp( -2 * ( ks_stat**2 / abs((1/n1) + (1/n2)) )))
 
-# Provides the probability that you would see a difference in CDFs as
-# large as "ks" if the two underlying distributions are the same. This
-# test makes no assumptions about where in the distribution the
-# distance metric was found.
-def same_prob(ks, n1, n2):
-    # The probability of the two distributions taking on necessary values
-    prob_val = lambda val,truth: (normal_pdf(val,truth,truth*(1-truth)) * 
-                                  normal_pdf(val+ks,truth,truth*(1-truth)))
-    prob_truth = lambda truth: integrate(lambda v: prob_val(v,truth), 0, 1-ks)[0]
-    return 2 * (integrate(prob_truth, 0, 1)[0]) / (n1*n2)**(1/2)
-
-def avg_same_prob(pts1, pts2):
-    # get the EDF points for pts1 and pts2
-    # get the differences at all known points
-    # get the average probability that pts1 and pts2 are the same
-    pass
-
-def other(ks, n1, n2=float('inf')):
-    # The probability of the two distributions taking on necessary values
-    prob_val = lambda val,truth: (normal_pdf(val,truth,truth*(1-truth)) * 
-                                  normal_pdf(val+ks,truth,truth*(1-truth)))
-    prob_truth = lambda truth: integrate(lambda v: prob_val(v,truth), 0, 1-ks)[0]
-    return 2 * prob_val(.5-(ks/2),.5) / np.sqrt(n1*n2)
-
 def normal_confidence(distribution):
+    from scipy.stats import kstest
     # # Make the distribution 0 mean and unit variance (unit standard deviation)
     # new_distribution = (distribution - np.mean(distribution)) / np.var(distribution)
     # Compare the distribution with a normal distribution
@@ -411,8 +368,15 @@ def ks_diff(test_func, true_func, method="util"):
             greatest_diff = max(max(diff), greatest_diff)
     return greatest_diff
 
+
+# ===============================================
+#      Plotting Percentile Functions as CDFS     
+# ===============================================
+
 # Linearly interpolate to guess y values for x between provided data
 def linear_fit_func(x_points, y_points):
+    from scipy.interpolate import splrep, splev
+
     # Generate the 'range' of the function
     min_max = (min(x_points), max(x_points))
 
@@ -536,48 +500,46 @@ def plot_percentiles(plot, name, x_points, y_points, color=None,
 
 
 if __name__ == "__main__":
-    from util.plot import Plot
     import pickle, os
-
+    
+    TEST_FIT_FUNCS = True
     TEST_CDF_PDF = False
-    TEST_PRA = True
+    TEST_PRA = False
+
+    if TEST_FIT_FUNCS:
+        # ==============================================
+        #      Test the fit functions and smoothing     
+        # ==============================================
+        from util.plot import Plot
+        import numpy as np
+        # Make data
+        smooth = .1
+        data = np.random.normal(size=(1000,))
+        min_max = (min(data) - .1, max(data) + .1)
+        print(min_max)
+
+        # Make PDF plot
+        pfit = pdf_fit_func(data)
+        p = Plot()
+        p.add_func("PDF", pfit, min_max)
+        # Make smooth PDF
+        pfit = pdf_fit_func(data, smooth=smooth)
+        p.add_func("Smooth PDF", pfit, min_max)
+        p.show(show=False)
+
+        # Make CDF plota
+        cfit = cdf_fit_func(data)
+        p = Plot()
+        p.add_func("CDF", cfit, min_max)
+        # Make smooth cdf
+        stdev = smooth * (cfit.max - cfit.min)
+        cfit = gauss_smooth(cfit, stdev)
+        p.add_func("Smooth CDF", cfit, min_max)
+        p.show(append=True)
+
 
     if TEST_CDF_PDF:
-        # num_distrs = 1000
-        # for n in range(10,101,10):
-
-        # p = Plot()
-        # def c(a):
-        #     return (-np.log(a/2)/2)**(1/2)
-        # def f(n):
-        #     return ks_p_value(.1, n)
-        # def g(ks):
-        #     return ks_p_value(ks, 1000)
-        # p.add_func("c(a) changing a", c, [0.0001,.9999])
-        # p.add_func("KS=.1 changing N", f, [10,1000])
-        # p.add_func("N=1000 changing KS", g, [0,1])
-        # p.plot(fixed=False)
-        # exit()
-
-        # p = Plot()
-        # step_size = 1000
-        # steps = 10
-        # dist = []
-        # mean = 10.0
-        # std = 10.0
-        # for size in range(step_size,step_size*steps+1,step_size):
-        #     dist += list(np.random.normal(mean, std, size=(step_size,)))
-        #     # dist += list(np.random.random(size=(step_size,)))
-        #     new_dist = np.array(dist)
-        #     new_dist = (new_dist - mean) / std
-        #     func = cdf_fit_func(dist, cubic=False)
-        #     p.add_func("%i"%(len(dist)),func, [min(dist), max(dist)], group=str(len(dist)))
-        #     print( ("%i "+"%.2f "*3)%
-        #            (size, normal_confidence(dist), np.mean(dist), np.std(dist)) )
-        # p.plot()
-        # exit()
-
-        from util.plotly import Plot, multiplot
+        from util.plot import Plot, multiplot
 
         # Testing out the mathematical routines
         num_modes = 5
@@ -715,7 +677,7 @@ if __name__ == "__main__":
 
         # Return the set of (unique) vectors between points and the metric
         # change in response between each (unique) pair of points.
-        def between(points, responses, metric=STANDARD_METRIC):
+        def between(points, responses, metric=ABS_DIFF):
             import numpy as np
             vecs = []
             diffs = []

@@ -100,7 +100,7 @@ class qHullDelaunay(WeightedApproximator):
 
 # Wrapper class for using the Delaunay fortran code
 class Delaunay(WeightedApproximator):
-    import delsparse
+    from util.algorithms.delaunay import delsparse
     def __init__(self, parallel=False, pmode=None, chunksize=None):
         # Get the source fortran code module
         path_to_src = os.path.join(CWD,"delsparse.f90")

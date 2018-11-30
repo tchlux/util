@@ -616,7 +616,7 @@ class Plot:
             if (bins not in kwargs):
                 bin_settings = dict( start=hist_start_val,
                                      end=hist_end_val,
-                                     size=hist_value_range/num_bins )
+                                     size=(hist_value_range - hist_value_range*padding)/num_bins )
                 kwargs[bins] = bin_settings
         # Store the correct extrema to be used for plotting
         min_max = getattr(self, bar_spacing+"_min_max").copy()
@@ -1834,7 +1834,7 @@ if __name__ == "__main__":
 
 
     # This is an example of how to control the legend (flat, bottom).
-    # legend_settings = dict(
+    # legend = dict(
     #     xanchor = "center",
     #     yanchor = "top",
     #     x = .5,
