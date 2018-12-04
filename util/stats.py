@@ -5,6 +5,11 @@ import os
 #      Metric Principle Component Analysis     
 # =============================================
 
+# Custom excepion for improper user-specified ranges.
+class InvalidRange(Exception):
+    def __init__(self, start, stop, step):
+        return super().__init__("\n\nError: random_range(start=%s,stop=%s,step=%s) contains no elements."%(start,stop,step))
+
 # Prime number used for generating random sequences.
 ABS_DIFF = lambda p1,p2: abs(p1-p2)
         
@@ -35,6 +40,8 @@ def random_range(start, stop=None, step=None):
     mapping = lambda i: (i*step) + start
     # Compute the number of numbers in this range.
     maximum = (stop - start) // step
+    # Check for a usage error.
+    if (maximum == 0): raise(InvalidRange(start, stop, step))
     # Seed range with a random integer.
     value = random.randint(0,maximum)
     # 
@@ -59,26 +66,6 @@ def random_range(start, stop=None, step=None):
         # Calculate the next value in the sequence.
         value = (value*multiplier + offset) % modulus
 
-
-
-
-
-
-
-
-
-total = []
-for i in range(100000):
-    seq = tuple()
-    for k,v in enumerate(random_range(10)):
-        seq += (v,)
-        if (k >= 1): break
-    total.append(seq)
-print()
-for l in sorted(set(total)):
-    print(l)
-exit()
-
 # This function maps an index in the range [0, (count**2 - count) // 2] 
 # to a tuple of integers in the range [0,count). The mapping is complete.
 def index_to_pair(index):
@@ -96,9 +83,10 @@ def gen_random_pairs(length, count=None, show_time=True, timeout=1):
     if type(count) == type(None): count = max_pairs
     count = min(count, max_pairs)
     # Get a random set of pairs (no repeats).
-    for i in random_range(count, maximum=max_pairs):
+    for c,i in enumerate(random_range(count)):
+        if (i >= count): break
         if (time.time() - start) >= timeout:
-            print(f"{i: 7d} : {count: 7d}", end="\r")
+            print(f"{c: 7d} : {count: 7d}", end="\r")
             start = time.time()
         yield index_to_pair(i)
     print(" "*40, end="\r")
@@ -109,7 +97,8 @@ def gen_random_metric_diff(matrix, index_metric, count=None):
     # Iterate over random pairs.
     for (p1, p2) in gen_random_pairs(len(matrix), count):
         vec = matrix[p1] - matrix[p2]
-        vec /= np.sqrt(np.sum(vec**2))
+        length = np.sqrt(np.sum(vec**2))
+        if length > 0: vec /= length
         yield index_metric(p1, p2) * vec
 
 # Compute the metric PCA (pca of the between vectors scaled by 
@@ -120,10 +109,23 @@ def mpca(points, values, metric=ABS_DIFF, num_components=None, num_vecs=None):
     if type(num_components) == type(None): num_components = points.shape[1]
     # Function that takes two indices and returns metric difference.
     index_metric = lambda i1, i2: metric(values[i1], values[i2])
+    print(" generating metric vectors..", end="\r", flush=True)
     # Generator that produces "between vectors".
     vec_gen = gen_random_metric_diff(points, index_metric, count=num_vecs)
+    print(" converting vectors to numpy array..", end="\r", flush=True)
+    # Compute the principle components of the between vectors.
+    m_vecs = np.array([v for v in vec_gen])
+    print(" computing principle components..", end="\r", flush=True)
+    components, _ = pca(m_vecs, num_components=num_components)
+    # Compute the magnitudes using a dot product.
+    print(" computing magnitudes..", end="\r", flush=True)
+    magnitudes = np.ones(num_components)
+    for i in range(num_components):
+        magnitudes[i] = np.linalg.norm(np.matmul(m_vecs, components[i]), ord=1)
+    magnitudes /= np.sum(magnitudes)
+    print("                                    ", end="\r", flush=True)
     # Return the principle components of the metric slope vectors.
-    return pca(np.array([v for v in vec_gen]), num_components=num_components)
+    return components, magnitudes
 
 # Compute the principle components using sklearn.
 def pca(points, num_components=None):
@@ -520,17 +522,17 @@ def plot_percentiles(plot, name, x_points, y_points, color=None,
 
 if __name__ == "__main__":
     import pickle, os
+    import numpy as np
+    from util.plot import Plot, multiplot
     
-    TEST_FIT_FUNCS = True
+    TEST_FIT_FUNCS = False
     TEST_CDF_PDF = False
-    TEST_PRA = False
+    TEST_MPCA = True
 
     if TEST_FIT_FUNCS:
         # ==============================================
         #      Test the fit functions and smoothing     
         # ==============================================
-        from util.plot import Plot
-        import numpy as np
         # Make data
         smooth = .1
         data = np.random.normal(size=(1000,))
@@ -558,8 +560,6 @@ if __name__ == "__main__":
 
 
     if TEST_CDF_PDF:
-        from util.plot import Plot, multiplot
-
         # Testing out the mathematical routines
         num_modes = 5
         top_mode_color = "rgba(20,20,20,0.6)"
@@ -620,13 +620,20 @@ if __name__ == "__main__":
         ], shared_x=True)
 
     # Example / Test case of Principle Response Analyais
-    if TEST_PRA:
-        import numpy as np
+    if TEST_MPCA:
+
+        GENERATE_APPROXIMATIONS = False
+        BIG_PLOTS = False
+        SHOW_2D_POINTS = False
+
+        import random
         # Generate some points for testing.
+        np.random.seed(4)
+        random.seed(0)
         rgen = np.random.RandomState(10)
-        n = 1000
-        print("Number of points:", n)
+        n = 100
         points = (rgen.rand(n,2) - .5) * 2
+        # points *= np.array([.5, 1.])
 
         # Create some testing functions (for learning different behaviors)
         funcs = [
@@ -634,102 +641,122 @@ if __name__ == "__main__":
             lambda x: abs(x[0] + x[1])   , # "V" function on 1:1 diagonal
             lambda x: abs(2*x[0] + x[1]) , # "V" function on 2:1 diagonal
             lambda x: x[0]**2            , # Quadratic on x
-            lambda x: x[1]**2            , # Quadratic on y
             lambda x: (x[0] + x[1])**2   , # Quadratic on 1:1 diagonal
-            lambda x: (x[0] - x[1])**2   , # Quadratic on 1:-1 diagonal
             lambda x: (2*x[0] + x[1])**3 , # Cubic on 2:1 diagonal
+            lambda x: (x[0]**3)          , # Cubic on x
             lambda x: rgen.rand()        , # Random function
         ]
         # Calculate the response values associated with each function.
         responses = np.vstack(tuple(tuple(map(f, points)) for f in funcs)).T
 
         # Reduce to just the first function
-        choice = 4
+        choice = 6
         func = funcs[choice]
         response = responses[:,choice]
 
-        print("Calculating PRA..")
         # Run the princinple response analysis function.
-        components, lengths = pra(points, response, steps=100000, parallel=False)
-        conditioner = components.copy()
-        unconditioner = np.linalg.inv(components)
-        # unconditioner = np.matmul(np.linalg.inv(components), np.diag(values))
-
-        # Shorten the set of points and values for display purposes.
-        size = 1000
-        random_subset = np.arange(len(points))
-        rgen.shuffle(random_subset)
-        random_subset = random_subset[:size]
-        points = points[random_subset]
-        response = response[random_subset]
+        components, values = mpca(points, response)
+        conditioner = np.matmul(components, np.diag(values))
 
         print()
         print("Components")
         print(components)
         print()
+        print("Values")
+        print(values)
+        print()
         print("Conditioner")
         print(conditioner)
         print()
 
-        # # ------------------------------------------------------------
-        # # Generate a plot of the response surfaces.
-        # from util.plot import Plot, multiplot
-        # print("Generating plots of source function..")
-        # # Add function 1
-        # p1 = Plot()
-        # p1.add("Points", *(points.T), response, opacity=.8)
-        # p1.add_func("Surface", func, [-1,1], [-1,1], plot_points=100)
-        # # Generate a regular approximation
-        # from util.algorithms import NearestNeighbor as Approximator
-        # model = Approximator()
-        # model.fit(points, response)
-        # p1.add_func("Unconditioned Approximation", model, [-1,1], [-1,1],
-        #             mode="markers", opacity=.8)
-        # # Generate a conditioned approximation
-        # model = Approximator()
-        # model.fit(np.matmul(points, conditioner), response)
-        # approx = lambda x: model(np.matmul(x, conditioner))
-        # p1.add_func("Best Approximation", approx, [-1,1], [-1,1],
-        #             mode="markers", opacity=.8)
-        # p1.plot(file_name="source_func.html", show=False)
-        # # ------------------------------------------------------------
+        # Generate a plot of the response surfaces.
+        from util.plot import Plot, multiplot
+        print("Generating plots of source function..")
 
-        # Return the set of (unique) vectors between points and the metric
-        # change in response between each (unique) pair of points.
-        def between(points, responses, metric=ABS_DIFF):
-            import numpy as np
+        # Add function 1
+        p1 = Plot()
+        p1.add("Points", *(points.T), response, opacity=.8)
+        p1.add_func("Surface", func, [-1,1], [-1,1], plot_points=100)
+
+        if GENERATE_APPROXIMATIONS:
+            from util.algorithms import NearestNeighbor
+            model = NearestNeighbor()
+            model.fit(points, response)
+            p1.add_func("Unconditioned Approximation", model, [-1,1], [-1,1],
+                        mode="markers", opacity=.8)
+            # Generate a conditioned approximation
+            model = NearestNeighbor()
+            model.fit(np.matmul(points, conditioner), response)
+            approx = lambda x: model(np.matmul(x, conditioner))
+            p1.add_func("Best Approximation", approx, [-1,1], [-1,1],
+                        mode="markers", opacity=.8)
+
+
+        print("Generating metric principle components..")
+
+        # Return the between vectors and the differences between those points.
+        def between(x, y, unique=True):
             vecs = []
             diffs = []
-            for p1 in range(len(points)):
-                for p2 in range(p1+1, len(points)):
-                    vecs.append( points[p1] - points[p2] )
-                    diffs.append( metric(responses[p1], responses[p2]) )
-            return np.array(vecs, dtype=float), np.array(diffs, dtype=float)
+            for i1 in range(x.shape[0]):
+                start = i1+1 if unique else 0
+                for i2 in range(start, x.shape[0]):
+                    if (i1 == i2): continue
+                    vecs.append(x[i2] - x[i1])
+                    diffs.append(y[i2] - y[i1])
+            return np.array(vecs), np.array(diffs)
 
-        print("Generating demo plot 2")
         # Plot the between slopes to verify they are working.
         # Calculate the between slopes
         vecs, diffs = between(points, response)
         vec_lengths = np.sqrt(np.sum(vecs**2, axis=1))
-        bs = (vecs.T * diffs / vec_lengths**2).T
-        # Get a random subset of the between slopes and plot them.
+        between_slopes = diffs / vec_lengths
+        bs = ((vecs.T / vec_lengths) * between_slopes).T
+        # Extrac a random subset for display
+        size = 100
         random_subset = np.arange(len(bs))
         rgen.shuffle(random_subset)
-        random_subset = random_subset[:size]
-        # Add function 1
-        p2 = Plot()
-        # Add the points, transformed points, and betweens for demonstration.
-        new_pts = np.matmul(np.matmul(points, conditioner), unconditioner)
-        p2.add("Original Points", *(points.T))
-        # p2.add("Transformed Points", *(new_pts.T), color=p2.color(6, alpha=.7))
-        p2.add("Between Slopes", *(bs[random_subset].T),
-               color=p2.color(4, alpha=.4))
+        bs = bs[random_subset[:size],:]
+        # Normalize the between slopes so they fit on the plot
+        max_bs_len = np.max(np.sqrt(np.sum(bs**2, axis=1)))
+        bs /= max_bs_len
+        # Get a random subset of the between slopes and plot them.
+        p2 = Plot("","Metric PCA on Z","")
+        p2.add("Between Slopes", *(bs.T), color=p2.color(4, alpha=.4))
+
+        if SHOW_2D_POINTS:
+            # Add the points and transformed points for demonstration.
+            new_pts = np.matmul(np.matmul(points, conditioner), np.linalg.inv(components))
+            p2.add("Original Points", *(points.T))
+            p2.add("Transformed Points", *(new_pts.T), color=p2.color(6, alpha=.7))
+
         # Add the principle response components 
-        for i,vec in enumerate(components.T):
-            vec *= 2
+        for i,(vec,m) in enumerate(zip(components.T, values)):
+            vec = vec * m
             p2.add(f"PC {i+1}", [0,vec[0]], [0,vec[1]], mode="lines")
             ax, ay = (vec / sum(vec**2)**.5) * 3
-        p2.plot(file_name="source_func.html", 
-                x_range=[-8,8], y_range=[-5,5])
-        # ------------------------------------------------------------
-        
+            p2.add_annotation(f"{m:.2f}", vec[0], vec[1])
+
+
+        p3 = Plot("", "PCA on X", "")
+        p3.add("Points", *(points.T), color=p3.color(4, alpha=.4))
+
+        # Add the normal principle components
+        components, values = pca(points)
+        for i,(vec,m) in enumerate(zip(components.T, values)):
+            vec = vec * m
+            p3.add(f"PC {i+1}", [0,vec[0]], [0,vec[1]], mode="lines")
+            ax, ay = (vec / sum(vec**2)**.5) * 3
+            p3.add_annotation(f"{m:.2f}", vec[0], vec[1])
+
+
+        if BIG_PLOTS:
+            p1.plot(file_name="source_func.html", show=False)
+            p2.plot(append=True, x_range=[-8,8], y_range=[-5,5])
+        else:
+            # Make the plots (with manual ranges)
+            p1 = p1.plot(html=False, show_legend=False)
+            p2 = p2.plot(html=False, x_range=[-1,1], y_range=[-1,1], show_legend=False)
+            p3 = p3.plot(html=False, x_range=[-1,1], y_range=[-1,1], show_legend=False)
+            # Generate the multiplot of the two side-by-side figures
+            multiplot([p1,p2,p3], height=126, width=600)
