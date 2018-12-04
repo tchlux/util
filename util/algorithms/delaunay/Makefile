@@ -1,5 +1,5 @@
 FORT=gfortran
-CFLAGS=-c -std=f2008
+CFLAGS=-c -std=f2008 -fPIC
 LIBS=-fopenmp
 PYTHON=python3
 

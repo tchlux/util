@@ -5,6 +5,19 @@ MAX_FILE_SIZE_BYTES = 50*(2**20)
 CHUNK_EXT = "_(part_%i_of_%i).chunk"
 class FileTooSmall(Exception): pass
 
+# Save "data" in a file titled "file_name" using pickle.
+def save(data, file_name):
+    import pickle    
+    with open(file_name, "wb") as f:
+        pickle.dump(data, f)
+
+# Load data from a pickle file titled "file_name".
+def load(file_name):
+    import pickle
+    with open(file_name, "rb") as f:
+        data = pickle.load(f)
+    return data
+
 # Convenience function for pausing a program for input (explicitly
 # named). Uses 'getpass' in order to suppress new line character.
 def pause(string="press enter to continue.."):
