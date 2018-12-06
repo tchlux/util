@@ -34,7 +34,7 @@ if __name__ == "__main__":
 
     # PMODE=1, once with PMODE=2, once with PMODE=3, and once with PMODE unspecified and CHUNKSIZE=10.
     # Fit the Delaunay model to the points
-    surf = Delaunay()
+    surf = Delaunay(pmode=None, chunksize=10)
     surf.fit(x,y)
 
     # Manual test at a specific point.

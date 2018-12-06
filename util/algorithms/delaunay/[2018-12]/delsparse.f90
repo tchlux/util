@@ -151,7 +151,7 @@ SUBROUTINE DELAUNAYSPARSES( D, N, PTS, M, Q, SIMPS, WEIGHTS, IERR, &
 ! 31 : All the data points in PTS lie in some lower dimensional linear
 !      manifold (up to the working precision), and no valid triangulation
 !      exists.
-! 40 : An error caused DELAUNAYSPARSES to terminate before this value could
+! 40 : An error caused DelaunaySparse to terminate before this value could
 !      be computed. Note: The corresponding entries in SIMPS and WEIGHTS may
 !      contain garbage values.
 !
@@ -190,7 +190,7 @@ SUBROUTINE DELAUNAYSPARSES( D, N, PTS, M, Q, SIMPS, WEIGHTS, IERR, &
 !    weights are returned.
 ! 
 ! INTERP_OUT(1:IR,1:M) contains real valued response vectors for each
-!    interpolation point in Q on output. The first dimension of INTERP_OUT
+!    interpolation point in Q on output. The first dimension of INTERP_OU
 !    must match the first dimension of INTERP_IN, and the second dimension
 !    must match M. If present, the response values at each interpolation
 !    point are computed as a convex combination of the response values
@@ -199,7 +199,7 @@ SUBROUTINE DELAUNAYSPARSES( D, N, PTS, M, Q, SIMPS, WEIGHTS, IERR, &
 !    INTERP_IN must also be present.  If both are omitted, only the
 !    simplices and convex combination weights are returned.
 ! 
-! EPS contains the real working precision for the problem on input. By default,
+! EPS contains the working precision for the problem on input. By default,
 !    EPS is assigned \sqrt{\mu} where \mu denotes the unit roundoff for the
 !    machine. In general, any values that differ by less than EPS are judged
 !    as equal, and any weights that are greater than -EPS are judged as
@@ -207,7 +207,7 @@ SUBROUTINE DELAUNAYSPARSES( D, N, PTS, M, Q, SIMPS, WEIGHTS, IERR, &
 !    \sqrt{\mu}. If any value less than \sqrt{\mu} is supplied, the default
 !    value will be used instead automatically. 
 ! 
-! EXTRAP contains the real maximum extrapolation distance (relative to the
+! EXTRAP contains the maximum extrapolation distance (relative to the
 !    diameter of PTS) on input. Interpolation at a point outside the convex
 !    hull of PTS is done by projecting that point onto the convex hull, and
 !    then doing normal Delaunay interpolation at that projection.
@@ -218,24 +218,24 @@ SUBROUTINE DELAUNAYSPARSES( D, N, PTS, M, Q, SIMPS, WEIGHTS, IERR, &
 !    ignored without ever computing a projection. By default, EXTRAP=0.1
 !    (extrapolate by up to 10% of the diameter of PTS). 
 ! 
-! RNORM(1:M) contains the real unscaled projection (2-norm) distances from
-!    any projection computations on output. If not present, these distances
+! RNORM(1:M) contains the unscaled projection (2-norm) distances from any
+!    projection computations on output. If not present, these distances
 !    are still computed for each extrapolation point, but are never returned.
 ! 
-! IBUDGET on input contains the integer budget for performing flips while
-!    iterating toward the simplex containing each interpolation point in
-!    Q. This prevents DELAUNAYSPARSES from falling into an infinite loop when
-!    an inappropriate value of EPS is given with respect to the problem
+! IBUDGET contains the integer valued budget for performing flips while
+!    iterating toward the simplex containing each interpolation point in Q.
+!    This prevents DelaunaySparse from falling into an infinite loop when an
+!    inappropriate value of EPS is given with respect to the problem
 !    conditioning.  By default, IBUDGET=50000. However, for extremely
 !    high-dimensional problems and pathological inputs, the default value
 !    may be insufficient. 
 !
-! CHAIN is a logical input argument that determines whether a new first
-!    simplex should be constructed for each interpolation point
-!    (CHAIN=.FALSE.), or whether the simplex walks should be "daisy-chained."
-!    By default, CHAIN=.FALSE. Setting CHAIN=.TRUE. is generally not
-!    recommended, unless the size of the triangulation is relatively small
-!    or the interpolation points are known to be tightly clustered.
+! CHAIN is a logical type that determines whether a new simplex should be
+!    constructed at each iteration, or whether the simplex walks should be
+!    "daisy-chained." By default, CHAIN=.FALSE. Setting CHAIN=.TRUE. is
+!    generally not recommended, unless the size of the triangulation is
+!    relatively small or the interpolation points are known to be tightly
+!    clustered.
 !
 !
 ! Subroutines and functions directly referenced from BLAS are
@@ -348,7 +348,7 @@ IF (SIZE(WEIGHTS,2) .NE. M) THEN ! One vector of weights per simplex.
 IF (SIZE(IERR) .NE. M) THEN ! An error flag for each interpolation point.
    IERR(:) = 21; RETURN; END IF
 
-! Check for optional arguments.
+! Check for optional inputs arguments.
 IF (PRESENT(INTERP_IN) .NEQV. PRESENT(INTERP_OUT)) THEN
    IERR(:) = 22; RETURN; END IF
 IF (PRESENT(INTERP_IN)) THEN ! Sizes must agree.
@@ -410,7 +410,6 @@ IERR(:) = 40
 
 ! Outer loop over all interpolation points (in Q).
 OUTER : DO MI = 1, M
-
    ! Check if this interpolation point was already found.
    IF (IERR(MI) .EQ. 0) CYCLE OUTER
 
@@ -1015,7 +1014,7 @@ SUBROUTINE DELAUNAYSPARSEP( D, N, PTS, M, Q, SIMPS, WEIGHTS, IERR, &
 ! 31 : All the data points in PTS lie in some lower dimensional linear
 !      manifold (up to the working precision), and no valid triangulation
 !      exists.
-! 40 : An error caused DELAUNAYSPARSEP to terminate before this value could
+! 40 : An error caused DelaunaySparse to terminate before this value could
 !      be computed. Note: The corresponding entries in SIMPS and WEIGHTS may
 !      contain garbage values.
 !
@@ -1066,15 +1065,15 @@ SUBROUTINE DELAUNAYSPARSEP( D, N, PTS, M, Q, SIMPS, WEIGHTS, IERR, &
 !    INTERP_IN must also be present.  If both are omitted, only the
 !    simplices and convex combination weights are returned.
 ! 
-! EPS contains the real working precision for the problem on input. By
-!    default, EPS is assigned \sqrt{\mu} where \mu denotes the unit roundoff
-!    for the machine. In general, any values that differ by less than EPS
-!    are judged as equal, and any weights that are greater than -EPS are
-!    judged as nonnegative.  EPS cannot take a value less than the default
-!    value of \sqrt{\mu}. If any value less than \sqrt{\mu} is supplied,
-!    the default value will be used instead automatically. 
+! EPS contains the working precision for the problem on input. By default,
+!    EPS is assigned \sqrt{\mu} where \mu denotes the unit roundoff for the
+!    machine. In general, any values that differ by less than EPS are judged
+!    as equal, and any weights that are greater than -EPS are judged as
+!    nonnegative.  EPS cannot take a value less than the default value of
+!    \sqrt{\mu}. If any value less than \sqrt{\mu} is supplied, the default
+!    value will be used instead automatically. 
 ! 
-! EXTRAP contains the real maximum extrapolation distance (relative to the
+! EXTRAP contains the maximum extrapolation distance (relative to the
 !    diameter of PTS) on input. Interpolation at a point outside the convex
 !    hull of PTS is done by projecting that point onto the convex hull, and
 !    then doing normal Delaunay interpolation at that projection.
@@ -1085,24 +1084,24 @@ SUBROUTINE DELAUNAYSPARSEP( D, N, PTS, M, Q, SIMPS, WEIGHTS, IERR, &
 !    ignored without ever computing a projection. By default, EXTRAP=0.1
 !    (extrapolate by up to 10% of the diameter of PTS). 
 ! 
-! RNORM(1:M) contains the real unscaled projection (2-norm) distances from
-!    any projection computations on output. If not present, these distances
+! RNORM(1:M) contains the unscaled projection (2-norm) distances from any
+!    projection computations on output. If not present, these distances
 !    are still computed for each extrapolation point, but are never returned.
 ! 
-! IBUDGET on input contains the integer budget for performing flips while
+! IBUDGET contains the integer valued budget for performing flips while
 !    iterating toward the simplex containing each interpolation point in Q.
-!    This prevents DELAUNAYSPARSEP from falling into an infinite loop when
-!    an inappropriate value of EPS is given with respect to the problem
+!    This prevents DelaunaySparse from falling into an infinite loop when an
+!    inappropriate value of EPS is given with respect to the problem
 !    conditioning.  By default, IBUDGET=50000. However, for extremely
 !    high-dimensional problems and pathological inputs, the default value
 !    may be insufficient. 
 !
-! CHAIN is a logical input argument that determines whether a new first
-!    simplex should be constructed for each interpolation point
-!    (CHAIN=.FALSE.), or whether the simplex walks should be "daisy-chained."
-!    By default, CHAIN=.FALSE. Setting CHAIN=.TRUE. is generally not
-!    recommended, unless the size of the triangulation is relatively small
-!    or the interpolation points are known to be tightly clustered.
+! CHAIN is a logical type that determines whether a new simplex should be
+!    constructed at each iteration, or whether the simplex walks should be
+!    "daisy-chained." By default, CHAIN=.FALSE. Setting CHAIN=.TRUE. is
+!    generally not recommended, unless the size of the triangulation is
+!    relatively small or the interpolation points are known to be tightly
+!    clustered.
 !
 ! CHUNKSIZE contains the integer valued size of dynamically scheduled chunks
 !    during Level 1 parallelism. By default, the CHUNKSIZE is 1, for fully
@@ -1237,7 +1236,7 @@ IF (SIZE(WEIGHTS,2) .NE. M) THEN ! One vector of weights per simplex.
 IF (SIZE(IERR) .NE. M) THEN ! An error flag for each interpolation point.
    IERR(:) = 21; RETURN; END IF
 
-! Check for optional arguments.
+! Check for optional inputs arguments.
 IF (PRESENT(INTERP_IN) .NEQV. PRESENT(INTERP_OUT)) THEN
    IERR(:) = 22; RETURN; END IF
 IF (PRESENT(INTERP_IN)) THEN ! Sizes must agree.
@@ -1512,7 +1511,7 @@ IF (.NOT. PLVL1) THEN
 ELSE
 ! If PMODE = 1 or 3, Level 1 parallelism is exploited, and it is only safe
 ! to check interpolation points up to the end of this chunk.
-   LAST = MIN(MI - MOD(MI, CHUNKSIZEL) + CHUNKSIZEL, M)
+   LAST = MIN(MI - MOD(MI, CHUNKSIZEL) + CHUNKSIZEL - 1, M)
 END IF
 
    ! Inner loop searching for a simplex containing the point Q(:,MI).
@@ -1563,7 +1562,7 @@ IF (ALL(WEIGHTS(:,MI) .GE. -EPSL)) PTINSIMP = .TRUE.
 
 ! Level 2 parallel block over current chunk of interoplation points.
 ! Compute the affine weights for the interpolation points in this chunk.
-! If PMODE=2, then LAST=M and this loop is carried out over all remaining
+! If PMODE=2, LAST=M and this loop is carried out over all remaining
 ! interpolation points. Uses PLANE(:) as a work array.
 !$OMP PARALLEL DO PRIVATE(PLANE, ITMP), SCHEDULE(STATIC), IF(PLVL2)
 DO I = MI+1, LAST
