@@ -24,30 +24,36 @@ class LSHEP(Approximator):
         self.x = self.f = self.a = self.rw = None
 
     # Use fortran code to compute the boxes for the given data
-    def _fit(self, control_points, values):
+    def _fit(self, control_points, values, **kwargs):
         # Local operations
         self.x = np.asfortranarray(control_points.T)
-        if values.shape[1] > 1: raise(Exception("LSHEP only does 1D response."))
-        self.f = np.asfortranarray(values.flatten())
-        self.a = np.ones(shape=self.x.shape, order="F")
-        self.rw = np.ones(shape=(self.x.shape[1],), order="F")
-        # In-place update of self.a and self.rw
-        self.lshep(self.x.shape[0], self.x.shape[1],
-                   self.x, self.f, self.a, self.rw)
+        self.f = []
+        self.a = []
+        self.rw = []
+        # Fit a separate LSHEP model to each dimension of output.
+        for i in range(values.shape[1]):
+            self.f.append( np.asfortranarray(values[:,i]) )
+            self.a.append( np.ones(shape=self.x.shape, order="F") )
+            self.rw.append( np.ones(shape=(self.x.shape[1],), order="F") )
+            # In-place update of self.a and self.rw
+            self.lshep(self.x.shape[0], self.x.shape[1],
+                       self.x, self.f[i], self.a[i], self.rw[i], **kwargs)
 
     # Use fortran code to evaluate the computed boxes
     def _predict(self, x):
         # Calculate all of the response values
         response = []
         for x_pt in x:
-            x_pt = np.array(np.reshape(x_pt,(self.x.shape[0],)), order="F")
-            resp = self.lshepval(x_pt, self.x.shape[0],
-                                 self.x.shape[1], self.x,
-                                 self.f, self.a, self.rw)
-            response.append(resp)
+            row = []
+            for (f, a, rw) in zip(self.f, self.a, self.rw):
+                x_pt = np.array(np.reshape(x_pt,(self.x.shape[0],)), order="F")
+                resp = self.lshepval(x_pt, self.x.shape[0], self.x.shape[1], 
+                                     self.x, f, a, rw)
+                row.append(resp)
+            response.append(row)
             # self.ierrors[ier] = self.ierrors.get(ier,0) + 1
         # Return the response values
-        return np.array(response)[:,None]
+        return np.array(response)
 
     # Print and return a summary of the errors experienced
     def errors(self):

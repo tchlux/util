@@ -1,5 +1,3 @@
-import time, os, sys, subprocess
-
 
 MAX_FILE_SIZE_BYTES = 50*(2**20)
 CHUNK_EXT = "_(part_%i_of_%i).chunk"
@@ -21,7 +19,7 @@ def load(file_name):
 # Convenience function for pausing a program for input (explicitly
 # named). Uses 'getpass' in order to suppress new line character.
 def pause(string="press enter to continue.."):
-    import getpass
+    import os, getpass
     print(string, end="\r")
     with open(os.devnull,"w") as stream:
         response = getpass.getpass(stream=stream)
@@ -42,6 +40,7 @@ def pause(string="press enter to continue.."):
 #   verbose        -- Prints out status information when set to True.
 def disassemble(file_path, max_size_bytes=MAX_FILE_SIZE_BYTES,
                 chunk_ext=CHUNK_EXT, verbose=True):
+    import os
     size = os.path.getsize(file_path)
     chunks = int(size / max_size_bytes + 0.5)
     if (chunks <= 1): raise(FileTooSmall("The provided file is smaller than 'max_size'."))
@@ -74,6 +73,7 @@ def disassemble(file_path, max_size_bytes=MAX_FILE_SIZE_BYTES,
 #   stderr      -- A list of strings that are the lines of stderr
 #                  produced by the execution of <command>
 def run(command, **popen_kwargs):
+    import sys, subprocess
     # For Python 2.x the encoding is a string by default
     # For Python 3.6 and later the encoding can be given as an arguemnt
     if sys.version_info >= (3,6):
@@ -109,7 +109,7 @@ try:
     def unlock_file(f): pass
 except ModuleNotFoundError:
     # Windows file locking
-    import msvcrt
+    import msvcrt, os
     def file_size(f):
         return os.path.getsize( os.path.realpath(f.name) )
     def lock_file(f):

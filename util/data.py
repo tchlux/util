@@ -1,8 +1,6 @@
-from util.system import AtomicOpen
-
 #      data.py     
 # =================
-COMMON_SEPERATORS = [" ", ",", ";", "	"]
+COMMON_SEPERATORS = [",", " ", "	", ";"]
 
 UPDATE_FREQUENCY = .1  # How much time (in seconds) between updates.
 MAX_ERROR_PRINTOUT = 10 # Only print out this many errors when processing data
@@ -201,6 +199,7 @@ def remove_quoted_seperators(line, sep=None):
 #       most occurring seperator is used.
 def detect_seperator(filename="<no_provided_file>", verbose=False, opened_file=None):
     import time
+    from util.system import AtomicOpen
     lines = []
     not_viable = set()
     if not opened_file:
@@ -265,6 +264,7 @@ def detect_seperator(filename="<no_provided_file>", verbose=False, opened_file=N
 def read_data(filename="<no_provided_file>", sep=None, types=None,
               verbose=False, opened_file=None):
     import time
+    from util.system import AtomicOpen
     if sep == None: sep = detect_seperator(filename, verbose, opened_file)
     # Get the opened file object
     if (not opened_file):
@@ -1554,6 +1554,20 @@ class Data(list):
         results.pop("Prediction Index")
         # Return the results in a new Data object.
         return results
+
+    # Compute the pairwise difference between columns. Use the following:
+    #    category vs. category -- Average total difference between full distribution
+    #                             and conditional distributions for any setting.
+    #    category vs. number   -- Average 1-norm difference between full distribution
+    #                             and conditional distributions for categories.
+    #    number vs. number     -- Correlation coefficient between the two numbers.
+    def diff(self):
+        # Print out the diff in column form (not matrix form).
+        # Sort the diff by the similarity. (most similar -> least)
+        # Return the diff triple list [(col 1, col 2, diff)]
+        for c0 in range(len(self.names)):
+            for c1 in range(c0+1, len(self.names)):
+                pass
 
     # Give an overview (more detailed than just "str") of the contents
     # of this data. Useful for quickly understanding how data looks.

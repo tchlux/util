@@ -36,14 +36,24 @@ class UnderdefinedModel(Exception): pass
 # take 2D numpy arrays of points as input.
 class Approximator:
     _response_dim = 2
+    classifier = False
 
     def __str__(self):
         return CLASS_NAME(self)
 
     # Fit a 2D x and a 2D y with this model.
-    def fit(self, x, y, *args, **kwargs):
+    def fit(self, x, y, classifier=None, *args, **kwargs):
+        if type(classifier) != type(None):
+            self.classifier = classifier
         if ((type(x) != np.ndarray) or (len(x.shape) != 2)):
             raise(UnexpectedType("Provided 'x' should be a 2D numpy array."))
+        # If this is a classification problem, convert y values into
+        # vertices of a regular simplex.
+        if (self.classifier):
+            from util.data import regular_simplex
+            self.class_map = sorted(set(y))
+            values = regular_simplex(len(self.class_map))
+            y = np.array([values[self.class_map.index(v)] for v in y])
         if (type(y) == list): y = np.array(y)
         if (type(y) != np.ndarray):
             raise(UnexpectedType("Provided 'y' should be a 1D or 2D numpy array."))
@@ -64,6 +74,13 @@ class Approximator:
         if single_response:
             x = np.reshape(x, (1,len(x)))
         response = np.asarray(self._predict(x, *args, **kwargs), dtype=float)
+        if (self.classifier):
+            from util.data import category_ratio
+            class_response = []
+            for guess in response:
+                class_response.append(self.class_map[
+                    np.argmax(category_ratio(guess)) ])
+            response = np.array(class_response)
         # Reduce to one response value if that's what was trained.
         if self._response_dim == 1: response = response[:,0]
         # Reduce to one approximation point if that's what was provided.
@@ -89,7 +106,6 @@ class Approximator:
 class WeightedApproximator(Approximator):
     WeightedApproximator = True
     y = None
-    classifier = False
 
     # Fit a 2D x and a 2D y with this model.
     def fit(self, x, y=None, classifier=None, **kwargs):
@@ -222,8 +238,8 @@ def unique(weighted_approximator):
 
 MAX_DIM = 50
 MAX_SAMPLES = 100000
-DEFAULT_COND_SCALE = False
-DEFAULT_CONDITIONER = "MPCA" # PCA, PRA
+DEFAULT_COND_SCALE = True
+DEFAULT_CONDITIONER = "MPCA" # PCA
 ABS_DIFFERENCE = lambda v1, v2: abs(v1 - v2)
 
 # A wrapper for an approximator that must fit unique points. Use this
@@ -235,9 +251,7 @@ def condition(approximator, metric=ABS_DIFFERENCE, method=DEFAULT_CONDITIONER,
     if method == "PCA":
         from util.stats import pca
     elif method == "MPCA":
-        from util.stats import gen_random_metric_diff, pca
-    elif method == "PRA":
-        from util.stats import pra
+        from util.stats import mpca
     # ----------------------------------------------------------------
     class ConditionedApproximator(approximator):
         # Wrapped "fit" method, this incorporates dimension reduction
@@ -250,11 +264,8 @@ def condition(approximator, metric=ABS_DIFFERENCE, method=DEFAULT_CONDITIONER,
                 components, lengths = pca(x, num_components=dim, **cond_kwargs)
             elif method == "MPCA":
                 components, lengths = mpca(x, y, metric=metric,
-                                           directions=dim,
-                                           steps=samples, **cond_kwargs)
-            elif method == "PRA":
-                components, lengths = pra(x, y, metric=metric,
-                                          directions=dim, **cond_kwargs)
+                                           num_components=dim,
+                                           num_vecs=samples, **cond_kwargs)
             # Reset the lengths if scale should not be used.
             if not scale: lengths[:] = 1.
             # Generate the conditioning matrix.
@@ -292,7 +303,7 @@ def test_time(model, ns=range(10,10011,1000), ds=range(2,11,2)):
 # Given a model, generate a test plot demonstrating the surface it procudes
 def test_plot(model, low=0, upp=1, plot_points=3000, p=None,
               fun=lambda x: 3*x[0]+.5*np.cos(8*x[0])+np.sin(5*x[-1]),
-              N=20, D=2, random=True, seed=0, x=None, y=None):
+              N=20, D=2, random=True, seed=0, x=None, y=None, classifier=False):
     np.random.seed(seed)
     provided_points = (type(x) != type(None)) and (type(y) != type(None))
     if (type(x) == type(None)):
@@ -304,15 +315,18 @@ def test_plot(model, low=0, upp=1, plot_points=3000, p=None,
             x = np.array([r.flatten() for r in np.meshgrid(*[np.linspace(0,1,N)]*D)]).T
     if (type(y) == type(None)):
         # Calculate response values
-        y = np.array([fun(v) for v in x])
+        y = np.array([round(fun(v)) if classifier else fun(v) for v in x])
     # Fit the model to the points
-    model.fit(x,y)
+    model = model()
+    model.fit(x,y, classifier=classifier)
     # Generate the plot
     from util.plot import Plot
     if type(p) == type(None): p = Plot()
     if not provided_points: p.add("Training Points", *x.T, y)
     p.add_func(str(model), model, *([(low-.1,upp+.1)]*D),
                plot_points=plot_points, vectorized=True)
+    # p.add_func("truth", fun, *([(low-.1,upp+.1)]*D),
+    #            plot_points=plot_points)
     return p, x, y
 
 # Given a model, use the method "points_and_weights" to identify the
@@ -361,19 +375,20 @@ from util.algorithms.mars import MARS
 from util.algorithms.shepard import Shepard
 # Rename the "NearestNeighbor" to be called "KNN".
 KNN = NearestNeighbor
+NeuralNetwork = MLPRegressor
 
 from util.algorithms.delaunay import DelaunayP1CN, DelaunayP2CN, DelaunayP3CN, DelaunayPNC10
 
 if __name__ == "__main__":
     print("Adding surface to plot..")
-    # model = MLPRegressor
-    # model = Voronoi
-    # model = condition(Delaunay, method="PRA", scale=False)
+    model = LSHEP
+    # model = condition(Voronoi, method="MPCA", scale=True)
+    # model = condition(Delaunay, method="MPCA", scale=True)
     # model = Shepard
-    model = NearestNeighbor(k=4, method=Voronoi)
+    # model = NearestNeighbor(k=4, method=Voronoi)
     # f = lambda x: (x[0] - .5)**2
-    p,_,_ = test_plot(model, N=20, D=2, low=-.1, upp=1.1, #fun=f,
-                      random=True, plot_points=4000) # 6, 8
+    p,_,_ = test_plot(model, N=200, D=2, low=-.1, upp=1.1, #fun=f,
+                      random=False, plot_points=4000, classifier=False) # 6, 8
     print("Generating plot HTML..")
     p.show()
 

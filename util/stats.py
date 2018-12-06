@@ -1,6 +1,12 @@
 import numpy as np
 import os
 
+# A numeric attirbute should have all of these operations.
+NUMERIC_ATTRIBUTES = {'__abs__', '__sub__', '__pos__', '__neg__',
+                      '__floordiv__', '__truediv__', '__pow__', 
+                      '__radd__', '__rsub__', '__rfloordiv__',
+                      '__rtruediv__', '__rpow__'}
+
 # =============================================
 #      Metric Principle Component Analysis     
 # =============================================
@@ -28,22 +34,23 @@ def primes(num):
 # Return a randomized "range" using a Linear Congruential Generator
 # to produce the number sequence. Parameters are the same as for 
 # python builtin "range".
-#   Memory  -- storage for 8 integers, regardless of parameters.
-#   Compute -- at most 2*"maximum" steps required to generate sequence.
+#   Memory  -- O(1) storage for a few integers, regardless of parameters.
+#   Compute -- O(n) at most 2 times the number of steps in the range, n.
 # 
 def random_range(start, stop=None, step=None):
-    import random, math
+    from random import randint
+    from math import ceil, log2
     # Set a default values the same way "range" does.
     if (stop == None): start, stop = 0, start
     if (step == None): step = 1
     # Use a mapping to convert a standard range into the desired range.
     mapping = lambda i: (i*step) + start
     # Compute the number of numbers in this range.
-    maximum = (stop - start) // step
+    num_steps = (stop - start) // step
     # Check for a usage error.
-    if (maximum == 0): raise(InvalidRange(start, stop, step))
+    if (num_steps == 0): raise(InvalidRange(start, stop, step))
     # Seed range with a random integer.
-    value = random.randint(0,maximum)
+    value = randint(0,num_steps)
     # 
     # Construct an offset, multiplier, and modulus for a linear
     # congruential generator. These generators are cyclic and
@@ -53,18 +60,19 @@ def random_range(start, stop=None, step=None):
     #   2) ["multiplier" - 1] is divisible by all prime factors of "modulus".
     #   3) ["multiplier" - 1] is divisible by 4 if "modulus" is divisible by 4.
     # 
-    offset = random.randint(0,maximum) * 2 + 1      # Pick a random odd-valued offset.
-    multiplier = 4*(maximum//4 + random.randint(0,maximum)) + 1                 # Pick a multiplier 1 greater than a multiple of 4.
-    modulus = int(2**math.ceil(math.log2(maximum))) # Pick a modulus just big enough to generate all numbers (power of 2).
+    offset = randint(0,num_steps) * 2 + 1                 # Pick a random odd-valued offset.
+    multiplier = 4*(num_steps + randint(0,num_steps)) + 1 # Pick a multiplier 1 greater than a multiple of 4.
+    modulus = 2**ceil(log2(num_steps))                    # Pick a modulus just big enough to generate all numbers (power of 2).
     # Track how many random numbers have been returned.
     found = 0
-    while found < maximum:
+    while found < num_steps:
         # If this is a valid value, yield it in generator fashion.
-        if value < maximum:
+        if value < num_steps:
             found += 1
             yield mapping(value)
         # Calculate the next value in the sequence.
         value = (value*multiplier + offset) % modulus
+    # yield (offset, multiplier) # <-- For testing purposes.
 
 # This function maps an index in the range [0, (count**2 - count) // 2] 
 # to a tuple of integers in the range [0,count). The mapping is complete.
@@ -142,11 +150,28 @@ def pca(points, num_components=None):
 #      CDF and PDF Fit Functions     
 # ===================================
 
+# Construct a version of a function that has been smoothed with a gaussian.
+def gauss_smooth(func, stdev=1., n=100):
+    # We must incorporate ssome smoothing.
+    from scipy.stats import norm
+    # Construct a set of gaussian weights (to apply nearby on the function).
+    eval_pts = np.linspace(-5 * stdev, 5 * stdev, n)
+    weights = norm(0, stdev).pdf(eval_pts)
+    # Generate a smoothed function.
+    def smooth_func(x): return sum(weights * func(eval_pts + x)) / sum(weights)
+    # Transfer attributes over to the smooth function.
+    standard_attributes = set(dir(smooth_func))
+    for attr in dir(func):
+        if attr not in standard_attributes:
+            setattr(smooth_func, attr, getattr(func, attr))
+    # Return the smoothed function.
+    return smooth_func
+
 # Returns the CDF function value for any given x-value
 #   fit -- "linear" linearly interpolates between Emperical Dist points.
 #          "cubic" constructs a monotonic piecewise cubic interpolating spline
 #          <other> returns the raw Emperical Distribution Function.
-def cdf_fit_func(data, fit="linear"):
+def cdf_fit(data, fit="linear"):
     fit_type = fit
     # Scipy functions for spline fits.
     from scipy.interpolate import splrep, splev
@@ -167,6 +192,8 @@ def cdf_fit_func(data, fit="linear"):
     # Add the 100 percentile point if it was not added already
     if (data_vals[-1] != 1.0): data_vals[-1] = 1.0
 
+    # Convert data into its unique values.
+    data = np.array(sorted(set(data)))
     # Convert it all to numpy format for ease of processing
     data_vals = np.array(data_vals)
 
@@ -233,11 +260,7 @@ def cdf_fit_func(data, fit="linear"):
             return (min_pt, max_pt)
         else:
             # Treat this like a normal spline interpolation.
-            y_val = fit(x_val)
-            if (type(x_val) == np.ndarray):
-                y_val = np.where(x_val < min_pt, 0.0, y_val)
-                y_val = np.where(x_val > max_pt, 1.0, y_val)
-            return y_val
+            return fit(x_val)
 
     # Set the min and max of the data.
     cdf_func.min = min_pt
@@ -250,101 +273,46 @@ def cdf_fit_func(data, fit="linear"):
     # Return the custom function for this set of points
     return cdf_func
 
-# Construct a version of a function that has been smoothed with a gaussian.
-def gauss_smooth(func, stdev=1., n=100):
-    # We must incorporate ssome smoothing.
-    from scipy.stats import norm
-    # Construct a set of gaussian weights (to apply nearby on the function).
-    eval_pts = np.linspace(-5 * stdev, 5 * stdev, n)
-    weights = norm(0, stdev).pdf(eval_pts)
-    # Return the smoothed function.
-    return lambda x: sum(weights * func(eval_pts + x)) / sum(weights)
-
 # Return a PDF fit function that is smoothed with a gaussian kernel.
 # "smooth" is the percentage of the data width to use as the standard
 # deviation of the gaussian kernel. "n" is the number of samples to
 # make when doing the gaussian kernel smoothing.
-def pdf_fit_func(data, smooth=.05, n=1000, **cdf_fit_kwargs):
-    cdf_fit = cdf_fit_func(data, **cdf_fit_kwargs)
-    pdf_func = cdf_fit.derivative(1)
+def pdf_fit(data, smooth=.05, n=1000, **cdf_fit_kwargs):
+    cdf_func = cdf_fit(data, **cdf_fit_kwargs)
+    if smooth:
+        # Smooth the pdf fit if that was requested.
+        width = (cdf_func.max - cdf_func.min)
+        stdev = smooth * width
+        smooth_cdf_func = gauss_smooth(cdf_func, stdev, n)
+        eps = .01 * width
+        def pdf_func(x):
+            return (smooth_cdf_func(x + eps) - smooth_cdf_func(x - eps))
+    else:
+        # Return the PDF as the derivative of the CDF.
+        pdf_func = cdf_func.derivative(1)
     # Take the first derivative of the CDF function to get the PDF
-    def pdf_fit(x=None):
+    def pdf(x=None):
         # Return the min and max when nothing is provided.
-        if (type(x) == type(None)): return (cdf_fit.min, cdf_fit.max)
+        if (type(x) == type(None)): return (cdf_func.min, cdf_func.max)
         try:
             # Handle the vector valued case.
             len(x)                
-            vals = np.array([pdf_func(v) for v in x])
-            vals[x < cdf_fit.min] = 0.
-            vals[x > cdf_fit.max] = 0.
             # Return array of results.
-            return vals
+            return np.array([pdf_func(v) for v in x])
         except TypeError:
-            # Return zeros for queries outside the range.
-            if (cdf_fit.min > x) or (cdf_fit.max < x): return 0.0
-            # Return the smoothed evaluation.
+            # Return the PDF function evaluation.
             return pdf_func(x)
         return pdf_func(x)
-    # Smooth the pdf fit if that was requested.
-    if smooth:
-        width = (cdf_fit.max - cdf_fit.min)
-        stdev = smooth * width
-        smooth_cdf_fit = gauss_smooth(cdf_fit, stdev, n)
-        eps = .01 * width
-        def pdf_fit(x):
-            return smooth_cdf_fit(x + eps) - smooth_cdf_fit(x - eps)
     # Set the "min" and "max" attributes of this function.
-    pdf_fit.min = cdf_fit.min
-    pdf_fit.max = cdf_fit.max
-    pdf_fit.integral = cdf_fit
-    return pdf_fit
+    pdf.min = cdf_func.min
+    pdf.max = cdf_func.max
+    pdf.integral = cdf_func
+    return pdf
 
 
 # ===============================================
 #      Statistical Measurements Involving KS     
 # ===============================================
-
-# Given a ks-statistic and the sample sizes of the two distributions
-# compared, return the largest confidence with which the two
-# distributions can be said to be the same.
-def ks_p_value(ks_stat, n1, n2=float('inf')):
-    # By definition of the KS-test: 
-    # 
-    #    KS > c(a) (1/n1 + 1/n2)^(1/2)
-    # 
-    #   where KS is the KS statistic, n1 and n2 are the respective
-    #   sample sizes for each distribution and c(a) is defined as
-    # 
-    #    c(a) = ( -ln(a/2)/2 )^(1/2)
-    # 
-    #   is the standard for testing the probability with which two
-    #   distributions come from different underlying distributions. If
-    #   we want the distributions to be the same, we want the KS test
-    #   to only pass with large values for "a" (large 'p-value'). The
-    #   above check can be reversed to compute "a", which provides the
-    #   largest p-value for which the KS test states the two
-    #   distributions are not certainly different.
-    # 
-    #    c^-1(b) = 2 e^(-2 b^2)
-    # 
-    #    a = c^-1 ( (KS / (1/n1 + 1/n2)^(1/2)) )
-    #      = 2 e^( -2 (KS / (1/n1 + 1/n2)^(1/2))^2 )
-    #      = 2 e^( -2 KS^2 / |1/n1 + 1/n2| )
-    #    
-    #    and "a" cannot be larger than 1. Therefore, finally we have
-    # 
-    #    a = min(1, 2 e^( -2 KS^2 / |1/n1 + 1/n2| ))
-    #                                                                 
-    return min(1.0, 2 * np.exp( -2 * ( ks_stat**2 / abs((1/n1) + (1/n2)) )))
-
-def normal_confidence(distribution):
-    from scipy.stats import kstest
-    # # Make the distribution 0 mean and unit variance (unit standard deviation)
-    # new_distribution = (distribution - np.mean(distribution)) / np.var(distribution)
-    # Compare the distribution with a normal distribution
-    new_distribution = distribution
-    ks_statistic = kstest(new_distribution, "norm").statistic
-    return ks_p_value(ks_statistic, len(distribution))
 
 # Calculate the maximum difference between two CDF functions (two sample)
 def ks_diff(test_func, true_func, method="util"):
@@ -389,6 +357,84 @@ def ks_diff(test_func, true_func, method="util"):
             greatest_diff = max(max(diff), greatest_diff)
     return greatest_diff
 
+# Given a ks-statistic and the sample sizes of the two distributions
+# compared, return the largest confidence with which the two
+# distributions can be said to be the same.
+def ks_p_value(ks_stat, n1, n2=float('inf')):
+    # By definition of the KS-test: 
+    # 
+    #    KS > c(a) (1/n1 + 1/n2)^(1/2)
+    # 
+    #   where KS is the KS statistic, n1 and n2 are the respective
+    #   sample sizes for each distribution and c(a) is defined as
+    # 
+    #    c(a) = ( -ln(a/2)/2 )^(1/2)
+    # 
+    #   is the standard for testing the probability with which two
+    #   distributions come from different underlying distributions. If
+    #   we want the distributions to be the same, we want the KS test
+    #   to only pass with large values for "a" (large 'p-value'). The
+    #   above check can be reversed to compute "a", which provides the
+    #   largest p-value for which the KS test states the two
+    #   distributions are not certainly different.
+    # 
+    #    c^-1(b) = 2 e^(-2 b^2)
+    # 
+    #    a = c^-1 ( (KS / (1/n1 + 1/n2)^(1/2)) )
+    #      = 2 e^( -2 (KS / (1/n1 + 1/n2)^(1/2))^2 )
+    #      = 2 e^( -2 KS^2 / |1/n1 + 1/n2| )
+    #    
+    #    and "a" cannot be larger than 1. Therefore, finally we have
+    # 
+    #    a = min(1, 2 e^( -2 KS^2 / |1/n1 + 1/n2| ))
+    #                                                                 
+    return min(1.0, 2 * np.exp( -2 * ( ks_stat**2 / abs((1/n1) + (1/n2)) )))
+
+# Return the "confidence" that the provided distribution is normal.
+def normal_confidence(distribution):
+    from scipy.stats import kstest
+    # # Make the distribution 0 mean and unit variance (unit standard deviation)
+    # new_distribution = (distribution - np.mean(distribution)) / np.var(distribution)
+    # Compare the distribution with a normal distribution
+    new_distribution = distribution
+    ks_statistic = kstest(new_distribution, "norm").statistic
+    return ks_p_value(ks_statistic, len(distribution))
+
+# Compute the pairwise difference between two sequences. Use the following:
+#    category vs. category -- Average total difference between full distribution
+#                             and conditional distributions for any setting.
+#    category vs. number   -- Average 1-norm difference between full distribution
+#                             and conditional distributions for categories.
+#    number vs. number     -- Correlation coefficient between the two numbers.
+def diff(seq_1, seq_2):
+    # Get the set of attributes a numeric type should have.
+    # Return a boolean "is_numeric"
+    def is_numeric(obj):
+        attributes = set(dir(obj))
+        return all(attr in attributes for attr in NUMERIC_ATTRIBUTES)
+    # The three different outcomes of comparison could be:
+    cat_cat = (is_numeric(seq_1) and is_numeric(seq_2))
+    num_num = (not is_numeric(seq_1)) and (not is_numeric(seq_2))
+    num_cat = (not cat_cat) and (not num_num)
+    # Execute the appropriate comparison according to the types.
+    if num_num:
+        pass
+        # number vs. number
+        # - compute mean of each sequence
+        # - compute covariance
+        # - divide by product of covariances
+    elif num_cat:
+        pass
+        # number vs. categorical
+        # - compute total EDF for the numer sequence
+        # - compute 1-norm difference between EDF
+    elif cat_cat:
+        pass
+        # categorical vs. categorical
+
+
+# diff([1,2,3,4],['a','b','c'])
+# exit()
 
 # ===============================================
 #      Plotting Percentile Functions as CDFS     
@@ -520,14 +566,149 @@ def plot_percentiles(plot, name, x_points, y_points, color=None,
 
 
 
+# Backwards compatibility with warning for deprecation.
+def cdf_fit_func(*args, **kwargs):
+    print("\nWARNING: 'cdf_fit_func' is a deprecated function. Use 'cdf_fit' instead.\n")
+    return cdf_fit(*args, **kwargs)
+
+def pdf_fit_func(*args, **kwargs):
+    print("\nWARNING: 'pdf_fit_func' is a deprecated function. Use 'pdf_fit' instead.\n")
+    return pdf_fit(*args, **kwargs)
+
+
+
 if __name__ == "__main__":
+    # Use a linear interpolation of the EDF points to compute the integral
+    # of the absolute difference between the empirical PDF's of two sequences.
+    def epdf_diff(seq_1, seq_2):
+        # Construct generators for the EDF point pairs.
+        gen_1 = edf_pair_gen(seq_1)
+        gen_2 = edf_pair_gen(seq_2)
+        # Get the initial values from the generators.
+        low_1, upp_1, density_1 = gen_1.__next__()
+        low_2, upp_2, density_2 = gen_2.__next__()
+        shared = 0.
+        # Cycle until completing the integral difference between pEDFs.
+        while (upp_1 < float('inf')) or (upp_2 < float('inf')):
+            # Compute the width of the interval and the percentage of data
+            # within the width for each of the distributions.
+            width = min(upp_1, upp_2) - max(low_1, low_2)
+            if width < float('inf'):
+                # Convert the EDF points into densities over the interval.
+                sub_density_1 = density_1 * (width / (upp_1-low_1))
+                sub_density_2 = density_2 * (width / (upp_2-low_2))
+                if abs(sub_density_1 - sub_density_2) >= 0:
+                    shared += min(sub_density_1, sub_density_2)
+            # Cycle whichever range has the lower maximum.
+            if (upp_1 > upp_2):
+                low_2, upp_2, density_2 = gen_2.__next__()
+            elif (upp_2 > upp_1):
+                low_1, upp_1, density_1 = gen_1.__next__()
+            else:
+                low_1, upp_1, density_1 = gen_1.__next__()
+                low_2, upp_2, density_2 = gen_2.__next__()
+        return max(0, 1 - shared)
+
+    # Generator for returning pairs of EDF points as (val1, val2, density).
+    def edf_pair_gen(seq):
+        # Compute the 'extra' slope lost at the beginning of the function.
+        for i in range(len(seq)):
+            if seq[i] != seq[0]: break
+        extra = (i/len(seq))
+        shift = lambda v: (v - extra) / (1 - extra)
+        # Manually set the first slope value.
+        x1, y1 = -float('inf'), 0
+        for i in range(len(seq)):
+            # Cycle until we hit the last occurrence of the next value.
+            if ((i+1) < len(seq)) and (seq[i+1] == seq[i]): continue
+            x2, y2 = seq[i], shift( (i+1)/len(seq) )
+            yield (x1, x2, y2 - y1)
+            # Cycle values.
+            x1, y1 = x2, y2
+        # Manually yield the last element in the sequence.
+        yield (x1, float('inf'), 0)
+
+
+    # ----------------------------------------------------------------
+    def demo(seq):
+        print('-'*70)
+        print(seq)
+        print()
+        total = 0
+        for vals in edf_pair_gen(seq):
+            total += vals[-1]
+            print("[% 4s, % 3s] (%.2f) --"%vals, round(total,3))
+        print('-'*70)
+        print()
+    print()
+    seq = [0] + list(range(9))
+    demo(seq)
+    print()
+    seq = sorted(np.random.random(size=(10,)))
+    demo(seq)
+    # ----------------------------------------------------------------
+    # a = [1, 1, 3, 3, 5, 6]
+    # b = [0, 1, 2, 3, 4]
+    # 
+    n = 100
+    a = [v / n for v in list(range(n+1))]
+    b = [v+.5 for v in a]
+    # b = a
+    # b = [v+10 for v in a]
+
+    print(epdf_diff(a,a))
+    print(epdf_diff(a,b))
+    print(epdf_diff(b,a))
+    print()
+
+    # Generate a random sequence.
+    a = sorted((np.random.random(size=(10,))))
+    b = sorted((np.random.random(size=(10,)) + .5))
+    print("[%.2f, %.2f]"%(min(a),max(a)), "[%.2f, %.2f]"%(min(b),max(b)))
+    diff = epdf_diff(a, b)
+    print(diff)
+    exit()
+    # ----------------------------------------------------------------
+    from util.plot import Plot
+
+    p = Plot()
+    p1 = pdf_fit(a, smooth=0.00001)
+    p2 = pdf_fit(b, smooth=0.00001)
+    p.add_func("a", p1, p1()) #(-.5,2))
+    p.add_func("b", p2, p2()) #(-.5,2))
+    p.show(show=False, y_range=[-.5,1.5])
+
+    p = Plot()
+    p1 = cdf_fit(a)
+    p2 = cdf_fit(b)
+    p.add_func("a", p1, p1()) #(-.5,2))
+    p.add_func("b", p2, p2()) #(-.5,2))
+    p.show(append=True)
+    exit()
+    # ----------------------------------------------------------------
+
+
     import pickle, os
     import numpy as np
     from util.plot import Plot, multiplot
     
-    TEST_FIT_FUNCS = False
-    TEST_CDF_PDF = False
-    TEST_MPCA = True
+    TEST_FIT_FUNCS = True
+    TEST_MPCA = False
+    TEST_RANDOM_RANGE = False
+
+    if TEST_RANDOM_RANGE:
+        vals = {}
+        mults = {}
+        for i in range(10000):
+            results = tuple(random_range(20))
+            key, (val, mult) = results[:-1], results[-1]
+            diff = set(key[i-1] - key[i] for i in range(len(key)))
+            if len(diff) <= 2:
+                vals[key] = vals.get(key, set())   .union({val})
+                mults[key] = mults.get(key, set()) .union({mult})
+        for v in sorted(vals): print(v, "% 10s"%sorted(vals[v]), sorted(mults[v]))
+        print(len(vals))
+
 
     if TEST_FIT_FUNCS:
         # ==============================================
@@ -536,88 +717,34 @@ if __name__ == "__main__":
         # Make data
         smooth = .1
         data = np.random.normal(size=(1000,))
+        # data[:len(data)//2] += 2
         min_max = (min(data) - .1, max(data) + .1)
-        print(min_max)
-
+        print()
+        print("(min, max) : (%.2f, %.2f)"%(min_max))
+        print("Normal confidence: %.2f%%"%(100*normal_confidence(data)))
+        print()
         # Make PDF plot
-        pfit = pdf_fit_func(data)
+        pfit = pdf_fit(data)
         p = Plot()
         p.add_func("PDF", pfit, min_max)
         # Make smooth PDF
-        pfit = pdf_fit_func(data, smooth=smooth)
+        pfit = pdf_fit(data, smooth=smooth)
         p.add_func("Smooth PDF", pfit, min_max)
         p.show(show=False)
 
         # Make CDF plota
-        cfit = cdf_fit_func(data)
+        cfit = cdf_fit(data)
         p = Plot()
         p.add_func("CDF", cfit, min_max)
+        # Make CDF whose derivative is the default PDF.
+        stdev = .05 * (cfit.max - cfit.min)
+        cfit = gauss_smooth(cfit, stdev)
+        p.add_func("CDF for default PDF", cfit, min_max)
         # Make smooth cdf
         stdev = smooth * (cfit.max - cfit.min)
         cfit = gauss_smooth(cfit, stdev)
         p.add_func("Smooth CDF", cfit, min_max)
         p.show(append=True)
-
-
-    if TEST_CDF_PDF:
-        # Testing out the mathematical routines
-        num_modes = 5
-        top_mode_color = "rgba(20,20,20,0.6)"
-        rest_mode_color = "rgba(210,210,210,0.4)"
-        size = 200
-        values = np.vstack((np.random.normal(0.4, 0.05, size=(size,)),
-                            np.random.normal(0.0, 0.02, size=(size,)))).flatten()
-        values.sort()
-
-        raw = Plot("", "Value", "Normalized Scale")
-        cdf = Plot("", "Value", "Percent Less")
-        pdf = Plot("CDF and PDF of random normal 2-mode data", "Value", "Probability of Occurrence")
-
-        min_max = (min(values), max(values))
-        bin_size = (min_max[1]-min_max[0])/100
-        pdf.add("PDF Histogram", x_values=values, plot_type="histogram",group="1",
-                opacity=0.7, autobinx=False, histnorm='probability',
-                xbins=dict(start=min_max[0],end=min_max[1],size=bin_size))
-        cdf.add_func("CDF", cdf_fit_func(values, cubic=False), min_max,
-                     mode="markers+lines", marker_size=4, group="1")
-
-        sd_pts = cdf_second_diff(values)
-
-        # Add vertical lines for each of the mode locations
-        mode_pts = mode_points(sd_pts, thresh_perc=50.0)
-        # Add the rest of the modes as another series
-        mode_x_vals = []
-        mode_y_vals = []
-        for pt in mode_pts[num_modes:]:
-            mode_x_vals += [pt[0], pt[0], None]
-            mode_y_vals += [0,     1,     None]
-        cdf.add("Remaining %i Modes"%(len(mode_pts) - num_modes),
-                mode_x_vals, mode_y_vals, mode='lines', line_width=1,
-                color=rest_mode_color, group='modes')
-        # Add the 'num_modes' top modes as a series
-        mode_x_vals = []
-        mode_y_vals = []
-        for pt in mode_pts[:num_modes]:
-            mode_x_vals += [pt[0], pt[0], None]
-            mode_y_vals += [0,     1,     None]
-        cdf.add("Top %i Modes"%num_modes,mode_x_vals, mode_y_vals,
-                mode='lines', line_width=1, color=top_mode_color, group='modes')
-
-
-        # Generate the discrete CDF second derivative plot
-        mode_pts = [list(pt) for pt in mode_pts]
-        mode_pts.sort(key=lambda pt: pt[0])
-        mode_pts = np.array(mode_pts)
-        raw.add("Absolute Discrete CDF''", mode_pts[:,0], mode_pts[:,1],
-                mode='lines', fill='tozeroy', color=top_mode_color,
-                fill_color=rest_mode_color, line_width=1, group='modes')
-
-
-        # Plot all three of these stacked together
-        multiplot([[raw.plot(show=False, html=False)],
-                   [cdf.plot(show=False, html=False)],
-                   [pdf.plot(show=False, html=False)]
-        ], shared_x=True)
 
     # Example / Test case of Principle Response Analyais
     if TEST_MPCA:
