@@ -6,7 +6,7 @@ if __name__ == "__main__":
     # Settings for creating the example.
     N           = 30
     dim         = 2
-    random      = False
+    random      = True
     plot_points = 1000
 
     # Function for testing.
@@ -34,8 +34,9 @@ if __name__ == "__main__":
 
     # PMODE=1, once with PMODE=2, once with PMODE=3, and once with PMODE unspecified and CHUNKSIZE=10.
     # Fit the Delaunay model to the points
-    surf = Delaunay(pmode=None, chunksize=10)
+    surf = Delaunay(pmode=None, chunksize=100)
     surf.fit(x,y)
+
 
     # Manual test at a specific point.
     # test = np.array([[.3587, .422]])
