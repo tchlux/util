@@ -100,6 +100,7 @@ class qHullDelaunay(WeightedApproximator):
 
 # Wrapper class for using the Delaunay fortran code
 class Delaunay(WeightedApproximator):
+    os.environ["OMP_NESTED"] = "TRUE"
     from util.algorithms.delaunay import delsparse
     def __init__(self, parallel=False, pmode=None, chunksize=None):
         # Get the source fortran code module
