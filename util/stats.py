@@ -113,7 +113,6 @@ def gen_random_metric_diff(matrix, index_metric, count=None):
 # metric difference slope).
 def mpca(points, values, metric=ABS_DIFF, num_components=None, num_vecs=None):
     # Set default values for steps and directions.
-    if type(num_vecs) == type(None):       num_vecs = 10 * points.shape[0]
     if type(num_components) == type(None): num_components = points.shape[1]
     # Function that takes two indices and returns metric difference.
     index_metric = lambda i1, i2: metric(values[i1], values[i2])
@@ -122,18 +121,28 @@ def mpca(points, values, metric=ABS_DIFF, num_components=None, num_vecs=None):
     vec_gen = gen_random_metric_diff(points, index_metric, count=num_vecs)
     print(" converting vectors to numpy array..", end="\r", flush=True)
     # Compute the principle components of the between vectors.
-    m_vecs = np.array([v for v in vec_gen])
+    m_vecs = np.array([v for v in vec_gen if (np.linalg.norm(v) > 0)])
     print(" computing principle components..", end="\r", flush=True)
     components, _ = pca(m_vecs, num_components=num_components)
-    # Compute the magnitudes using a dot product.
+    # Compute the magnitudes using total variation.
     print(" computing magnitudes..", end="\r", flush=True)
-    magnitudes = np.ones(num_components)
+    avg_diffs = np.zeros(num_components)
     for i in range(num_components):
-        magnitudes[i] = np.linalg.norm(np.matmul(m_vecs, components[i]), ord=1)
-    magnitudes /= np.sum(magnitudes)
+        ordering = np.argsort(np.matmul(points, components[i]))
+        for j in range(len(ordering)-1):
+            p1, p2 = ordering[j], ordering[j+1]
+            avg_diffs[i] += metric(values[p1], values[p2])
+    # Invert the total variation.
+    if (min(avg_diffs) <= 0.0):
+        avg_diffs = np.where(avg_diffs == 0, 1., 0.)
+    else:
+        avg_diffs = 1 / avg_diffs
+    avg_diffs /= np.sum(avg_diffs)
+    # Re-order the components according to inverse total variation.
+    order = np.argsort(avg_diffs)[::-1]
     print("                                    ", end="\r", flush=True)
     # Return the principle components of the metric slope vectors.
-    return components, magnitudes
+    return components[order], avg_diffs[order]
 
 # Compute the principle components using sklearn.
 def pca(points, num_components=None):
@@ -578,122 +587,122 @@ def pdf_fit_func(*args, **kwargs):
 
 
 if __name__ == "__main__":
-    # Use a linear interpolation of the EDF points to compute the integral
-    # of the absolute difference between the empirical PDF's of two sequences.
-    def epdf_diff(seq_1, seq_2):
-        # Construct generators for the EDF point pairs.
-        gen_1 = edf_pair_gen(seq_1)
-        gen_2 = edf_pair_gen(seq_2)
-        # Get the initial values from the generators.
-        low_1, upp_1, density_1 = gen_1.__next__()
-        low_2, upp_2, density_2 = gen_2.__next__()
-        shared = 0.
-        # Cycle until completing the integral difference between pEDFs.
-        while (upp_1 < float('inf')) or (upp_2 < float('inf')):
-            # Compute the width of the interval and the percentage of data
-            # within the width for each of the distributions.
-            width = min(upp_1, upp_2) - max(low_1, low_2)
-            if width < float('inf'):
-                # Convert the EDF points into densities over the interval.
-                sub_density_1 = density_1 * (width / (upp_1-low_1))
-                sub_density_2 = density_2 * (width / (upp_2-low_2))
-                if abs(sub_density_1 - sub_density_2) >= 0:
-                    shared += min(sub_density_1, sub_density_2)
-            # Cycle whichever range has the lower maximum.
-            if (upp_1 > upp_2):
-                low_2, upp_2, density_2 = gen_2.__next__()
-            elif (upp_2 > upp_1):
-                low_1, upp_1, density_1 = gen_1.__next__()
-            else:
-                low_1, upp_1, density_1 = gen_1.__next__()
-                low_2, upp_2, density_2 = gen_2.__next__()
-        return max(0, 1 - shared)
+    # # Use a linear interpolation of the EDF points to compute the integral
+    # # of the absolute difference between the empirical PDF's of two sequences.
+    # def epdf_diff(seq_1, seq_2):
+    #     # Construct generators for the EDF point pairs.
+    #     gen_1 = edf_pair_gen(seq_1)
+    #     gen_2 = edf_pair_gen(seq_2)
+    #     # Get the initial values from the generators.
+    #     low_1, upp_1, density_1 = gen_1.__next__()
+    #     low_2, upp_2, density_2 = gen_2.__next__()
+    #     shared = 0.
+    #     # Cycle until completing the integral difference between pEDFs.
+    #     while (upp_1 < float('inf')) or (upp_2 < float('inf')):
+    #         # Compute the width of the interval and the percentage of data
+    #         # within the width for each of the distributions.
+    #         width = min(upp_1, upp_2) - max(low_1, low_2)
+    #         if width < float('inf'):
+    #             # Convert the EDF points into densities over the interval.
+    #             sub_density_1 = density_1 * (width / (upp_1-low_1))
+    #             sub_density_2 = density_2 * (width / (upp_2-low_2))
+    #             if abs(sub_density_1 - sub_density_2) >= 0:
+    #                 shared += min(sub_density_1, sub_density_2)
+    #         # Cycle whichever range has the lower maximum.
+    #         if (upp_1 > upp_2):
+    #             low_2, upp_2, density_2 = gen_2.__next__()
+    #         elif (upp_2 > upp_1):
+    #             low_1, upp_1, density_1 = gen_1.__next__()
+    #         else:
+    #             low_1, upp_1, density_1 = gen_1.__next__()
+    #             low_2, upp_2, density_2 = gen_2.__next__()
+    #     return max(0, 1 - shared)
 
-    # Generator for returning pairs of EDF points as (val1, val2, density).
-    def edf_pair_gen(seq):
-        # Compute the 'extra' slope lost at the beginning of the function.
-        for i in range(len(seq)):
-            if seq[i] != seq[0]: break
-        extra = (i/len(seq))
-        shift = lambda v: (v - extra) / (1 - extra)
-        # Manually set the first slope value.
-        x1, y1 = -float('inf'), 0
-        for i in range(len(seq)):
-            # Cycle until we hit the last occurrence of the next value.
-            if ((i+1) < len(seq)) and (seq[i+1] == seq[i]): continue
-            x2, y2 = seq[i], shift( (i+1)/len(seq) )
-            yield (x1, x2, y2 - y1)
-            # Cycle values.
-            x1, y1 = x2, y2
-        # Manually yield the last element in the sequence.
-        yield (x1, float('inf'), 0)
+    # # Generator for returning pairs of EDF points as (val1, val2, density).
+    # def edf_pair_gen(seq):
+    #     # Compute the 'extra' slope lost at the beginning of the function.
+    #     for i in range(len(seq)):
+    #         if seq[i] != seq[0]: break
+    #     extra = (i/len(seq))
+    #     shift = lambda v: (v - extra) / (1 - extra)
+    #     # Manually set the first slope value.
+    #     x1, y1 = -float('inf'), 0
+    #     for i in range(len(seq)):
+    #         # Cycle until we hit the last occurrence of the next value.
+    #         if ((i+1) < len(seq)) and (seq[i+1] == seq[i]): continue
+    #         x2, y2 = seq[i], shift( (i+1)/len(seq) )
+    #         yield (x1, x2, y2 - y1)
+    #         # Cycle values.
+    #         x1, y1 = x2, y2
+    #     # Manually yield the last element in the sequence.
+    #     yield (x1, float('inf'), 0)
 
 
-    # ----------------------------------------------------------------
-    def demo(seq):
-        print('-'*70)
-        print(seq)
-        print()
-        total = 0
-        for vals in edf_pair_gen(seq):
-            total += vals[-1]
-            print("[% 4s, % 3s] (%.2f) --"%vals, round(total,3))
-        print('-'*70)
-        print()
-    print()
-    seq = [0] + list(range(9))
-    demo(seq)
-    print()
-    seq = sorted(np.random.random(size=(10,)))
-    demo(seq)
-    # ----------------------------------------------------------------
-    # a = [1, 1, 3, 3, 5, 6]
-    # b = [0, 1, 2, 3, 4]
-    # 
-    n = 100
-    a = [v / n for v in list(range(n+1))]
-    b = [v+.5 for v in a]
-    # b = a
-    # b = [v+10 for v in a]
+    # # ----------------------------------------------------------------
+    # def demo(seq):
+    #     print('-'*70)
+    #     print(seq)
+    #     print()
+    #     total = 0
+    #     for vals in edf_pair_gen(seq):
+    #         total += vals[-1]
+    #         print("[% 4s, % 3s] (%.2f) --"%vals, round(total,3))
+    #     print('-'*70)
+    #     print()
+    # print()
+    # seq = [0] + list(range(9))
+    # demo(seq)
+    # print()
+    # seq = sorted(np.random.random(size=(10,)))
+    # demo(seq)
+    # # ----------------------------------------------------------------
+    # # a = [1, 1, 3, 3, 5, 6]
+    # # b = [0, 1, 2, 3, 4]
+    # # 
+    # n = 100
+    # a = [v / n for v in list(range(n+1))]
+    # b = [v+.5 for v in a]
+    # # b = a
+    # # b = [v+10 for v in a]
 
-    print(epdf_diff(a,a))
-    print(epdf_diff(a,b))
-    print(epdf_diff(b,a))
-    print()
+    # print(epdf_diff(a,a))
+    # print(epdf_diff(a,b))
+    # print(epdf_diff(b,a))
+    # print()
 
-    # Generate a random sequence.
-    a = sorted((np.random.random(size=(10,))))
-    b = sorted((np.random.random(size=(10,)) + .5))
-    print("[%.2f, %.2f]"%(min(a),max(a)), "[%.2f, %.2f]"%(min(b),max(b)))
-    diff = epdf_diff(a, b)
-    print(diff)
-    exit()
-    # ----------------------------------------------------------------
-    from util.plot import Plot
+    # # Generate a random sequence.
+    # a = sorted((np.random.random(size=(10,))))
+    # b = sorted((np.random.random(size=(10,)) + .5))
+    # print("[%.2f, %.2f]"%(min(a),max(a)), "[%.2f, %.2f]"%(min(b),max(b)))
+    # diff = epdf_diff(a, b)
+    # print(diff)
+    # exit()
+    # # ----------------------------------------------------------------
+    # from util.plot import Plot
 
-    p = Plot()
-    p1 = pdf_fit(a, smooth=0.00001)
-    p2 = pdf_fit(b, smooth=0.00001)
-    p.add_func("a", p1, p1()) #(-.5,2))
-    p.add_func("b", p2, p2()) #(-.5,2))
-    p.show(show=False, y_range=[-.5,1.5])
+    # p = Plot()
+    # p1 = pdf_fit(a, smooth=0.00001)
+    # p2 = pdf_fit(b, smooth=0.00001)
+    # p.add_func("a", p1, p1()) #(-.5,2))
+    # p.add_func("b", p2, p2()) #(-.5,2))
+    # p.show(show=False, y_range=[-.5,1.5])
 
-    p = Plot()
-    p1 = cdf_fit(a)
-    p2 = cdf_fit(b)
-    p.add_func("a", p1, p1()) #(-.5,2))
-    p.add_func("b", p2, p2()) #(-.5,2))
-    p.show(append=True)
-    exit()
-    # ----------------------------------------------------------------
+    # p = Plot()
+    # p1 = cdf_fit(a)
+    # p2 = cdf_fit(b)
+    # p.add_func("a", p1, p1()) #(-.5,2))
+    # p.add_func("b", p2, p2()) #(-.5,2))
+    # p.show(append=True)
+    # exit()
+    # # ----------------------------------------------------------------
 
 
     import pickle, os
     import numpy as np
     from util.plot import Plot, multiplot
     
-    TEST_FIT_FUNCS = True
-    TEST_MPCA = False
+    TEST_FIT_FUNCS = False
+    TEST_MPCA = True
     TEST_RANDOM_RANGE = False
 
     if TEST_RANDOM_RANGE:
@@ -764,7 +773,7 @@ if __name__ == "__main__":
 
         # Create some testing functions (for learning different behaviors)
         funcs = [
-            lambda x: x[0]               , # Linear on x
+            lambda x: x[1]               , # Linear on y
             lambda x: abs(x[0] + x[1])   , # "V" function on 1:1 diagonal
             lambda x: abs(2*x[0] + x[1]) , # "V" function on 2:1 diagonal
             lambda x: x[0]**2            , # Quadratic on x
@@ -777,7 +786,7 @@ if __name__ == "__main__":
         responses = np.vstack(tuple(tuple(map(f, points)) for f in funcs)).T
 
         # Reduce to just the first function
-        choice = 6
+        choice = 1
         func = funcs[choice]
         response = responses[:,choice]
 
@@ -813,8 +822,8 @@ if __name__ == "__main__":
                         mode="markers", opacity=.8)
             # Generate a conditioned approximation
             model = NearestNeighbor()
-            model.fit(np.matmul(points, conditioner), response)
-            approx = lambda x: model(np.matmul(x, conditioner))
+            model.fit(np.matmul(conditioner, points), response)
+            approx = lambda x: model(np.matmul(conditioner, x))
             p1.add_func("Best Approximation", approx, [-1,1], [-1,1],
                         mode="markers", opacity=.8)
 
@@ -853,12 +862,12 @@ if __name__ == "__main__":
 
         if SHOW_2D_POINTS:
             # Add the points and transformed points for demonstration.
-            new_pts = np.matmul(np.matmul(points, conditioner), np.linalg.inv(components))
+            new_pts = np.matmul(np.matmul(conditioner, points), np.linalg.inv(components))
             p2.add("Original Points", *(points.T))
             p2.add("Transformed Points", *(new_pts.T), color=p2.color(6, alpha=.7))
 
         # Add the principle response components 
-        for i,(vec,m) in enumerate(zip(components.T, values)):
+        for i,(vec,m) in enumerate(zip(components, values)):
             vec = vec * m
             p2.add(f"PC {i+1}", [0,vec[0]], [0,vec[1]], mode="lines")
             ax, ay = (vec / sum(vec**2)**.5) * 3
@@ -870,7 +879,7 @@ if __name__ == "__main__":
 
         # Add the normal principle components
         components, values = pca(points)
-        for i,(vec,m) in enumerate(zip(components.T, values)):
+        for i,(vec,m) in enumerate(zip(components, values)):
             vec = vec * m
             p3.add(f"PC {i+1}", [0,vec[0]], [0,vec[1]], mode="lines")
             ax, ay = (vec / sum(vec**2)**.5) * 3

@@ -236,8 +236,8 @@ def unique(weighted_approximator):
     return UniquePointsApproximator
 
 
-MAX_DIM = 50
-MAX_SAMPLES = 100000
+MAX_DIM = None
+MAX_SAMPLES = None
 DEFAULT_COND_SCALE = True
 DEFAULT_CONDITIONER = "MPCA" # PCA
 ABS_DIFFERENCE = lambda v1, v2: abs(v1 - v2)
@@ -246,7 +246,7 @@ ABS_DIFFERENCE = lambda v1, v2: abs(v1 - v2)
 # wrapper on an un-initialized "weighted approximator" to inheret all
 # methods while modifying the "fit" and "predict" methods.
 def condition(approximator, metric=ABS_DIFFERENCE, method=DEFAULT_CONDITIONER,
-              max_dim=MAX_DIM, max_samples=MAX_SAMPLES,
+              dim=MAX_DIM, samples=MAX_SAMPLES,
               scale=DEFAULT_COND_SCALE, **cond_kwargs):
     if method == "PCA":
         from util.stats import pca
@@ -257,19 +257,18 @@ def condition(approximator, metric=ABS_DIFFERENCE, method=DEFAULT_CONDITIONER,
         # Wrapped "fit" method, this incorporates dimension reduction
         # and approximation conditioning based on the selected method.
         def fit(self, x, y, *args, **kwargs):
-            samples = min(max_samples,x.shape[0])
-            dim = min(max_dim,x.shape[1])
-            # Compute the components and the lengths.
+            # Compute the components and the values.
             if method == "PCA":
-                components, lengths = pca(x, num_components=dim, **cond_kwargs)
+                components, values = pca(x, num_components=dim, **cond_kwargs)
             elif method == "MPCA":
-                components, lengths = mpca(x, y, metric=metric,
+                components, values = mpca(x, y, metric=metric,
                                            num_components=dim,
-                                           num_vecs=samples, **cond_kwargs)
-            # Reset the lengths if scale should not be used.
-            if not scale: lengths[:] = 1.
+                                           num_vecs=samples, 
+                                           **cond_kwargs)
+            # Reset the values if scale should not be used.
+            if not scale: values[:] = 1.
             # Generate the conditioning matrix.
-            self.conditioner = np.matmul(components.T, np.diag(lengths))
+            self.conditioner = np.matmul(np.diag(values), components).T
             # Return the normal fit operation.
             return super().fit(np.matmul(x, self.conditioner), y, *args, **kwargs)
 
@@ -317,7 +316,6 @@ def test_plot(model, low=0, upp=1, plot_points=3000, p=None,
         # Calculate response values
         y = np.array([round(fun(v)) if classifier else fun(v) for v in x])
     # Fit the model to the points
-    model = model()
     model.fit(x,y, classifier=classifier)
     # Generate the plot
     from util.plot import Plot
@@ -381,14 +379,16 @@ from util.algorithms.delaunay import DelaunayP1CN, DelaunayP2CN, DelaunayP3CN, D
 
 if __name__ == "__main__":
     print("Adding surface to plot..")
-    model = LSHEP
+    # model = LSHEP
+    # model = Shepard
     # model = condition(Voronoi, method="MPCA", scale=True)
     # model = condition(Delaunay, method="MPCA", scale=True)
-    # model = Shepard
     # model = NearestNeighbor(k=4, method=Voronoi)
-    # f = lambda x: (x[0] - .5)**2
-    p,_,_ = test_plot(model, N=200, D=2, low=-.1, upp=1.1, #fun=f,
-                      random=False, plot_points=4000, classifier=False) # 6, 8
+    model = condition(KNN, method="MPCA", scale=True)
+    model = model()
+    # f = lambda x: (x[0] - .5)**2 + x[1]
+    p,_,_ = test_plot(model, N=500, D=2, low=-.1, upp=1.1, # fun=f,
+                      random=True, plot_points=4000, classifier=True) # 6, 8
     print("Generating plot HTML..")
     p.show()
 

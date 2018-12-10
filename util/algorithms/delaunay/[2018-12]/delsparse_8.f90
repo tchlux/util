@@ -47,9 +47,8 @@ INTERFACE
       REAL(KIND=R8), INTENT(OUT), OPTIONAL :: INTERP_OUT(:,:)
       REAL(KIND=R8), INTENT(IN), OPTIONAL:: EPS, EXTRAP 
       REAL(KIND=R8), INTENT(OUT), OPTIONAL :: RNORM(:)
-      INTEGER, INTENT(IN), OPTIONAL :: IBUDGET
+      INTEGER, INTENT(IN), OPTIONAL :: IBUDGET, PMODE, CHUNKSIZE
       LOGICAL, INTENT(IN), OPTIONAL :: CHAIN
-      INTEGER, INTENT(IN), OPTIONAL :: PMODE, CHUNKSIZE
    END SUBROUTINE DELAUNAYSPARSEP
 
    ! Interface for SLATEC subroutine DWNNLS.
@@ -1328,24 +1327,12 @@ PRGOPT_DWNNLS(1) = 1.0_R8
 ! Initialize all error codes to "TBD" values.
 IERR(:) = 40
 
-! Begin level 1 parallel region (over all interpolation points in Q).
-!$OMP PARALLEL &
-!
-! The FIRSTPRIVATE list specifies initialized variables, of which each
-! thread has a private copy.
-!$OMP& FIRSTPRIVATE(SEED), &
-!
-! The PRIVATE list specifies uninitialized variables, of which each
-! thread has a private copy.
-!$OMP& PRIVATE(I, J, K, ITMP, CURRRAD, MI, MINRAD, RNORML, SIDE1,    &
-!$OMP&         SIDE2, IERR_PRIV, LAST, VERTEX_PRIV, MINRAD_PRIV,     &
-!$OMP&         PTINSIMP, IPIV, A, B, CENTER, LQ, PLANE, PROJ, TAU,   &
-!$OMP&         IWORK_DWNNLS, W_DWNNLS, WORK, WORK_DWNNLS, X_DWNNLS), &
-!
-! Any variables not explicitly listed above receive the SHARED scope
-! by default and are visible across all threads.
-!$OMP& DEFAULT(SHARED), &
-!
+! Level 1 parallel region (over all interpolation points in Q).
+!$OMP PARALLEL FIRSTPRIVATE(SEED), &
+!$OMP& PRIVATE(I, J, K, ITMP, CURRRAD, MINRAD, RNORML, SIDE1, SIDE2), &
+!$OMP& PRIVATE(IERR_PRIV, LAST, VERTEX_PRIV, MINRAD_PRIV, PTINSIMP), &
+!$OMP& PRIVATE(IPIV, A, B, CENTER, LQ, PLANE, PROJ, TAU), &
+!$OMP& PRIVATE(IWORK_DWNNLS, W_DWNNLS, WORK, WORK_DWNNLS, X_DWNNLS), &
 !$OMP& IF(PLVL1)
 !$OMP DO SCHEDULE(DYNAMIC, CHUNKSIZEL)
 OUTER : DO MI = 1, M
@@ -1393,22 +1380,9 @@ SIMPS(:,MI) = 0
 MINRAD_PRIV = HUGE(0.0_R8)
 MINRAD = HUGE(0.0_R8)
 
-! Below is a Level 2 parallel region over N points in PTS to find the
+! Below is a Level 2 parallel region over N data points to find the
 ! first and second vertices SIMPS(1,MI) and SIMPS(2,MI).
-!$OMP PARALLEL &
-!
-! The FIRSTPRIVATE list specifies initialized variables, of which each
-! thread has a private copy.
-!$OMP& FIRSTPRIVATE(MINRAD_PRIV), &
-!
-! The PRIVATE list specifies uninitialized variables, of which each
-! thread has a private copy.
-!$OMP& PRIVATE(I, CURRRAD, VERTEX_PRIV), &
-!
-! Any variables not explicitly listed above receive the SHARED scope
-! by default and are visible across all threads.
-!$OMP& DEFAULT(SHARED), &
-!
+!$OMP PARALLEL FIRSTPRIVATE(MINRAD_PRIV), PRIVATE(CURRRAD, VERTEX_PRIV), &
 !$OMP& IF(PLVL2)
 ! Find the first point, i.e., the closest point to Q(:,MI).
 !$OMP DO SCHEDULE(STATIC)
@@ -1423,9 +1397,9 @@ END DO
 IF (MINRAD_PRIV < MINRAD) THEN
    MINRAD = MINRAD_PRIV; SIMPS(1,MI) = VERTEX_PRIV;
 END IF
-!$OMP END CRITICAL
 ! Find the second point, i.e., the closest point to PTS(:,SIMPS(1,MI)).
 MINRAD_PRIV = HUGE(0.0_R8)
+!$OMP END CRITICAL
 !$OMP BARRIER
 !$OMP SINGLE
 MINRAD = HUGE(0.0_R8)
@@ -1461,22 +1435,9 @@ DO I = 2, D
    MINRAD_PRIV = HUGE(0.0_R8)
    VERTEX_PRIV = 0
 
-   ! This is another Level 2 parallel block over N points in PTS.
-   !$OMP PARALLEL &
-   !
-   ! The FIRSTPRIVATE list specifies initialized variables, of which each
-   ! thread has a private copy.
-   !$OMP& FIRSTPRIVATE(MINRAD_PRIV, VERTEX_PRIV, B), &
-   !
-   ! The PRIVATE list specifies uninitialized variables, of which each
-   ! thread has a private copy.
-   !$OMP& PRIVATE(J, CURRRAD, LQ, CENTER, WORK, TAU, IPIV, ITMP, &
-   !$OMP&         IERR_PRIV), &
-   !
-   ! Any variables not explicitly listed above receive the SHARED scope
-   ! by default and are visible across all threads.
-   !$OMP& DEFAULT(SHARED), &
-   !
+   ! This is another Level 2 parallel block over all P* in PTS.
+   !$OMP PARALLEL FIRSTPRIVATE(MINRAD_PRIV, VERTEX_PRIV, B), &
+   !$OMP& PRIVATE(CURRRAD, LQ, CENTER, WORK, TAU, IPIV, ITMP, IERR_PRIV), &
    !$OMP& IF(PLVL2)
    !$OMP DO SCHEDULE(STATIC)
    DO J = 1, N
@@ -1604,18 +1565,7 @@ IF (ALL(WEIGHTS(:,MI) .GE. -EPSL)) PTINSIMP = .TRUE.
 ! Compute the affine weights for the interpolation points in this chunk.
 ! If PMODE=2, then LAST=M and this loop is carried out over all remaining
 ! interpolation points. Uses PLANE(:) as a work array.
-!$OMP PARALLEL DO &
-!
-! The PRIVATE list specifies uninitialized variables, of which each
-! thread has a private copy.
-!$OMP& PRIVATE(I, PLANE, ITMP), &
-!
-! Any variables not explicitly listed above receive the SHARED scope
-! by default and are visible across all threads.
-!$OMP& DEFAULT(SHARED), &
-!
-!$OMP& SCHEDULE(STATIC), &
-!$OMP& IF(PLVL2)
+!$OMP PARALLEL DO PRIVATE(PLANE, ITMP), SCHEDULE(STATIC), IF(PLVL2)
 DO I = MI+1, LAST
    ! Check that no solution has already been found.
    IF (IERR(I) .NE. 40) CYCLE
@@ -1751,21 +1701,9 @@ MINRAD = HUGE(0.0_R8)
 MINRAD_PRIV = HUGE(0.0_R8)
 VERTEX_PRIV = 0
 
-! Begin Level 2 parallel loop over N points in PTS.
-!$OMP PARALLEL &
-!
-! The FIRSTPRIVATE list specifies initialized variables, of which each
-! thread has a private copy.
-!$OMP& FIRSTPRIVATE(MINRAD_PRIV, VERTEX_PRIV), &
-!
-! The PRIVATE list specifies uninitialized variables, of which each
-! thread has a private copy.
-!$OMP& PRIVATE(I, SIDE2, LQ, CENTER, IPIV, IERR_PRIV), &
-!
-! Any variables not explicitly listed above receive the SHARED scope
-! by default and are visible across all threads.
-!$OMP& DEFAULT(SHARED), &
-!
+! Begin Level 2 parallel loop over all points P* in PTS.
+!$OMP PARALLEL FIRSTPRIVATE(MINRAD_PRIV, VERTEX_PRIV), &
+!$OMP& PRIVATE(SIDE2, LQ, CENTER, IPIV, IERR_PRIV), &
 !$OMP& IF(PLVL2)
 !$OMP DO SCHEDULE(STATIC)
 DO I = 1, N
@@ -1947,12 +1885,7 @@ CONTAINS    ! Internal subroutines and functions.
 
 SUBROUTINE RESCALE(MINDIST, DIAMETER, SCALE)
 ! Rescale and transform data to be centered at the origin with unit
-! radius.
-! 
-! The parallel implementation of this subroutine exploits parallelism
-! over loops of length N. For nested loops, this subroutine follows
-! the OpenMP recommendation of a static schedule with a fixed chunk
-! size (of 100).
+! radius. This subroutine has O(n^2) complexity.
 !
 ! On output, PTS and Q have been rescaled and shifted. All the data
 ! points in PTS are centered with unit radius, and the points in Q
@@ -1983,12 +1916,8 @@ SCALE = 0.0_R8
 ! Compute barycenter of all data points.
 PTS_CENTER(:) = SUM(PTS(:,:), DIM=2)/REAL(N, KIND=R8)
 ! Compute the minimum and maximum distances.
-!$OMP PARALLEL DO &
-!$OMP& PRIVATE(I, DISTANCE),    &
-!$OMP& REDUCTION(MAX:DIAMETER), &
-!$OMP& REDUCTION(MIN:MINDIST),  &
-!$OMP& SCHEDULE(STATIC, 100),   &
-!$OMP& DEFAULT(SHARED)
+!$OMP PARALLEL DO PRIVATE(DISTANCE), REDUCTION(MAX:DIAMETER), &
+!$OMP& REDUCTION(MIN:MINDIST), SCHEDULE(STATIC, 100)
 DO I = 1, N ! Cycle through all pairs of points.
    DO J = I + 1, N
       DISTANCE = DNRM2(D, PTS(:,I) - PTS(:,J), 1) ! Compute the distance.
@@ -2004,11 +1933,7 @@ END DO
 ! Center the points.
 FORALL (I = 1:N) PTS(:,I) = PTS(:,I) - PTS_CENTER(:)
 ! Compute the scale factor (for unit radius).
-!$OMP PARALLEL DO &
-!$OMP& PRIVATE(I, DISTANCE), &
-!$OMP& REDUCTION(MAX:SCALE), &
-!$OMP& SCHEDULE(STATIC),     &
-!$OMP& DEFAULT(SHARED)
+!$OMP PARALLEL DO PRIVATE(DISTANCE), REDUCTION(MAX:SCALE), SCHEDULE(STATIC)
 DO I = 1, N ! Cycle through all points again.
    DISTANCE = DNRM2(D, PTS(:,I), 1) ! Compute the distance from the center.
    IF (DISTANCE > SCALE) THEN ! Compare to the current radius.
