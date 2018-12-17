@@ -1,8 +1,3 @@
-
-MAX_FILE_SIZE_BYTES = 50*(2**20)
-CHUNK_EXT = "_(part_%i_of_%i).chunk"
-class FileTooSmall(Exception): pass
-
 # Save "data" in a file titled "file_name" using pickle.
 def save(data, file_name):
     import pickle    
@@ -38,8 +33,9 @@ def pause(string="press enter to continue.."):
 #   chunk_ext      -- A string that contains two '%i' for formatting
 #                     chunk extensions in the form "part %i of %i".
 #   verbose        -- Prints out status information when set to True.
-def disassemble(file_path, max_size_bytes=MAX_FILE_SIZE_BYTES,
-                chunk_ext=CHUNK_EXT, verbose=True):
+def disassemble(file_path, max_size_bytes=50*(2**20),
+                chunk_ext="_(part_%i_of_%i).chunk", verbose=True):
+    class FileTooSmall(Exception): pass
     import os
     size = os.path.getsize(file_path)
     chunks = int(size / max_size_bytes + 0.5)

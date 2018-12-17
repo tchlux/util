@@ -129,7 +129,7 @@ def AMPGO(objective, halt, bounds, solution,
 #   This algorithm works by searching along individual dimensions
 # using random normal distributions. Failure causes the standard
 # deviations to shrink (and search locally). Success causes the
-# standard deviations to groaw (and search farther away).
+# standard deviations to grow (and search farther away).
 # 
 # 
 # Adaptive Normal bibtex entry with added URL component

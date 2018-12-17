@@ -21,15 +21,15 @@ ABS_DIFF = lambda p1,p2: abs(p1-p2)
         
 # Return all unique prime factors of a number in sorted order.
 def primes(num):
-    factors = set()
+    factors = {}
     candidate = 2
     while candidate**2 <= num:
         while (num % candidate) == 0:
-            factors.add(candidate)
+            factors[candidate] = factors.get(candidate,0) + 1
             num //= candidate
         candidate += 1
     if num > 1: factors.add(num)
-    return sorted(factors)
+    return sorted((k,factors[k]) for k in factors)
 
 # Return a randomized "range" using a Linear Congruential Generator
 # to produce the number sequence. Parameters are the same as for 
@@ -82,9 +82,7 @@ def index_to_pair(index):
     return (val, remainder)
 
 # Generate "count" random indices of pairs that are within "length" bounds.
-def gen_random_pairs(length, count=None, show_time=True, timeout=1):
-    import time
-    start = time.time()
+def gen_random_pairs(length, count=None):
     # Compute the hard maximum in the number of pairs.
     max_pairs = length*(length - 1) // 2
     # Initialize count if it wasn't provided.
@@ -93,9 +91,6 @@ def gen_random_pairs(length, count=None, show_time=True, timeout=1):
     # Get a random set of pairs (no repeats).
     for c,i in enumerate(random_range(count)):
         if (i >= count): break
-        if (time.time() - start) >= timeout:
-            print(f"{c: 7d} : {count: 7d}", end="\r")
-            start = time.time()
         yield index_to_pair(i)
     print(" "*40, end="\r")
 
@@ -106,26 +101,29 @@ def gen_random_metric_diff(matrix, index_metric, count=None):
     for (p1, p2) in gen_random_pairs(len(matrix), count):
         vec = matrix[p1] - matrix[p2]
         length = np.sqrt(np.sum(vec**2))
-        if length > 0: vec /= length
+        if length > 0: vec /= length**2
         yield index_metric(p1, p2) * vec
 
 # Compute the metric PCA (pca of the between vectors scaled by 
 # metric difference slope).
-def mpca(points, values, metric=ABS_DIFF, num_components=None, num_vecs=None):
-    # Set default values for steps and directions.
-    if type(num_components) == type(None): num_components = points.shape[1]
+def mpca(points, values, metric=ABS_DIFF, num_components=None,
+         num_vecs=None, display=True):
+    # Set default values for num_components and num_vecs.
+    if type(num_components) == type(None): num_components = min(points.shape)
+    if (type(num_vecs) == type(None)): num_vecs = (len(points)**2-len(points))//2
+    if display: print(" allocating memory for metric between vectors..", end="\r", flush=True)
+    m_vecs = np.zeros((num_vecs, num_components))
+    if display: print(" generating metric vectors..", end="\r", flush=True)
     # Function that takes two indices and returns metric difference.
     index_metric = lambda i1, i2: metric(values[i1], values[i2])
-    print(" generating metric vectors..", end="\r", flush=True)
     # Generator that produces "between vectors".
     vec_gen = gen_random_metric_diff(points, index_metric, count=num_vecs)
-    print(" converting vectors to numpy array..", end="\r", flush=True)
+    for i,vec in enumerate(vec_gen): m_vecs[i,:] = vec
     # Compute the principle components of the between vectors.
-    m_vecs = np.array([v for v in vec_gen if (np.linalg.norm(v) > 0)])
-    print(" computing principle components..", end="\r", flush=True)
+    if display: print(" computing principle components..", end="\r", flush=True)
     components, _ = pca(m_vecs, num_components=num_components)
     # Compute the magnitudes using total variation.
-    print(" computing magnitudes..", end="\r", flush=True)
+    if display: print(" computing total variation per component..", end="\r", flush=True)
     avg_diffs = np.zeros(num_components)
     for i in range(num_components):
         ordering = np.argsort(np.matmul(points, components[i]))
@@ -140,9 +138,13 @@ def mpca(points, values, metric=ABS_DIFF, num_components=None, num_vecs=None):
     avg_diffs /= np.sum(avg_diffs)
     # Re-order the components according to inverse total variation.
     order = np.argsort(avg_diffs)[::-1]
-    print("                                    ", end="\r", flush=True)
+    if display: print(" reordering the components by total variation..", end="\r", flush=True)
+    # If they are not already ordered correctly, re-order the returns.
+    if not all(order[i] < order[i+1] for i in range(len(order)-1)):
+        components, avg_diffs = components[order], avg_diffs[order]
+    if display: print("                                               ", end="\r", flush=True)
     # Return the principle components of the metric slope vectors.
-    return components[order], avg_diffs[order]
+    return components, avg_diffs
 
 # Compute the principle components using sklearn.
 def pca(points, num_components=None):

@@ -13,7 +13,6 @@
 #  type_check     -- Enforce input types for function.
 # 
 
-
 # ==================================================================
 #                         SameAs Decorator
 # 
@@ -80,17 +79,14 @@ def same_as(to_copy, mention_usage=False):
 # 
 #   <function> = cache(<max_files>, <cache_dir>, <file_prefix>)(<function_to_decorate>)
 #   
-def cache(func_to_cache=None, max_files=10, cache_dir=None, file_prefix=None):
-    import os, hashlib, pickle
-    # Handle alternate usage (using *args instead of **kwargs)
-    if (type(func_to_cache) == int):
-        max_files = func_to_cache
-        if (type(max_files) == str):
-            cache_dir = max_files
-            if (type(cache_dir) != type(None)):
-                cache_dir = file_prefix
+def cache(max_files=10, cache_dir=None, file_prefix=None):
+    import os, hashlib
+    # Import "dill" if it is available, otherwise use pickle.
+    try:    import dill as pickle
+    except: import pickle
     # Check to see if a cache directory was provided
     if (type(cache_dir) == type(None)): cache_dir = os.curdir
+    if (not os.path.exists(cache_dir)): os.mkdir(cache_dir)
     # Create a function that takes one argument, a function to be
     # decorated. This will be called by python when decorating.
     def decorator_handler(func):
@@ -120,14 +116,8 @@ def cache(func_to_cache=None, max_files=10, cache_dir=None, file_prefix=None):
             return output
         # Return the decorated version of the function with identical documntation
         return same_as(func)(new_func)
-    # Return the appropriate function based on if the user specified
-    # the maximum number of files or not when using the decorator.
-    if (type(func_to_cache) != type(lambda:None)): 
-        # Return a function that is capable of decorating
-        return decorator_handler
-    else:
-        # Return the decorated function
-        return decorator_handler(func_to_cache)
+    # Return a function that is capable of decorating
+    return decorator_handler
 
 
 # ==================================================================
@@ -143,7 +133,7 @@ def cache(func_to_cache=None, max_files=10, cache_dir=None, file_prefix=None):
 # 
 # USAGE: 
 # 
-#   @stability_lock(<max_tests>=10, <test_dir>="Stability_Checks", <auto_test>=True)
+#   @stability_lock(<max_tests>=10, <test_dir>=".python_stability_locks", <auto_test>=True)
 #   def <function_to_decorate>(...):
 #      ...
 # 
@@ -151,39 +141,34 @@ def cache(func_to_cache=None, max_files=10, cache_dir=None, file_prefix=None):
 # 
 #   <function> = stability_lock(<max_tests>, <test_dir>, <auto_test>)(<function_to_decorate>)
 #   
-def stability_lock(func_to_cache=None, max_tests=10,
-                   test_dir=None, auto_test=True):
-    import os, pickle, inspect
+def stability_lock(max_tests=10, test_dir=None, auto_test=True):
+    import os, inspect
+    # Import "dill" if it is available, otherwise use pickle.
+    try:    import dill as pickle
+    except: import pickle
+    # Create a custom Exception for printing failed checks.
     class FailedStabilityTest(Exception): pass
-    # Handle alternate usage (using *args instead of **kwargs)
-    if (type(func_to_cache) == int):
-        max_files = func_to_cache
-        if (type(max_test_cases) == str):
-            test_case_dir = max_files
-            if (type(test_case_dir) == bool):
-                auto_test = test_case_dir
     # Check to see if a cache directory was provided, make default the
     # same file as the one this code resides in.
-    if (type(test_case_dir) == type(None)): 
-        test_case_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                 "Stability_Checks")
+    if (type(test_dir) == type(None)): 
+        user_home = os.path.expanduser("~")
+        test_dir = os.path.join(user_home, ".python_stability_locks")
     # Make the directory if it does not exist already
-    os.makedirs(test_case_dir, exist_ok=True)
+    os.makedirs(test_dir, exist_ok=True)
     # Create a function that takes one argument, a function to be
     # decorated. This will be called by python when decorating.
     def decorator_handler(func):
         test_case_prefix = "Stability_Test_[%s]"%(func.__name__)
         # Decorate the given function with a cache
-        cached_func = cache(func, max_files=max_test_cases,
-                            cache_dir=test_case_dir,
-                            file_prefix=test_case_prefix)
+        cached_func = cache(max_files=max_tests, cache_dir=test_dir,
+                            file_prefix=test_case_prefix)(func)
         def new_func(*args, **kwargs):
             # If auto_test is disabled, return the function value
             # without checking anything (saves execution time).
             if not auto_test: return(func(*args, **kwargs))
             # Generate a name and path for the function record file
             func_record_name = "[%s]_Record.pkl"%(func.__name__)
-            func_record_path = os.path.join(test_case_dir, func_record_name)
+            func_record_path = os.path.join(test_dir, func_record_name)
             # Get the function record as the source python code
             curr_func_record = pickle.dumps(inspect.getsource(func))
             needs_checking = True
@@ -193,11 +178,12 @@ def stability_lock(func_to_cache=None, max_tests=10,
                     needs_checking = (pickle.load(f) != curr_func_record)
             # If the function needs checking, then execute tests
             if needs_checking:
+                print()
                 print("Checking stability of '%s'..."%(func.__name__))
-                print("  using test cases sored at '%s'"%(test_case_dir))
+                print("  using test cases stored at '%s'"%(test_dir))
                 # Get the paths to all existing test cases
-                test_file_paths = [os.path.join(test_case_dir, f_name)
-                                   for f_name in os.listdir(test_case_dir)
+                test_file_paths = [os.path.join(test_dir, f_name)
+                                   for f_name in os.listdir(test_dir)
                                    if test_case_prefix in f_name]
                 for test_path in test_file_paths:
                     with open(test_path, "rb") as f:
@@ -228,19 +214,14 @@ def stability_lock(func_to_cache=None, max_tests=10,
                     pickle.dump(curr_func_record, f)
                 print("No stability tests failed, updated record file '%s'."%(
                     os.path.basename(func_record_path)))
+                print()
             # If none of the test cases available failed, execute the
             # function with a caching mechanism activated.
             return cached_func(*args, **kwargs)
         # Return the decorated version of the function with identical documntation
         return same_as(func)(new_func)
-    # Return the appropriate function based on if the user specified
-    # the maximum number of files or not when using the decorator.
-    if (type(func_to_cache) != type(lambda:None)): 
-        # Return a function that is capable of decorating
-        return decorator_handler
-    else:
-        # Return the decorated function
-        return decorator_handler(func_to_cache)
+    # Return a function that is capable of decorating
+    return decorator_handler
 
 
 # ==================================================================
@@ -377,14 +358,17 @@ def type_check(*types, **types_by_name):
                                                   "received type '%s' instead.")%(i,t,type(a))))
                 # Check if list argument is sub-typed correctly
                 elif type(t) == list:
-                    # Check for list type
-                    if not (type(a) == list):
-                        raise(WrongType(("Expected argument %i to be type '%s',"+
-                                         "received type '%s' instead.")%(i,list,type(a))))
+                    # Check to make sure that the provided value is index accessible (not a generator).
+                    try:
+                        for i in range(len(a)): a[i]
+                        for v in a: break
+                    except TypeError:
+                        raise(WrongType(("Expected argument %i to be iterable and be index"+
+                                         "accessible, type '%s' does not meet these criteria.")%(i,type(a))))
                     # Check for subtypes of list
                     if not all(type(ai) == ti for (ai, ti) in zip(a,t)):
                         raise(WrongType_NotListed((
-                            "Types contained in list argument %i did not match "+
+                            "Types contained in iterable argument %i did not match "+
                             "match expected type listing %s.")%(i,t)))
                 # Check if type passes a type-checking function
                 elif type(t) == FUNCTION_TYPE:
@@ -432,19 +416,20 @@ def type_check(*types, **types_by_name):
 #                   Code for testing decorators
 # 
 def testing_and_verification():
+    import os
+    temp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "testing_decorators")
     def test_cache():
         # Documentation for "simple_add"
-        @cache(max_files=10, cache_dir=".")
+        @cache(max_files=10, cache_dir=temp_dir)
         def simple_add(a, b):
             return a.union(b)
         # Run the function many times (with a non-hashable object) to
         # demonstrate that it all works
         for i in range(10):
             print(simple_add({1,2},{i}))
-        help(simple_add)
 
     def test_stability_lock():
-        @stability_lock(max_num_tests=5, test_case_dir="/Users/thomaslux/Desktop/Test_Case_Custom_Dir")
+        @stability_lock(max_tests=5, test_dir=temp_dir)
         def func(a, b):
             # c = 10
             return a + b
@@ -461,12 +446,11 @@ def testing_and_verification():
         @timeout(2,"Failed...")
         def sample_func(sec):
             import time
-            print(" Going to sleep for '%.1f' seconds."%(sec))
+            print(" Going to sleep for '%.1f' seconds."%(sec), end="\r")
             time.sleep(sec)
-            print(" Finished sleeping!")
-        print()
-        print(sample_func(1.5) == None)
-        print(sample_func(2.5) == "Failed...")
+            print(" Finished sleeping!", end="\r")
+        print("@timeout short wait passed:",sample_func(1.5) == None)
+        print("@timeout long wait passed: ",sample_func(2.5) == "Failed...")
         print()
 
     # This is a testing function for the type_check decorator.
@@ -488,41 +472,67 @@ def testing_and_verification():
         try:
             func()
             raise(TestCaseFailed())        
-        except WrongNumberOfArguments:
-            print("Passed correct exception for wrong number of arguments.")
+        except Exception as exc:
+            if ("WrongNumberOfArguments" in str(type(exc))):
+                print("Passed correct exception for wrong number of arguments.")
+            else:
+                raise(TestCaseFailed("An unexpected exception was raised for wrong number of arguments.\n\n"+str(type(exc))))
         # Test case 1
         try:
             func(1.0, 0, [.0, 1], 0)
             raise(TestCaseFailed())
-        except WrongType:
-            print("Passed correct exception for wrong argument type.")
+        except Exception as exc:
+            if ("WrongType" in str(type(exc))):
+                print("Passed correct exception for wrong argument type.")
+            else:
+                raise(TestCaseFailed("An unexpected exception was raised for wrong argument type.\n\n"+str(type(exc))))
         # Test case 2
         try:
             func(0, 0, [.0, 1], 0)
             raise(TestCaseFailed())
-        except WrongType_FailedCheck:
-            print("Passed correct exception for wrong keyword argument type.")
+        except Exception as exc:
+            if ("WrongType_FailedCheck" in str(type(exc))):
+                print("Passed correct exception for wrong keyword argument type.")
+            else:
+                raise(TestCaseFailed("An unexpected exception was raised for wrong keyword argument type.\n\n"+str(type(exc))))
         # Test case 3
         try:
             func(0, 0, 0, 0)
             raise(TestCaseFailed())
-        except WrongType:
-            print("Passed correct exception for wrong type for list argument.")
+        except Exception as exc:
+            if ("WrongType" in str(type(exc))):
+                print("Passed correct exception for wrong type for list argument.")
+            else:
+                raise(TestCaseFailed("An unexpected exception was raised for wrong type for list argument.\n\n"+str(type(exc))))
         # Test case 4
         try:
             func(0, 0, [0,0], 0)
             raise(TestCaseFailed())
-        except WrongType_NotListed:
-            print("Passed correct exception for wrong listed argument type.")
+        except Exception as exc:
+            if ("WrongType_NotListed" in str(type(exc))):
+                print("Passed correct exception for wrong listed argument type.")
+            else:
+                raise(TestCaseFailed("An unexpected exception was raised for wrong listed argument type.\n\n"+str(type(exc))))
         # Test case 5
         try:
             func = type_check((int, float), float)(func)
             raise(TestCaseFailed())
-        except WrongUsageOfTypeCheck:
-            print("Passed correct exception for improper developer usage.")
+        except Exception as exc:
+            if ("WrongUsageOfTypeCheck" in str(type(exc))):
+                print("Passed correct exception for improper developer usage.")
+            else:
+                raise(TestCaseFailed("An unexpected exception was raised for improper developer usage.\n\n"+str(type(exc))))
 
 
     test_cache()
     test_stability_lock()
     test_timeout()
     test_type_check()
+
+    # Remove the testing directory.
+    import shutil
+    shutil.rmtree(temp_dir)
+
+
+if __name__ == "__main__":
+    testing_and_verification()

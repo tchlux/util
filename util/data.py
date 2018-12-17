@@ -2,7 +2,7 @@
 # =================
 COMMON_SEPERATORS = [",", " ", "	", ";"]
 
-UPDATE_FREQUENCY = .1  # How much time (in seconds) between updates.
+UPDATE_FREQUENCY = .5  # How much time (in seconds) between updates when reading data.
 MAX_ERROR_PRINTOUT = 10 # Only print out this many errors when processing data
 
 import numpy as np
@@ -11,7 +11,6 @@ NP_TYPES = {str:(np.str_, 16),    # Which numpy types correspond to
             float:(np.float64,)}
 PY_TYPES = {value[0]:key for (key,value) in NP_TYPES.items()}
 GENERATOR_TYPE = type(_ for _ in ())
-
 
 # coding: future_fstrings
 # from future import print_function
@@ -31,8 +30,8 @@ GENERATOR_TYPE = type(_ for _ in ())
 # TODO:  Update __iadd__ to behave differently when adding data:
 #        when adding data with subset of known columns, add rows and
 #        columns (for unknown) and None for missing.
-# TODO:  Make "to_matrix" automatically flatten columns that are typed
-#        as numeric numpy arrays.
+# TODO:  Make "to_matrix" automatically flatten elements of columns
+#        that are typed as numeric numpy arrays.
 
 QUOTES = {'"'}
 DEFAULT_DISPLAY_WAIT = 3.
@@ -513,6 +512,7 @@ class Data(list):
         # Make sure the element has a "len" property
         try:    len(element)
         except: raise(self.BadValue(f"Invalid appended element of type {type(element)}, which does not have 'len'."))
+        self.numeric = None # Reset the numeric representation (if it existed)
         # Convert the element into a python list
         if type(element) != list:
             try:    element = list(element)
@@ -555,14 +555,6 @@ class Data(list):
         super().append(list(element))
         # Add to the list of missing values if necessary
         if (missing_values): self.missing.add(id(self[-1]))
-        # If we are storing a numeric representation and there are no missing values
-        elif (type(self.numeric) != type(None)):
-            import numpy as np
-            # Get the real representation of the new row
-            new_row = np.array(self.numeric.to_real(self[-1]))
-            # Append the new row to the matrix of data.
-            self.numeric.data = np.concatenate((self.numeric.data,
-                                                new_row[None,:]))
 
     # Overwrite the standard "[]" get operator to accept strings as well.
     def __getitem__(self, index):
@@ -671,19 +663,6 @@ class Data(list):
                 value = value_iter.__next__()
                 raise(self.BadAssignment(f"Column assignment requires a column of length {len(self)}, provided values iterable was too long."))
             except StopIteration: pass
-
-    # Custom function for mapping values to strings in the printout of self.
-    def _val_to_str(self, v): 
-        # Get the string version of the value.
-        if not ((type(v) == type(self)) or (issubclass(type(v),type(self)))):
-            string = str(v).replace("\n"," ")
-        else:
-            # Custom string for a 'data' type object.
-            string = v.__str__(short=True)
-        # Shorten the string if it needs to be done.
-        if len(string) > self._max_str_len: 
-            string = string[:self._max_str_len]+".."
-        return string
 
     # Printout a brief table-format summary of this data.
     def __str__(self, short=False):
@@ -814,6 +793,19 @@ class Data(list):
     #      Custom Methods     
     # ========================
 
+    # Custom function for mapping values to strings in the printout of self.
+    def _val_to_str(self, v): 
+        # Get the string version of the value.
+        if not ((type(v) == type(self)) or (issubclass(type(v),type(self)))):
+            string = str(v).replace("\n"," ")
+        else:
+            # Custom string for a 'data' type object.
+            string = v.__str__(short=True)
+        # Shorten the string if it needs to be done.
+        if len(string) > self._max_str_len: 
+            string = string[:self._max_str_len]+".."
+        return string
+
     # Generate hash values using a near-zero probability of conflich
     # hashing mechanism that can handle non-hashable types. Does this
     # by hashing the raw bytes (from pickl) with sha256.
@@ -838,10 +830,15 @@ class Data(list):
                 raise(self.UnknownName(f"This data does not have a column named '{index}'."))
             cols = [self.names.index(index)]
         elif ((type(index) == tuple) and (len(index) == 2) and 
-            (all(type(i) == int for i in index))):
-            # This index is accessing a (row,col) entry
+              (all(type(i) == int for i in index))):
+            # This index is accessing a (row, col) entry.
             rows = [index[0]]
             cols = [index[1]]
+        elif ( (type(index) == tuple) and (len(index) == 2) and
+               ((type(index[0]) == int) and (type(index[1]) == str)) ):
+            # This index is accessing a (row, col) entry with a named column.
+            rows = [index[0]]
+            cols = [self.names.index(index[1])]
         elif (type(index) == slice):
             # Construct a new "data" with just the specified rows (deep copy)
             rows = list(range(len(self))[index])
@@ -863,7 +860,7 @@ class Data(list):
             else:
                 # Otherwise this should be a two-index for [row,col] access.
                 if (len(index) != 2):
-                    raise(self.BadIndex(f"The provided index, {index}, is not understood."))
+                    raise(self.BadIndex(f"The provided index, {index}, is not understood.\n It is typed {tuple(type(i) for i in index)}."))
                 # Create row index
                 if type(index[0]) == int:
                     rows = [index[0]]
@@ -872,7 +869,7 @@ class Data(list):
                 elif hasattr(index[0], "__iter__"):
                     rows = list(index[0])
                 else:
-                    raise(self.BadIndex(f"The provided index, {index}, is not understood."))
+                    raise(self.BadIndex(f"The provided index, {index}, is not understood.\n It is typed {tuple(type(i) for i in index)}."))
                 # Create column index
                 if type(index[1]) == int:
                     cols = [index[1]]
@@ -893,10 +890,14 @@ class Data(list):
                 elif type(index[1]) == slice:
                     cols = list(range(len(self.names))[index[1]])
                 else:
-                    raise(self.BadIndex(f"The provided index, {index}, is not understood."))
+                    raise(self.BadIndex(f"The provided index, {index}, is not understood.\n It is typed {tuple(type(i) for i in index)}."))
         else:
-            raise(self.BadIndex(f"The provided index, {index}, is not understood."))
+            raise(self.BadIndex(f"The provided index, {index}, is not understood.\n It is typed {tuple(type(i) for i in index)}."))
         return rows, cols
+
+    # =======================================
+    #      Saving and Loading from Files     
+    # =======================================
 
     # Convenience method for loading from file.
     def load(path, *args, **read_data_kwargs):
@@ -967,6 +968,35 @@ class Data(list):
         else:
             raise(self.Unsupported(f"Cannot save {'compressed ' if compressed else ''}file with base extension '{ext}'."))
         return self
+
+    # ====================================
+    #      Reorganizing Existing Data     
+    # ====================================
+
+    # Given a (sub)set of column names in this data, reorder the data
+    # making those names first (with unprovided names remaining in
+    # same order as before).
+    def reorder(self, names):
+        # Special case for being empty.
+        if ((type(self.names) == type(None)) or 
+            (type(self.types) == type(None))):
+            raise(self.Empty("Cannot reorder empty data."))
+        # Check for proper usage.
+        my_names = set(self.names)
+        for n in names:
+            if (n not in my_names):
+                raise(self.BadSpecifiedName(f"No column named '{n}' exists in this data."))
+        self.numeric = None # Reset the numeric representation (if it existed)
+        # Construct the full reordering of every row of data.
+        order = [self.names.index(n) for n in names]
+        taken = set(order)
+        order += [i for i in range(len(self.names)) if i not in taken]
+        # Re-order names, types, and all rows of data.
+        self.names = [self.names[i] for i in order]
+        self.types = [self.types[i] for i in order]
+        for row in range(len(self)):
+            self[row] = [self[row,i] for i in order]
+
 
     # Given a new list of types, re-cast all elements of columns with
     # changed types into the newly specified type.
@@ -1239,10 +1269,11 @@ class Data(list):
         return numeric
 
     # Collect the dictionaries of unique values (with counts) for each column.
-    def counts(self):
+    def counts(self, columns=None):
+        if (type(columns) == type(None)): columns = self.names
         column_info = {n:{} for n in self.names}
         for row in self:
-            for n,val in zip(self.names, row):
+            for n,val in zip(columns, row):
                 # If this column has been removed (because it is
                 # unhashable), then skip it in the processing
                 if n not in column_info: pass
@@ -1359,12 +1390,12 @@ class Data(list):
         if (type(model) == type(None)):
             # Use Voronoi if there are fewer than 10000 points.
             if (len(self) <= 10000):
-                from util.algorithms import Voronoi, uniqueify
-                model = uniqueify(Voronoi)()
+                from util.algorithms import Voronoi, unique
+                model = unique(Voronoi)()
             # Otherwise use nearest neighbor (can't get points + weights from NN)
             else:
-                from util.algorithms import NearestNeighbor, uniqueify
-                model = uniqueify(NearestNeighbor)()
+                from util.algorithms import NearestNeighbor, unique
+                model = unique(NearestNeighbor)()
         # Set the weights accordingly
         if (type(weights) == type(None)):
             weights = np.ones(self.numeric.data.shape[1])
@@ -1468,7 +1499,7 @@ class Data(list):
                 return string
         return Prediction()
 
-    # Given a single column of this data to try and predict, run a
+    # Given a set of columns of this data to try and predict, run a
     # k-fold cross validation over predictions using 'fill'.
     def predict(self, target_columns, model=None, weights=None, bias={}, k=10):
         import numpy as np
@@ -1477,14 +1508,15 @@ class Data(list):
             self.numeric = self.to_matrix()
         # Pick the filling model based on data size.
         if (type(model) == type(None)):
+            from util.algorithms import unique, condition
             # Use Voronoi if there are fewer than 10000 points.
             if (len(self) <= 10000):
-                from util.algorithms import Voronoi, uniqueify
-                model = uniqueify(Voronoi)()
+                from util.algorithms import Voronoi
+                model = condition(unique(Voronoi)())
             # Otherwise use nearest neighbor (can't get points + weights from NN)
             else:
-                from util.algorithms import NearestNeighbor, uniqueify
-                model = uniqueify(NearestNeighbor)()
+                from util.algorithms import NearestNeighbor
+                model = condition(unique(NearestNeighbor))()
         # Set the weights accordingly
         if (type(weights) == type(None)):
             weights = np.ones(self.numeric.data.shape[1])
@@ -1706,10 +1738,19 @@ def test_data():
     b.retype([str,str,str])
     assert(a.types[0] != str)
 
-    # Verify that copies with slicing are deep
+    # Verify that copies with slicing are deep and that retype works.
     b = a[:]
     b.retype([str,str,str])
     assert(a.types[0] != str)
+
+    # Verify that reorder works.
+    b = a[:]
+    b.reorder(["2","0"])
+    assert(tuple(b.names) == ("2","0","1"))
+    assert(tuple(b.types) == (float,int,str))
+    for i in range(len(b)):
+        for n in b.names:
+            assert(a[i,n] == b[i,n])
 
     # Verify automatic type generation AND automatic type-casting
     a.append([1,2,3])
@@ -1802,6 +1843,11 @@ def test_data():
     # Verify column membership checker by set
     b = a[a["1"] == {'a','b','2'}]
     assert(tuple(b["1"]) == tuple(['a','b','2']))
+
+    # Verify column index can be an integer or a string.
+    for i in range(len(a)):
+        for j,name in enumerate(a.names):
+            assert(a[i,j] == a[i,name])
 
     # WARNING: Not individually verifying *all* comparison operators.
     # WARNING: No tests for list-based index assignment
