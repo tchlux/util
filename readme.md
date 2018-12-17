@@ -13,13 +13,13 @@
 
 Contains various useful utilities.
 
-### util.classes
+### util.algorithms
 
-Class "AtomicOpen" provides an atomic file operation class that uses system locking mechanisms to enforce atomic operations on files.
+Classes for many different approximation algorithms. Contains wrappers for converting pure approximators (numeric outputs) to classifiers.
 
 ### util.data
 
-Function "read_struct" reads a separated values file into a numpy structured array.
+Class "Data" behaves like a modified Pandas dataframe, but is written in pure python.
 
 ### util.decorators
 
@@ -38,7 +38,7 @@ Class "MDA_Iterator" simplifies the process of iterating through test cases gene
 
 Function "minimize" uses a meta-heuristic optimization algorithm to solve a global optimization problem given an arbitrary function.
 
-### util.plotly
+### util.plot
 
 Provides an extensive interface to HTML plotting through *plotly*. All documentation is within module, see documentation of submodule with "from util import plotly; help(plotly)" for more details.
 
@@ -49,4 +49,5 @@ Contains useful statistical functions for data analysis.
 ### util.system
 
 Function "run" is a (python+OS)-safe interface to command-line execution that cleanly handles errors.
+Class "AtomicOpen" provides an atomic file operation class that uses system locking mechanisms to enforce atomic operations on files.
 
