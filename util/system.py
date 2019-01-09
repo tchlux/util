@@ -1,15 +1,50 @@
+# Generate hash values using a near-zero probability of conflich
+# hashing mechanism that can handle non-hashable types. Does this
+# by hashing the raw bytes (from pickl) with sha256.
+def hash(something):
+    import hashlib, pickle
+    return hashlib.sha256(pickle.dumps(something)).hexdigest()
+
+# Generate a sorted unique set of values from an iterable, if the
+# values are not hashable, use a hashing function to sort them.
+def sorted_unique(iterable):
+    try:
+        # Try returning sorted unique values using hash to find unique.
+        return sorted(set(iterable))
+    except TypeError: 
+        # Try sorting by values (assuming comparison with hash).
+        ids = {hash(v):v for v in iterable}
+        return sorted(ids[h] for h in sorted(ids))
+    except:
+        # Sort by hashes.
+        ids = {hash(v):v for v in iterable}
+        return [ids[h] for h in sorted(ids)]
+
 # Save "data" in a file titled "file_name" using pickle.
 def save(data, file_name):
-    import pickle    
-    with open(file_name, "wb") as f:
-        pickle.dump(data, f)
+    try:
+        import pickle
+        with open(file_name, "wb") as f:
+            pickle.dump(data, f)
+    except:
+        import dill as pickle
+        with open(file_name, "wb") as f:
+            pickle.dump(data, f)
+
 
 # Load data from a pickle file titled "file_name".
 def load(file_name):
-    import pickle
-    with open(file_name, "rb") as f:
-        data = pickle.load(f)
-    return data
+    try:
+        import pickle
+        with open(file_name, "rb") as f:
+            data = pickle.load(f)
+        return data
+    except:
+        import dill as pickle
+        with open(file_name, "rb") as f:
+            data = pickle.load(f)
+        return data
+
 
 # Convenience function for pausing a program for input (explicitly
 # named). Uses 'getpass' in order to suppress new line character.
@@ -96,13 +131,12 @@ def run(command, **popen_kwargs):
 
 try:
     # Posix based file locking (Linux, Ubuntu, MacOS, etc.)
-    import fcntl
+    import fcntl, os
     def lock_file(f):
-        try:
-            fcntl.lockf(f, fcntl.LOCK_EX)
-        except OSError:
-            pass
-    def unlock_file(f): pass
+        try: fcntl.lockf(f, fcntl.LOCK_EX)
+        except OSError: pass
+    def unlock_file(f):
+        fcntl.lockf(f, fcntl.LOCK_UN)
 except ModuleNotFoundError:
     # Windows file locking
     import msvcrt, os
@@ -115,39 +149,68 @@ except ModuleNotFoundError:
 
 
 # Class for ensuring that all file operations are atomic, treat
-# initialization like a standard call to 'open' that happens to be atomic
+# initialization like a standard call to 'open' that happens to be
+# atomic, must be used in a "with" block.
 class AtomicOpen:
     # First acquire a lock for the file, then open the file with
     # arguments provided by user. Attempts to inherit most of the file
     # properties, but use "__enter__" to get file object directly.
     def __init__(self, path, *args, **kwargs):
-        writing = False
-        if (len(args) > 0) and (args[0]) == "w": 
-            writing = True
-            args = tuple((a if (a != "w") else "a") for a in args)
-        # Open the file and acquire a lock on the file before operating
-        self.file = open(path,*args, **kwargs)
-        # Lock the opened file
+        # Open the file and acquire a lock on the file before operating.
+        self.file = open(path, *args, **kwargs)
+        # Lock the opened file.
         lock_file(self.file)
-        # If the user wanted to write (overwrite existing contents),
-        # make sure that we are doing that exactly (after locking)
-        if writing:
-            self.file.seek(0)
-            self.file.truncate()
 
-    # Return the opened file object (knowing a lock has been obtained)
+    # Return the opened file object (knowing a lock has been obtained).
     def __enter__(self, *args, **kwargs): return self.file
 
-    # Allows users to use the 'close' function if they want, in case
-    # the user did not have the AtomicOpen in a "with" block.
-    def close(self): self.__exit__()
-
-    # Unlock the file and close the file object
-    def __exit__(self, exc_type=None, exc_value=None, traceback=None):        
-        # Release the lock on the file
+    # Unlock and then close the file object.
+    def __exit__(self, exc_type=None, exc_value=None, traceback=None):
+        # Flush to make sure all buffered contents are written to file.
+        self.file.flush()
+        os.fsync(self.file.fileno())
+        # Release the lock on the file, then close.
         unlock_file(self.file)
         self.file.close()
         # Handle exceptions that may have come up during execution, by
-        # default any exceptions are raised to the user
+        # default any exceptions are raised to the user.
         if (exc_type != None): return False
-        else:                  return True        
+        else:                  return True
+
+
+
+# Class for timing operations. Initialize to start, call to check, use
+# the "start" and "stop" attributes / functions to observe / set.
+class Timer:
+    import time
+    a = b = None
+    # Overwrite the "__call__" method of the provided object.
+    def callset(obj, func):
+        try:
+            obj.__call__ = lambda self: func()
+            return obj
+        except AttributeError:
+            class Callable(type(obj)):
+                def __call__(self): return func()
+            return Callable(obj)
+    # Start the timer when it is initialized by default.
+    def __init__(self): self.a = self.time.time()
+    # End function for this timer.
+    def end(self): self.b = self.time.time()
+    # Declare the "start" property / function to re-initialized when called.
+    @property
+    def start(self): return Timer.callset(self.a, self.__init__)
+    # Declare the "stop" property / function to "stop" when called.
+    @property
+    def stop(self): return Timer.callset(self.b, self.end)
+    # Return the elapsed time since start.
+    def check(self): return self.time.time() - self.a
+    # Return the total time elapsed from start.
+    def total(self): return self.b - self.a
+    # If not stopped, return elapsed time, otherwise return total time.
+    def __call__(self):
+        def is_none(obj): return type(obj) == type(None)
+        if (is_none(self.b) or (self.b < self.a)): return round(self.check(),2)
+        else:                                      return round(self.total(),2)
+
+

@@ -55,14 +55,17 @@ def producer(jobs_iter, job_queue):
 #                   packaged with with "dill.dumps" to handle lambda's.
 #   iterable     -- An iterable object (presumably a JobIterator).
 #   return_queue -- A Queue object with a 'put' method.
-def consumer(func, iterable, return_queue):
+#   redirect     -- Boolean, True if log files should be created per
+#                   process, otherwise all print goes to standard out.
+def consumer(func, iterable, return_queue, redirect):
     # Retreive the function (because it's been dilled for transfer)
     func = loads(func)
-    # Set the output file for this process so that all print statments
-    # by default go there instead of to the terminal
-    log_file_name = f"Process-{int(current_process().name.split('-')[1])-1}"
-    log_file_name = os.path.join(LOG_DIRECTORY, log_file_name)
-    sys.stdout = open("%s.log"%log_file_name,"w")
+    if redirect:
+        # Set the output file for this process so that all print statments
+        # by default go there instead of to the terminal
+        log_file_name = f"Process-{int(current_process().name.split('-')[1])-1}"
+        log_file_name = os.path.join(LOG_DIRECTORY, log_file_name)
+        sys.stdout = open("%s.log"%log_file_name,"w")
     # Iterate over values and apply function.
     for (i,value) in iterable:
         try:
@@ -75,7 +78,8 @@ def consumer(func, iterable, return_queue):
     # Once the iterable has been exhaused, put in a "StopIteration".
     return_queue.put((-1, StopIteration))
     # Close the file object for output redirection
-    sys.stdout.close()
+    if redirect: sys.stdout.close()
+    
 
 # A parallel OUT-OF-ORDER implementation of the builtin 'map' function
 # in Python. Provided a function and an iterable that is *not* a
@@ -97,6 +101,8 @@ def consumer(func, iterable, return_queue):
 #                return values from "func" in memory.
 #   save_logs -- Boolean, True if log files from individual calls to
 #                "func" should *not* be deleted.
+#   redirect  -- Boolean, True if log files should be created per
+#                process, otherwise all print goes to standard out.
 # 
 # RETURNS:
 #   An output generator, just like the builtin "map" function, but out-of-order.
@@ -106,7 +112,7 @@ def consumer(func, iterable, return_queue):
 #   still be alive. Call "parallel.killall()" to terminate lingering
 #   map processes when iteration is prematurely terminated.
 def map(func, iterable, max_waiting_jobs=1, max_waiting_returns=1,
-        order=True, save_logs=False):
+        order=True, save_logs=False, redirect=True):
     # Create multiprocessing context (not to muddle with others)
     ctx = get_context() # "fork" on Linux, "spawn" on Windows.
     # Create a job_queue for passing jobs to processes
@@ -115,7 +121,7 @@ def map(func, iterable, max_waiting_jobs=1, max_waiting_returns=1,
     return_queue = ctx.Queue(max_waiting_returns)
     # Create the shared set of arguments going to all consumer processes
     producer_args = (iterable, job_queue)
-    consumer_args = (dumps(func), JobIterator(job_queue), return_queue)
+    consumer_args = (dumps(func), JobIterator(job_queue), return_queue, redirect)
     # Start a "producer" process that will add jobs to the queue,
     # create the set of "consumer" processes that will get jobs from the queue.
     producer_process = ctx.Process(target=producer, args=producer_args)
@@ -156,9 +162,11 @@ def map(func, iterable, max_waiting_jobs=1, max_waiting_returns=1,
                     idx += 1
         # Join all processes (to close them gracefully).
         for p in consumer_processes:
-            p.join()
+            try: p.join()
+            except AssertionError: pass
             MAP_PROCESSES.remove(p)
-        producer_process.join()
+        try: producer_process.join()
+        except AssertionError: pass
         MAP_PROCESSES.remove(producer_process)
         # Delete log files if the user doess not want them.
         if not save_logs: clear_logs()

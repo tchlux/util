@@ -1,16 +1,25 @@
+# Import "numpy" by modifying the system path to remove conflicts.
+import sys, os
+_ = []
+for i in range(len(sys.path)-1,-1,-1):
+    if "util/util" in sys.path[i]: _ = [sys.path.pop(i)] + _
+import numpy as np
+sys.path = _ + sys.path
+
 #      data.py     
 # =================
 COMMON_SEPERATORS = [",", " ", "	", ";"]
-
 UPDATE_FREQUENCY = .5  # How much time (in seconds) between updates when reading data.
 MAX_ERROR_PRINTOUT = 10 # Only print out this many errors when processing data
 
-import numpy as np
+# Declare some constants.
 NP_TYPES = {str:(np.str_, 16),    # Which numpy types correspond to 
             int:(np.int64,),      # the python types of variables
             float:(np.float64,)}
 PY_TYPES = {value[0]:key for (key,value) in NP_TYPES.items()}
 GENERATOR_TYPE = type(_ for _ in ())
+
+from util.math import abs_diff
 
 # coding: future_fstrings
 # from future import print_function
@@ -35,6 +44,46 @@ GENERATOR_TYPE = type(_ for _ in ())
 
 QUOTES = {'"'}
 DEFAULT_DISPLAY_WAIT = 3.
+
+
+# ===============================================================
+#     Convert a matrix into an image for display
+# 
+# Hard coded colors
+BLUE = np.array((100,100,255), dtype=np.uint8)
+RED = np.array((255,100,100), dtype=np.uint8)
+WHITE = np.array((255,255,255), dtype=np.uint8)
+BLACK = np.array((0,0,0), dtype=np.uint8)
+# File interactions
+DIRECTORY = os.path.abspath(".")
+TEMP_IMG = "temp.png"
+def matrix_to_img(matrix, file_name=TEMP_IMG, directory=DIRECTORY,
+                  pos_color=WHITE, mid_color=BLACK, neg_color=RED, show=False):
+    if len(matrix.shape) == 2:
+        matrix = np.asarray(matrix, dtype="float64")
+        img = np.zeros(matrix.shape + (3,), dtype=np.uint8)
+        max_val = np.max(matrix)
+        min_val = abs(np.min(matrix))
+        # Rescale the matrix of numbers to range [-1,1]
+        for row in range(matrix.shape[0]):
+            for col in range(matrix.shape[1]):
+                # Rescale positive values to range from white to blue
+                if matrix[row,col] >= 0:
+                    val = matrix[row,col] / max_val
+                    img[row,col,:] = val * pos_color + (1-val) * mid_color
+                # Rescale negative values to range from white to red
+                else:
+                    val = -matrix[row,col] / min_val
+                    img[row,col,:] = val * neg_color + (1-val) * mid_color
+    elif len(matrix.shape) == 3: img = matrix.copy()
+    else: raise(Exception(f"Unrecognized matrix shape, {matrix.shape}."))
+    # Convert the scaled values into an actual image and save to desktop.
+    img = Image.fromarray(img)
+    file_name = os.path.join(directory, file_name)
+    img.save(file_name)
+    if show: os.system(f"open {file_name}")
+# ===============================================================
+
 
 # Define a class for reading a video file without actually storing it in memory.
 class IndexedVideo:
@@ -806,13 +855,6 @@ class Data(list):
             string = string[:self._max_str_len]+".."
         return string
 
-    # Generate hash values using a near-zero probability of conflich
-    # hashing mechanism that can handle non-hashable types. Does this
-    # by hashing the raw bytes (from pickl) with sha256.
-    def _hash(self, something):
-        import hashlib, pickle
-        return hashlib.sha256(pickle.dumps(something)).hexdigest()
-
     # Given an index (of any acceptable type), convert it into an
     # iterable of integer rows and a list of integer columns.
     def _index_to_rows_cols(self, index):
@@ -913,6 +955,8 @@ class Data(list):
         else:
             # Otherwise define 'self' as a new Data object.
             self = Data()
+        # Check for extension, add default if none is provided.
+        if "." not in path: path += ".pkl"
         # Check for compression
         compressed = path[-path[::-1].index("."):] == "gz"
         file_opener = open
@@ -942,6 +986,8 @@ class Data(list):
     def save(self, path):
         import pickle, dill, gzip
         # Check for compression
+        if "." not in path: path += ".pkl"
+        self.numeric = None
         compressed = path[-path[::-1].index("."):] == "gz"
         file_opener = open
         if compressed:
@@ -1221,7 +1267,7 @@ class Data(list):
         to_real, real_to, real_names, num_inds, cat_inds = self.generate_mapping()
         data = []
         for row in self:
-            # How to handle rows with missing values?
+            # How to handle rows with missing values? Add column for "is missing"?
             if (id(row) in self.missing): continue
             data.append( to_real(row) )
         if (len(data) == 0):
@@ -1288,6 +1334,7 @@ class Data(list):
     # Generate a new data with only the unique rows (by content) from this data.
     def unique(self, display_wait_sec=DEFAULT_DISPLAY_WAIT):
         import time
+        from util.system import hash
         unique = Data(names=self.names, types=self.types)
         found = set()
         start = time.time()
@@ -1296,8 +1343,11 @@ class Data(list):
             if (time.time() - start) > display_wait_sec:
                 print(f" {100.*i/len(self):.2f}%", end="\r", flush=True)
                 start = time.time()
-            # Get the hashed value, check to see if its been found.
-            hashed = self._hash(row)
+            # Get the hashed value by consecutively hashing all of the
+            # values within this row. Hashing the entire row sometimes
+            # produces changing hashes (likely based on memory locations).
+            hashed = ''
+            for v in row: hashed = hash( hashed + hash(v) )
             if hashed not in found:
                 found.add(hashed)
                 unique.append(row)
@@ -1318,6 +1368,7 @@ class Data(list):
     # 
     def collect(self, data, display_wait_sec=DEFAULT_DISPLAY_WAIT):
         import time
+        from util.system import hash
         # Get the names of shared columns and indices in each.
         match_names = set(n for n in self.names if n in data.names)
         self_columns = [i for (i,n) in enumerate(self.names) if n in match_names]
@@ -1334,7 +1385,7 @@ class Data(list):
         # Generate a set of lookups (hashed values even for mutable types)
         index_of_row = {}
         for i,row in enumerate(self):
-            hash_value = self._hash([row[c] for c in self_columns])
+            hash_value = hash([row[c] for c in self_columns])
             index_of_row[hash_value] = i
         # Paired list of source -> destination indices for copying.
         source_dest = list(zip(indices_to_collect, names_to_collect))
@@ -1346,7 +1397,7 @@ class Data(list):
                 print(f" {100.*i/len(data):.2f}%", end="\r", flush=True)
                 start = time.time()
             # Convert row into its hash value, lookup storage location.
-            hash_value = self._hash([row[c] for c in other_columns])
+            hash_value = hash([row[c] for c in other_columns])
             if hash_value in index_of_row:
                 row_idx = index_of_row[hash_value]
                 for source, dest in source_dest:
@@ -1389,13 +1440,17 @@ class Data(list):
         # Pick the filling model based on data size.
         if (type(model) == type(None)):
             # Use Voronoi if there are fewer than 10000 points.
-            if (len(self) <= 10000):
+            if (len(self) <= 5000):
                 from util.algorithms import Voronoi, unique
                 model = unique(Voronoi)()
             # Otherwise use nearest neighbor (can't get points + weights from NN)
             else:
-                from util.algorithms import NearestNeighbor, unique
-                model = unique(NearestNeighbor)()
+                from util.algorithms import unique, condition
+                samples = min(self.numeric.data.shape[0], 10000)
+                dim = min(self.numeric.data.shape[1], 1000)
+                # Use nearest neighbor (can't get points + weights from NN)
+                from util.algorithms import NearestNeighbor
+                model = condition(unique(NearestNeighbor), dim=dim, samples=samples)()
         # Set the weights accordingly
         if (type(weights) == type(None)):
             weights = np.ones(self.numeric.data.shape[1])
@@ -1509,14 +1564,11 @@ class Data(list):
         # Pick the filling model based on data size.
         if (type(model) == type(None)):
             from util.algorithms import unique, condition
-            # Use Voronoi if there are fewer than 10000 points.
-            if (len(self) <= 10000):
-                from util.algorithms import Voronoi
-                model = condition(unique(Voronoi)())
-            # Otherwise use nearest neighbor (can't get points + weights from NN)
-            else:
-                from util.algorithms import NearestNeighbor
-                model = condition(unique(NearestNeighbor))()
+            samples = min(self.numeric.data.shape[0], 10000)
+            dim = min(self.numeric.data.shape[1], 1000)
+            # Use nearest neighbor (can't get points + weights from NN)
+            from util.algorithms import NearestNeighbor
+            model = condition(unique(NearestNeighbor), dim=dim, samples=samples)()
         # Set the weights accordingly
         if (type(weights) == type(None)):
             weights = np.ones(self.numeric.data.shape[1])
@@ -1565,16 +1617,16 @@ class Data(list):
                 Data.k_fold(range(self.numeric.data.shape[0]), k=k)):
             print(f"  Fold {i+1} of {k}.. ", end="", flush=True)
             train_data = normalized_data[train_rows]
-            print("fitting.. ", end="", flush=True)
+            print(f"fitting {i+1} of {k}.. ", end="", flush=True)
             model.fit( normalized_data[train_rows,:][:,train_cols], 
                        normalized_data[train_rows,:][:,test_cols]   )
-            print("predicting.. ", end="", flush=True)
+            print(f"predicting {i+1} of {k}.. ", end="", flush=True)
             predictions = model.predict( normalized_data[test_rows,:][:,train_cols] )
             # De-normalize predictions
             predictions = ( (predictions / weights[test_cols]) * 
                             self.numeric.scale[test_cols] + 
                             self.numeric.shift[test_cols] )
-            print("storing.. ", end="\r", flush=True)
+            print(f"storing.. {i+1} of {k}", end="\r", flush=True)
             # Store the prediction results.
             for j,i in enumerate(test_rows):
                 row = list(self.numeric.data[i,train_cols]) + list(predictions[j,:])
@@ -1587,19 +1639,61 @@ class Data(list):
         # Return the results in a new Data object.
         return results
 
-    # Compute the pairwise difference between columns. Use the following:
-    #    category vs. category -- Average total difference between full distribution
-    #                             and conditional distributions for any setting.
-    #    category vs. number   -- Average 1-norm difference between full distribution
+    # Compute the pairwise effects between columns. Use the following:
+    # 
+    #    number vs. number     -- Correlation coefficient between the two sequences.
+    #    category vs. number   -- "method" 1-norm difference between full distribution
     #                             and conditional distributions for categories.
-    #    number vs. number     -- Correlation coefficient between the two numbers.
-    def diff(self):
-        # Print out the diff in column form (not matrix form).
-        # Sort the diff by the similarity. (most similar -> least)
-        # Return the diff triple list [(col 1, col 2, diff)]
-        for c0 in range(len(self.names)):
-            for c1 in range(c0+1, len(self.names)):
-                pass
+    #    category vs. category -- "method" total difference between full distribution
+    #                             of other sequence given value of one sequence.
+    # 
+    # Print out the sorted table of pairwise effects between columns,
+    # showing the highest effects first, the smallest last.
+    def effect(self, compare_with=None, method="mean", display=True):
+        from itertools import combinations
+        from util.stats import effect
+        if (type(compare_with) == type(None)): compare_with = set(self.names)
+        elif (type(compare_with) == list):     compare_with = set(compare_with)
+        else:                                  compare_with = {compare_with}
+        # Print out the effect in column form (not matrix form).
+        effs = []
+        for (col_1, col_2) in combinations(self.names, 2):
+            if (col_1 in compare_with):
+                eff = effect(list(self[col_1]), list(self[col_2]), method=method)
+                effs.append( (col_1, col_2, eff) )
+            elif (col_2 in compare_with):
+                eff = effect(list(self[col_1]), list(self[col_2]), method=method)
+                effs.append( (col_2, col_1, eff) )
+        # Convert an effect to a sortable number (lowest most important).
+        def to_num(eff): 
+            if type(eff) == dict: return -sum(eff.values()) / len(eff)
+            else:                 return -abs(eff)
+        # Convert an effect to a printable string.
+        def to_str(eff):
+            if type(eff) == dict:
+                eff_str = []
+                for key in sorted(eff, key=lambda k: -abs(eff[k])):
+                    eff_str += [f"'{key}':{eff[key]:5.2f}"]
+                return f"{-to_num(eff):5.2f}  {{"+", ".join(eff_str)+"}"
+            else:
+                return f"{eff:5.2f}"
+        # Sort the data by magnitude of effect. (most effected -> first)
+        effs = sorted(effs, key=lambda row: to_num(row[-1]))
+        # Do a quick return without printing if display is turned off.
+        if (not display): return effs
+        # Print out the effects between each column nicely.
+        max_len_1 = max( max(map(lambda i:len(i[0]), effs)), len("Column 1") )
+        max_len_2 = max( max(map(lambda i:len(i[1]), effs)), len("Column 2") )
+        header = f"{'Column 1':{max_len_1}s}  |  {'Column 2':{max_len_2}s}  |  Effect"
+        rows = []
+        for (col_1, col_2, eff) in effs:
+            eff = to_str(eff)
+            rows += [f"{col_1:{max_len_1}s}  |  {col_2:{max_len_2}s}  |  {eff}"]
+        row_len = max(map(len, rows))
+        rows = ["", '-'*row_len, header, '-'*row_len] + rows + ['-'*row_len, ""]
+        for row in rows: print(row)
+        # Return the sorted effect triple list [(col 1, col 2, effect)].
+        return effs
 
     # Give an overview (more detailed than just "str") of the contents
     # of this data. Useful for quickly understanding how data looks.

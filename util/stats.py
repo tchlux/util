@@ -1,11 +1,14 @@
-import numpy as np
 import os
+from util.math import abs_diff
 
-# A numeric attirbute should have all of these operations.
-NUMERIC_ATTRIBUTES = {'__abs__', '__sub__', '__pos__', '__neg__',
-                      '__floordiv__', '__truediv__', '__pow__', 
-                      '__radd__', '__rsub__', '__rfloordiv__',
-                      '__rtruediv__', '__rpow__'}
+# Import "numpy" by modifying the system path to remove conflicts.
+import sys
+_ = []
+for i in range(len(sys.path)-1,-1,-1):
+    if "util/util" in sys.path[i]: _ = [sys.path.pop(i)] + _
+import numpy as np
+sys.path = _ + sys.path
+
 
 # =============================================
 #      Metric Principle Component Analysis     
@@ -15,29 +18,15 @@ NUMERIC_ATTRIBUTES = {'__abs__', '__sub__', '__pos__', '__neg__',
 class InvalidRange(Exception):
     def __init__(self, start, stop, step):
         return super().__init__("\n\nError: random_range(start=%s,stop=%s,step=%s) contains no elements."%(start,stop,step))
-
-# Prime number used for generating random sequences.
-ABS_DIFF = lambda p1,p2: abs(p1-p2)
-        
-# Return all unique prime factors of a number in sorted order.
-def primes(num):
-    factors = {}
-    candidate = 2
-    while candidate**2 <= num:
-        while (num % candidate) == 0:
-            factors[candidate] = factors.get(candidate,0) + 1
-            num //= candidate
-        candidate += 1
-    if num > 1: factors.add(num)
-    return sorted((k,factors[k]) for k in factors)
+class InvalidIndex(Exception): pass
 
 # Return a randomized "range" using a Linear Congruential Generator
 # to produce the number sequence. Parameters are the same as for 
-# python builtin "range".
+# python builtin "range". Give only the first "count" elements.
 #   Memory  -- O(1) storage for a few integers, regardless of parameters.
 #   Compute -- O(n) at most 2 times the number of steps in the range, n.
 # 
-def random_range(start, stop=None, step=None):
+def random_range(start, stop=None, step=None, count=float('inf')):
     from random import randint
     from math import ceil, log2
     # Set a default values the same way "range" does.
@@ -65,7 +54,8 @@ def random_range(start, stop=None, step=None):
     modulus = 2**ceil(log2(num_steps))                    # Pick a modulus just big enough to generate all numbers (power of 2).
     # Track how many random numbers have been returned.
     found = 0
-    while found < num_steps:
+    count = min(count, num_steps)
+    while found < count:
         # If this is a valid value, yield it in generator fashion.
         if value < num_steps:
             found += 1
@@ -92,7 +82,7 @@ def gen_random_pairs(length, count=None):
     for c,i in enumerate(random_range(count)):
         if (i >= count): break
         yield index_to_pair(i)
-    print(" "*40, end="\r")
+    print(" "*40, end="\r", flush=True)
 
 # Generate vector between scaled by metric difference. Give the metric
 # the indices of "vectors" in the provided matrix.
@@ -104,15 +94,48 @@ def gen_random_metric_diff(matrix, index_metric, count=None):
         if length > 0: vec /= length**2
         yield index_metric(p1, p2) * vec
 
+# Given a set of row-vectors, compute a convex weighting that is
+# proportional to the inverse total variation of metric distance
+# between adjacent points along each vector (component).
+def rank_by_variation(components, points, values, metric, display=True):
+    # Compute the magnitudes using total variation.
+    if display: print(" computing total variation per component.. ", end="", flush=True)
+    avg_var = np.zeros(len(components))
+    update = end = ""
+    for i in range(len(components)):
+        update = "\b"*len(end)
+        end = f"{i+1} of {len(components)}"
+        if display: print(update, end=end, flush=True)
+        ordering = np.argsort(np.matmul(points, components[i]))
+        for j in range(len(ordering)-1):
+            p1, p2 = ordering[j], ordering[j+1]
+            avg_var[i] += metric(values[p1], values[p2])
+    # Invert the total variation.
+    if (min(avg_var) <= 0.0):
+        avg_var = np.where(avg_var == 0, 1., 0.)
+    else:
+        avg_var = 1 / avg_var
+    avg_var /= np.sum(avg_var)
+    # Re-order the components according to inverse total variation.
+    order = np.argsort(avg_var)[::-1]
+    # If they are not already ordered correctly, re-order the returns.
+    if not all(order[i] < order[i+1] for i in range(len(order)-1)):
+        if display: print(" reordering components by total variation..", end="\r", flush=True)
+        components, avg_var = components[order], avg_var[order]
+    if display: print("                                           ", end="\r", flush=True)
+    return components, avg_var
+
 # Compute the metric PCA (pca of the between vectors scaled by 
 # metric difference slope).
-def mpca(points, values, metric=ABS_DIFF, num_components=None,
+def mpca(points, values, metric=abs_diff, num_components=None,
          num_vecs=None, display=True):
     # Set default values for num_components and num_vecs.
     if type(num_components) == type(None): num_components = min(points.shape)
     if (type(num_vecs) == type(None)): num_vecs = (len(points)**2-len(points))//2
+    num_components = min(num_components, *points.shape)
+    num_vecs = min(num_vecs, (len(points)**2-len(points))//2)
     if display: print(" allocating memory for metric between vectors..", end="\r", flush=True)
-    m_vecs = np.zeros((num_vecs, num_components))
+    m_vecs = np.zeros((num_vecs, points.shape[1]))
     if display: print(" generating metric vectors..", end="\r", flush=True)
     # Function that takes two indices and returns metric difference.
     index_metric = lambda i1, i2: metric(values[i1], values[i2])
@@ -122,35 +145,20 @@ def mpca(points, values, metric=ABS_DIFF, num_components=None,
     # Compute the principle components of the between vectors.
     if display: print(" computing principle components..", end="\r", flush=True)
     components, _ = pca(m_vecs, num_components=num_components)
-    # Compute the magnitudes using total variation.
-    if display: print(" computing total variation per component..", end="\r", flush=True)
-    avg_diffs = np.zeros(num_components)
-    for i in range(num_components):
-        ordering = np.argsort(np.matmul(points, components[i]))
-        for j in range(len(ordering)-1):
-            p1, p2 = ordering[j], ordering[j+1]
-            avg_diffs[i] += metric(values[p1], values[p2])
-    # Invert the total variation.
-    if (min(avg_diffs) <= 0.0):
-        avg_diffs = np.where(avg_diffs == 0, 1., 0.)
-    else:
-        avg_diffs = 1 / avg_diffs
-    avg_diffs /= np.sum(avg_diffs)
-    # Re-order the components according to inverse total variation.
-    order = np.argsort(avg_diffs)[::-1]
-    if display: print(" reordering the components by total variation..", end="\r", flush=True)
-    # If they are not already ordered correctly, re-order the returns.
-    if not all(order[i] < order[i+1] for i in range(len(order)-1)):
-        components, avg_diffs = components[order], avg_diffs[order]
     if display: print("                                               ", end="\r", flush=True)
     # Return the principle components of the metric slope vectors.
-    return components, avg_diffs
+    return rank_by_variation(components, points, values, metric, display)
 
 # Compute the principle components using sklearn.
-def pca(points, num_components=None):
+def pca(points, num_components=None, display=True):
+    from util.math import is_none
     from sklearn.decomposition import PCA        
     pca = PCA(n_components=num_components)
+    if is_none(num_components): num_components = min(*points.shape)
+    else:       num_components = min(num_components, *points.shape)
+    if display: print(f"Computing {num_components} principle components..",end="\r", flush=True)
     pca.fit(points)
+    if display: print( "                                                          ",end="\r", flush=True)
     principle_components = pca.components_
     magnitudes = pca.singular_values_
     # Normalize the component magnitudes to have sum 1.
@@ -168,8 +176,11 @@ def gauss_smooth(func, stdev=1., n=100):
     # Construct a set of gaussian weights (to apply nearby on the function).
     eval_pts = np.linspace(-5 * stdev, 5 * stdev, n)
     weights = norm(0, stdev).pdf(eval_pts)
-    # Generate a smoothed function.
-    def smooth_func(x): return sum(weights * func(eval_pts + x)) / sum(weights)
+    weights /= sum(weights)
+    # Generate a smoothed function (with the [min,max] no-arg convenience).
+    def smooth_func(x=None):
+        if (type(x) == type(None)): return func()
+        else:                       return sum(weights * func(eval_pts + x))
     # Transfer attributes over to the smooth function.
     standard_attributes = set(dir(smooth_func))
     for attr in dir(func):
@@ -182,7 +193,7 @@ def gauss_smooth(func, stdev=1., n=100):
 #   fit -- "linear" linearly interpolates between Emperical Dist points.
 #          "cubic" constructs a monotonic piecewise cubic interpolating spline
 #          <other> returns the raw Emperical Distribution Function.
-def cdf_fit(data, fit="linear"):
+def cdf_fit(data, fit="linear", smooth=None):
     fit_type = fit
     # Scipy functions for spline fits.
     from scipy.interpolate import splrep, splev
@@ -280,7 +291,12 @@ def cdf_fit(data, fit="linear"):
     cdf_func.derivative = fit.derivative
     # Set the inverse function
     cdf_func.inverse = fit.inverse
-
+    # Smooth the CDF if requested by user.
+    if type(smooth) != type(None):
+        # Smooth the pdf fit if that was requested.
+        width = (cdf_func.max - cdf_func.min)
+        stdev = smooth * width
+        cdf_func = gauss_smooth(cdf_func, stdev, n)
     # Return the custom function for this set of points
     return cdf_func
 
@@ -411,41 +427,154 @@ def normal_confidence(distribution):
     ks_statistic = kstest(new_distribution, "norm").statistic
     return ks_p_value(ks_statistic, len(distribution))
 
-# Compute the pairwise difference between two sequences. Use the following:
-#    category vs. category -- Average total difference between full distribution
-#                             and conditional distributions for any setting.
-#    category vs. number   -- Average 1-norm difference between full distribution
+
+# ====================================================
+#      Measuring the Difference Between Sequences     
+# ====================================================
+
+# Generator for returning pairs of EDF points as (val1, val2, density).
+def edf_pair_gen(seq):
+    # Compute the 'extra' slope lost at the beginning of the function.
+    for i in range(len(seq)):
+        if seq[i] != seq[0]: break
+    extra = (i/len(seq))
+    shift = lambda v: (v - extra) / (1 - extra)
+    # Manually set the first slope value.
+    x1, y1 = -float('inf'), 0
+    for i in range(len(seq)):
+        # Cycle until we hit the last occurrence of the next value.
+        if ((i+1) < len(seq)) and (seq[i+1] == seq[i]): continue
+        x2, y2 = seq[i], shift( (i+1)/len(seq) )
+        yield (x1, x2, y2 - y1)
+        # Cycle values.
+        x1, y1 = x2, y2
+    # Manually yield the last element in the sequence.
+    yield (x1, float('inf'), 0)
+
+# Use a linear interpolation of the EDF points to compute the integral
+# of the absolute difference between the empirical PDF's of two sequences.
+def epdf_diff(seq_1, seq_2):
+    # Construct generators for the EDF point pairs.
+    gen_1 = edf_pair_gen(seq_1)
+    gen_2 = edf_pair_gen(seq_2)
+    # Get the initial values from the generators.
+    low_1, upp_1, density_1 = gen_1.__next__()
+    low_2, upp_2, density_2 = gen_2.__next__()
+    shared = 0.
+    # Cycle until completing the integral difference between pEDFs.
+    while (upp_1 < float('inf')) or (upp_2 < float('inf')):
+        # Compute the width of the interval and the percentage of data
+        # within the width for each of the distributions.
+        width = min(upp_1, upp_2) - max(low_1, low_2)
+        if width < float('inf'):
+            # Convert the EDF points into densities over the interval.
+            sub_density_1 = density_1 * (width / (upp_1-low_1))
+            sub_density_2 = density_2 * (width / (upp_2-low_2))
+            if abs(sub_density_1 - sub_density_2) >= 0:
+                shared += min(sub_density_1, sub_density_2)
+        # Cycle whichever range has the lower maximum.
+        if (upp_1 > upp_2):
+            low_2, upp_2, density_2 = gen_2.__next__()
+        elif (upp_2 > upp_1):
+            low_1, upp_1, density_1 = gen_1.__next__()
+        else:
+            low_1, upp_1, density_1 = gen_1.__next__()
+            low_2, upp_2, density_2 = gen_2.__next__()
+    return max(0, 1 - shared)
+
+# Compute the PDF of a sequence of categories.
+def categorical_pdf(seq, unique=None):
+    from util.system import hash, sorted_unique
+    if (type(unique) == type(None)): unique = sorted_unique(seq)
+    try:              return {c:sum(v==c for v in seq) / len(seq) for c in unique}
+    except TypeError: return {hash(c): sum(v==c for v in seq) / len(seq) for c in unique}
+
+# Given the PDF (in a dictionary object) for two different sets of
+# categorical values, compute the total change in the PDF sum(abs(diffs)).
+def categorical_diff(pdf_1, pdf_2):
+    # Check for equally lengthed sequences.
+    class CannotCompare(Exception): pass
+    def near_one(val): return (abs(val - 1) < 1e-5)
+    if not near_one(sum(pdf_1.values())):
+        raise(CannotCompare(f"Sum of PDF values for sequence one '{sum(pdf_1.values()):.2f}' is not 1."))
+    if not near_one(sum(pdf_2.values())):
+        raise(CannotCompare(f"Sum of PDF values for sequence one '{sum(pdf_2.values()):.2f}' is not 1."))
+    # Sum the differences in categories.
+    all_values = sorted(set(pdf_1).union(set(pdf_2)))
+    return sum(abs(pdf_1.get(v,0.) - pdf_2.get(v,0.)) for v in all_values) / 2
+
+# Compute the effect between two sequences. Use the following:
+#    number vs. number     -- Correlation coefficient between the two sequences.
+#    category vs. number   -- "method" 1-norm difference between full distribution
 #                             and conditional distributions for categories.
-#    number vs. number     -- Correlation coefficient between the two numbers.
-def diff(seq_1, seq_2):
+#    category vs. category -- "method" total difference between full distribution
+#                             of other sequence given value of one sequence.
+def effect(seq_1, seq_2, method="mean"):
+    from util.system import hash, sorted_unique
+    from util.math import is_numeric
+    # Check for equally lengthed sequences.
+    class CannotCompare(Exception): pass
+    if len(seq_1) != len(seq_2): raise(CannotCompare("Provided sequences must have same length for comparison to be made."))
+    # Check for index accessibility.
+    try:              seq_1[0], seq_2[0]
+    except TypeError: raise(CannotCompare("Provided sequences must both be index-accessible."))
     # Get the set of attributes a numeric type should have.
-    # Return a boolean "is_numeric"
-    def is_numeric(obj):
-        attributes = set(dir(obj))
-        return all(attr in attributes for attr in NUMERIC_ATTRIBUTES)
     # The three different outcomes of comparison could be:
-    cat_cat = (is_numeric(seq_1) and is_numeric(seq_2))
-    num_num = (not is_numeric(seq_1)) and (not is_numeric(seq_2))
+    num_num = (is_numeric(seq_1[0]) and is_numeric(seq_2[0]))
+    cat_cat = (not is_numeric(seq_1[0])) and (not is_numeric(seq_2[0]))
     num_cat = (not cat_cat) and (not num_num)
     # Execute the appropriate comparison according to the types.
     if num_num:
-        pass
-        # number vs. number
-        # - compute mean of each sequence
-        # - compute covariance
-        # - divide by product of covariances
+        # Compute the correlation (highly correlated have no difference).
+        return float(np.corrcoef(seq_1, seq_2)[0,1])
     elif num_cat:
-        pass
-        # number vs. categorical
-        # - compute total EDF for the numer sequence
-        # - compute 1-norm difference between EDF
+        # Compute the change in numeric distribution caused by a chosen category.
+        nums, cats = (seq_1, seq_2) if is_numeric(seq_1[0]) else (seq_2, seq_1)
+        # Compute the sorted order for "nums" by index.
+        sort = sorted(range(len(nums)), key=lambda i: nums[i])
+        nums, cats = [nums[i] for i in sort], [cats[i] for i in sort]
+        # Consider each unique categorical value, compute epdf diff.
+        diffs = {}
+        for cat in sorted_unique(cats):
+            main_nums = [n for (n,c) in zip(nums,cats) if c != cat]
+            sub_nums = [n for (n,c) in zip(nums,cats) if c == cat]
+            dist_diff = epdf_diff(main_nums, sub_nums)
+            try:              diffs[cat]       = dist_diff
+            except TypeError: diffs[hash(cat)] = dist_diff
+        if   (method == "max"):  return max(diffs.values())
+        elif (method == "min"):  return min(diffs.values())
+        elif (method == "mean"): return sum(diffs.values()) / len(diffs)
+        else:                    return diffs
     elif cat_cat:
-        pass
-        # categorical vs. categorical
+        diffs = {}
+        # Generate unique lists of values (hash those that aren't).
+        unique_1 = sorted_unique(seq_1)
+        unique_2 = sorted_unique(seq_2)
+        # Compute the percentage of each unique category for full sequences.
+        full_1 = categorical_pdf(seq_1, unique_1)
+        full_2 = categorical_pdf(seq_2, unique_2)
+        # Identify the difference when selecting sequence 1 values.
+        for cat in unique_1:
+            main_seq = categorical_pdf([c2 for (c1,c2) in zip(seq_1,seq_2) if c1 != cat])
+            sub_seq = categorical_pdf([c2 for (c1,c2) in zip(seq_1,seq_2) if c1 == cat])
+            if (len(main_seq) > 0) and (len(sub_seq) > 0):
+                dist_diff = categorical_diff( main_seq, sub_seq )
+            else: dist_diff = 0.
+            try:              diffs[(cat,None)]       = dist_diff
+            except TypeError: diffs[(hash(cat),None)] = dist_diff
+        # Identify the difference when selecting sequence 2 values.
+        for cat in unique_2:
+            main_seq = categorical_pdf([c1 for (c1,c2) in zip(seq_1,seq_2) if c2 != cat])
+            sub_seq = categorical_pdf([c1 for (c1,c2) in zip(seq_1,seq_2) if c2 == cat])
+            dist_diff = categorical_diff( main_seq, sub_seq )
+            try:              diffs[(None,cat)]       = dist_diff
+            except TypeError: diffs[(None,hash(cat))] = dist_diff
+        # Return the desired measure of difference between the two.
+        if   (method == "max"):  return max(diffs.values())
+        elif (method == "min"):  return min(diffs.values())
+        elif (method == "mean"): return sum(diffs.values()) / len(diffs)
+        else:                    return diffs
 
-
-# diff([1,2,3,4],['a','b','c'])
-# exit()
 
 # ===============================================
 #      Plotting Percentile Functions as CDFS     
@@ -589,136 +718,100 @@ def pdf_fit_func(*args, **kwargs):
 
 
 if __name__ == "__main__":
-    # # Use a linear interpolation of the EDF points to compute the integral
-    # # of the absolute difference between the empirical PDF's of two sequences.
-    # def epdf_diff(seq_1, seq_2):
-    #     # Construct generators for the EDF point pairs.
-    #     gen_1 = edf_pair_gen(seq_1)
-    #     gen_2 = edf_pair_gen(seq_2)
-    #     # Get the initial values from the generators.
-    #     low_1, upp_1, density_1 = gen_1.__next__()
-    #     low_2, upp_2, density_2 = gen_2.__next__()
-    #     shared = 0.
-    #     # Cycle until completing the integral difference between pEDFs.
-    #     while (upp_1 < float('inf')) or (upp_2 < float('inf')):
-    #         # Compute the width of the interval and the percentage of data
-    #         # within the width for each of the distributions.
-    #         width = min(upp_1, upp_2) - max(low_1, low_2)
-    #         if width < float('inf'):
-    #             # Convert the EDF points into densities over the interval.
-    #             sub_density_1 = density_1 * (width / (upp_1-low_1))
-    #             sub_density_2 = density_2 * (width / (upp_2-low_2))
-    #             if abs(sub_density_1 - sub_density_2) >= 0:
-    #                 shared += min(sub_density_1, sub_density_2)
-    #         # Cycle whichever range has the lower maximum.
-    #         if (upp_1 > upp_2):
-    #             low_2, upp_2, density_2 = gen_2.__next__()
-    #         elif (upp_2 > upp_1):
-    #             low_1, upp_1, density_1 = gen_1.__next__()
-    #         else:
-    #             low_1, upp_1, density_1 = gen_1.__next__()
-    #             low_2, upp_2, density_2 = gen_2.__next__()
-    #     return max(0, 1 - shared)
-
-    # # Generator for returning pairs of EDF points as (val1, val2, density).
-    # def edf_pair_gen(seq):
-    #     # Compute the 'extra' slope lost at the beginning of the function.
-    #     for i in range(len(seq)):
-    #         if seq[i] != seq[0]: break
-    #     extra = (i/len(seq))
-    #     shift = lambda v: (v - extra) / (1 - extra)
-    #     # Manually set the first slope value.
-    #     x1, y1 = -float('inf'), 0
-    #     for i in range(len(seq)):
-    #         # Cycle until we hit the last occurrence of the next value.
-    #         if ((i+1) < len(seq)) and (seq[i+1] == seq[i]): continue
-    #         x2, y2 = seq[i], shift( (i+1)/len(seq) )
-    #         yield (x1, x2, y2 - y1)
-    #         # Cycle values.
-    #         x1, y1 = x2, y2
-    #     # Manually yield the last element in the sequence.
-    #     yield (x1, float('inf'), 0)
-
-
-    # # ----------------------------------------------------------------
-    # def demo(seq):
-    #     print('-'*70)
-    #     print(seq)
-    #     print()
-    #     total = 0
-    #     for vals in edf_pair_gen(seq):
-    #         total += vals[-1]
-    #         print("[% 4s, % 3s] (%.2f) --"%vals, round(total,3))
-    #     print('-'*70)
-    #     print()
-    # print()
-    # seq = [0] + list(range(9))
-    # demo(seq)
-    # print()
-    # seq = sorted(np.random.random(size=(10,)))
-    # demo(seq)
-    # # ----------------------------------------------------------------
-    # # a = [1, 1, 3, 3, 5, 6]
-    # # b = [0, 1, 2, 3, 4]
-    # # 
-    # n = 100
-    # a = [v / n for v in list(range(n+1))]
-    # b = [v+.5 for v in a]
-    # # b = a
-    # # b = [v+10 for v in a]
-
-    # print(epdf_diff(a,a))
-    # print(epdf_diff(a,b))
-    # print(epdf_diff(b,a))
-    # print()
-
-    # # Generate a random sequence.
-    # a = sorted((np.random.random(size=(10,))))
-    # b = sorted((np.random.random(size=(10,)) + .5))
-    # print("[%.2f, %.2f]"%(min(a),max(a)), "[%.2f, %.2f]"%(min(b),max(b)))
-    # diff = epdf_diff(a, b)
-    # print(diff)
-    # exit()
-    # # ----------------------------------------------------------------
-    # from util.plot import Plot
-
-    # p = Plot()
-    # p1 = pdf_fit(a, smooth=0.00001)
-    # p2 = pdf_fit(b, smooth=0.00001)
-    # p.add_func("a", p1, p1()) #(-.5,2))
-    # p.add_func("b", p2, p2()) #(-.5,2))
-    # p.show(show=False, y_range=[-.5,1.5])
-
-    # p = Plot()
-    # p1 = cdf_fit(a)
-    # p2 = cdf_fit(b)
-    # p.add_func("a", p1, p1()) #(-.5,2))
-    # p.add_func("b", p2, p2()) #(-.5,2))
-    # p.show(append=True)
-    # exit()
-    # # ----------------------------------------------------------------
-
+    print()
 
     import pickle, os
     import numpy as np
     from util.plot import Plot, multiplot
     
-    TEST_FIT_FUNCS = False
     TEST_MPCA = True
-    TEST_RANDOM_RANGE = False
+    TEST_FIT_FUNCS = True
+    TEST_EPDF_DIFF = True
+    TEST_RANDOM_RANGE = True
+    TEST_EFFECT = True
 
-    if TEST_RANDOM_RANGE:
-        vals = {}
-        mults = {}
-        for i in range(10000):
-            results = tuple(random_range(20))
-            key, (val, mult) = results[:-1], results[-1]
-            diff = set(key[i-1] - key[i] for i in range(len(key)))
-            if len(diff) <= 2:
-                vals[key] = vals.get(key, set())   .union({val})
-                mults[key] = mults.get(key, set()) .union({mult})
-        for v in sorted(vals): print(v, "% 10s"%sorted(vals[v]), sorted(mults[v]))
-        print(len(vals))
+    if TEST_EFFECT:
+        a = {"a":.4, "b":.1, "c":.5, "d":.0}
+        b = {"a":.1, "b":.3, "c":.5, "d":.1}
+        c = {"a":.0, "b":.0, "c":.0, "d":1.}
+        assert(.3 == categorical_diff(a, b))
+        assert(1. == categorical_diff(a, c))
+        assert(.9 == categorical_diff(b, c))
+        a = ['a','a','a','a','b','b','b','b']
+        b = ['a','a','b','b','b','a','a','b']
+        c = ['a','a','a','b','b','a','a','a']
+        assert(0. == effect(a,b))
+        assert(0. == effect(a,c))
+        # assert((4/6 + 3/6 + 0/6 + 0/6)/4 == effect(b, c))
+        a = list(range(1000))
+        b = list(range(1000))
+        assert(effect(a,b) == 1.0)
+        b = np.random.random(size=(1000,))
+        assert(effect(a,b) < .1)
+        a = ['a', 'a', 'a', 'b', 'a', 'b', 'a', 'b', 'a', 'b', 'a', 'a', 'a', 'c', 'a', 'c', 'a', 'c', 'a', 'c']
+        b = [890.79, 1048.97, 658.43, 659.39, 722.0, 723.34, 1040.76, 1058.02, 1177.0, 1170.94, 415.56, 462.03, 389.09, 676.82, 688.49, 735.56, 552.58, 1127.29, 1146.42, 1251.12]
+        assert(0.0 == effect(a,b) - 0.5264043528589452)
+
+    if TEST_EPDF_DIFF:
+        # ----------------------------------------------------------------
+        def demo(seq):
+            print('-'*70)
+            print(len(seq), seq)
+            print()
+            total = 0
+            for vals in edf_pair_gen(seq):
+                total += vals[-1]
+                print("[% 4s, % 3s] (%.2f) --"%vals, round(total,3))
+            print('-'*70)
+            print()
+        demo( [0] + list(range(9)) )
+        demo( sorted(np.random.random(size=(10,))) )
+        demo( list(range(9)) + [8] )
+        # ----------------------------------------------------------------
+        # a = [1, 1, 3, 3, 5, 6]
+        # b = [0, 1, 2, 3, 4]
+        # 
+        n = 100
+        print(f"a = [0,100] ({n} samples)")
+        print(f"b = [v + d for v in a]")
+        print()
+        for d in (.0, .01, .1, .5, .55, .9, 1., 1.5):
+            a = [v / n for v in list(range(n+1))]
+            b = [v+d for v in a]
+            print(f"d = {d:.2f}   a~b = {epdf_diff(a,b):.2f}   b~a = {epdf_diff(b,a):.2f}   a~a = {epdf_diff(a,a):.2f}   b~b = {epdf_diff(b,b):.2f}")
+        print()
+
+        for d in (.0, .01, .1, .5, .55, .9, 1., 1.5):
+            # Generate a random sequence.
+            a = sorted((np.random.random(size=(10,))))
+            b = sorted((np.random.random(size=(1000,)) + d))
+            diff = epdf_diff(a, b)
+            print(f"d = {d:.2f}","",
+                  "[%.2f, %.2f]"%(min(a),max(a)), "[%.2f, %.2f]"%(min(b),max(b)),"",
+                  diff
+            )
+        print()
+        # ----------------------------------------------------------------
+        from util.plot import Plot
+
+        # Generate a random sequence.
+        a = sorted((np.random.random(size=(2000,))))
+        b = sorted((np.random.random(size=(2000,))))
+
+        p = Plot()
+        p1 = pdf_fit(a, smooth=0.00001)
+        p2 = pdf_fit(b, smooth=0.00001)
+        p.add_func("a", p1, p1()) #(-.5,2))
+        p.add_func("b", p2, p2()) #(-.5,2))
+        p.show(show=False, y_range=[-.5,1.5])
+
+        p = Plot()
+        p1 = cdf_fit(a)
+        p2 = cdf_fit(b)
+        p.add_func("a", p1, p1()) #(-.5,2))
+        p.add_func("b", p2, p2()) #(-.5,2))
+        p.show(append=True)
+        # ----------------------------------------------------------------
 
 
     if TEST_FIT_FUNCS:
@@ -898,3 +991,26 @@ if __name__ == "__main__":
             p3 = p3.plot(html=False, x_range=[-1,1], y_range=[-1,1], show_legend=False)
             # Generate the multiplot of the two side-by-side figures
             multiplot([p1,p2,p3], height=126, width=600)
+
+    if TEST_RANDOM_RANGE:
+        import random
+        # Check unique values witnessed with sliced range.
+        seen = {}
+        for i in range(1000):
+            random.seed(i)
+            v = tuple(random_range(4))
+            seen[v] = seen.get(v,0) + 1
+        for row in sorted(seen):
+            print("%5d"%seen[row], row)
+        # vals = {}
+        # mults = {}
+        # for i in range(10000):
+        #     results = tuple(random_range(20))
+        #     key, (val, mult) = results[:-1], results[-1]
+        #     diff = set(key[i-1] - key[i] for i in range(len(key)))
+        #     if len(diff) <= 2:
+        #         vals[key] = vals.get(key, set())   .union({val})
+        #         mults[key] = mults.get(key, set()) .union({mult})
+        # for v in sorted(vals): print(v, "% 10s"%sorted(vals[v]), sorted(mults[v]))
+        # print(len(vals))
+
