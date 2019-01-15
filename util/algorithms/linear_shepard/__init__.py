@@ -17,8 +17,7 @@ class LSHEP(Approximator):
         self.linear_shepard = fmodpy.fimport(
             os.path.join(CWD,"linear_shepard.f95"),
             module_link_args=["-lgfortran","-lblas","-llapack"], 
-            output_directory=CWD, working_directory="fmodpy", 
-            autocompile_extra_files=True, verbose=True, force_rebuild=True)
+            output_directory=CWD, autocompile_extra_files=True)
         self.lshep = self.linear_shepard.lshep
         self.lshepval = self.linear_shepard.lshepval
         self.ierrors = {}
