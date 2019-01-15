@@ -102,7 +102,7 @@ class qHullDelaunay(WeightedApproximator):
 class Delaunay(WeightedApproximator):
     os.environ["OMP_NESTED"] = "TRUE"
     from util.algorithms.delaunay import delsparse
-    def __init__(self, parallel=False, pmode=None):
+    def __init__(self, parallel=False, pmode=None, chunksize=None):
         # Get the source fortran code module
         path_to_src = os.path.join(CWD,"delsparse.f90")
         # Set up the algorithm for parallel or serial evaluation.
@@ -110,6 +110,7 @@ class Delaunay(WeightedApproximator):
         self.delaunayp = self.delsparse.delaunaysparsep
         self.delaunays = self.delsparse.delaunaysparses
         self.pmode = pmode
+        self.chunksize = chunksize
         # Initialize containers.
         self.pts = None
         self.errs = {}
@@ -134,7 +135,7 @@ class Delaunay(WeightedApproximator):
             self.delaunayp(self.pts.shape[0], self.pts.shape[1],
                            pts_in, p_in.shape[1], p_in, simp_out,
                            weights_out, error_out, extrap=100.0,
-                           pmode=self.pmode)
+                           pmode=self.pmode, chunksize=self.chunksize)
         else:
             self.delaunays(self.pts.shape[0], self.pts.shape[1],
                            pts_in, p_in.shape[1], p_in, simp_out,
@@ -161,19 +162,25 @@ class Delaunay(WeightedApproximator):
         
 
 # Wrapper class for using the Delaunay fortran code
-class DelaunayP1(Delaunay):
+class DelaunayP1CN(Delaunay):
     from util.algorithms.delaunay import delsparse
-    def __init__(self, parallel=True, pmode=1):
-        return super().__init__(parallel=parallel, pmode=pmode)
+    def __init__(self, parallel=True, pmode=1, chunksize=None):
+        return super().__init__(parallel=parallel, pmode=pmode, chunksize=chunksize)
 
 # Wrapper class for using the Delaunay fortran code
-class DelaunayP2(Delaunay):
+class DelaunayP2CN(Delaunay):
     from util.algorithms.delaunay import delsparse
-    def __init__(self, parallel=True, pmode=2):
-        return super().__init__(parallel=parallel, pmode=pmode)
+    def __init__(self, parallel=True, pmode=2, chunksize=None):
+        return super().__init__(parallel=parallel, pmode=pmode, chunksize=chunksize)
 
 # Wrapper class for using the Delaunay fortran code
-class DelaunayP3(Delaunay):
+class DelaunayP3CN(Delaunay):
     from util.algorithms.delaunay import delsparse
-    def __init__(self, parallel=True, pmode=3):
-        return super().__init__(parallel=parallel, pmode=pmode)
+    def __init__(self, parallel=True, pmode=3, chunksize=None):
+        return super().__init__(parallel=parallel, pmode=pmode, chunksize=chunksize)
+
+# Wrapper class for using the Delaunay fortran code
+class DelaunayPNC10(Delaunay):
+    from util.algorithms.delaunay import delsparse
+    def __init__(self, parallel=True, pmode=None, chunksize=10):
+        return super().__init__(parallel=parallel, pmode=pmode, chunksize=chunksize)

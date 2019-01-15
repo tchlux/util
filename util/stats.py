@@ -86,13 +86,13 @@ def gen_random_pairs(length, count=None):
 
 # Generate vector between scaled by metric difference. Give the metric
 # the indices of "vectors" in the provided matrix.
-def gen_random_metric_diff(matrix, index_metric, count=None):
+def gen_random_metric_diff(matrix, index_metric, power=2, count=None):
     # Iterate over random pairs.
     for (p1, p2) in gen_random_pairs(len(matrix), count):
         vec = matrix[p1] - matrix[p2]
         length = np.sqrt(np.sum(vec**2))
-        if length > 0: vec /= length**2
-        yield index_metric(p1, p2) * vec
+        if length > 0: vec /= length**power
+        yield vec * index_metric(p1, p2)
 
 # Given a set of row-vectors, compute a convex weighting that is
 # proportional to the inverse total variation of metric distance
@@ -106,7 +106,8 @@ def rank_by_variation(components, points, values, metric, display=True):
         update = "\b"*len(end)
         end = f"{i+1} of {len(components)}"
         if display: print(update, end=end, flush=True)
-        ordering = np.argsort(np.matmul(points, components[i]))
+        locations = np.matmul(points, components[i])
+        ordering = np.argsort(locations)
         for j in range(len(ordering)-1):
             p1, p2 = ordering[j], ordering[j+1]
             avg_var[i] += metric(values[p1], values[p2])
@@ -725,10 +726,10 @@ if __name__ == "__main__":
     from util.plot import Plot, multiplot
     
     TEST_MPCA = True
-    TEST_FIT_FUNCS = True
-    TEST_EPDF_DIFF = True
-    TEST_RANDOM_RANGE = True
-    TEST_EFFECT = True
+    TEST_FIT_FUNCS = False
+    TEST_EPDF_DIFF = False
+    TEST_RANDOM_RANGE = False
+    TEST_EFFECT = False
 
     if TEST_EFFECT:
         a = {"a":.4, "b":.1, "c":.5, "d":.0}
@@ -859,9 +860,9 @@ if __name__ == "__main__":
 
         import random
         # Generate some points for testing.
-        np.random.seed(4)
-        random.seed(0)
-        rgen = np.random.RandomState(10)
+        np.random.seed(4) # 4
+        random.seed(0) # 0
+        rgen = np.random.RandomState(1) # 10
         n = 100
         points = (rgen.rand(n,2) - .5) * 2
         # points *= np.array([.5, 1.])
@@ -881,7 +882,7 @@ if __name__ == "__main__":
         responses = np.vstack(tuple(tuple(map(f, points)) for f in funcs)).T
 
         # Reduce to just the first function
-        choice = 1
+        choice = 2
         func = funcs[choice]
         response = responses[:,choice]
 

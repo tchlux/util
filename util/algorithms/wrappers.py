@@ -95,6 +95,9 @@ def condition(approximator, metric=abs_diff, method=DEFAULT_CONDITIONER,
         # Wrapped "fit" method, this incorporates dimension reduction
         # and approximation conditioning based on the selected method.
         def fit(self, x, y, *args, num_comps=None, **kwargs):
+            # Shift all components of x to be in the range [0,1].
+            x = (x - np.min(x, axis=0))
+            x /= np.clip(np.max(x, axis=0), np.finfo(x[0,0]).tiny, float('inf'))
             # Set the number of components appropriately.
             if is_none(num_comps): num_comps = min(x.shape)
             if not is_none(dim):   num_comps = min(dim, num_comps)

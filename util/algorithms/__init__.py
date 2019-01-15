@@ -18,7 +18,7 @@ NeuralNetwork = MLPRegressor
 NN = MLPRegressor
 KNN = NearestNeighbor
 # Import additional Delaunay testing modules.
-from util.algorithms.delaunay import DelaunayP1CN, DelaunayP2CN, DelaunayP3CN, DelaunayPNC10
+from util.algorithms.delaunay import DelaunayP1, DelaunayP2, DelaunayP3
 
 # Make a "NearestNeighbor" called "CNN" with automatic conditioning.
 CNN = condition(NearestNeighbor)

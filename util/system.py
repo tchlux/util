@@ -213,4 +213,3 @@ class Timer:
         if (is_none(self.b) or (self.b < self.a)): return round(self.check(),2)
         else:                                      return round(self.total(),2)
 
-

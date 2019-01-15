@@ -5,7 +5,7 @@ from util.math import is_none, abs_diff
 # Automatically select the value for "k" for using nearest neighbor
 # based on a random sample of the points provided.
 def auto(points, values, metric=abs_diff, max_k=None, samples=100,
-         mean=False, k_step=1, display=False):
+         mean=True, k_step=1, display=False):
     from util.stats import random_range
     # Make the maximum value for "k" the nearest power of 2 that
     # contains less than or equal to half of the provided data.

@@ -34,7 +34,7 @@ INTERFACE
    ! Interface for parallel subroutine DELAUNAYSPARSEP.
    SUBROUTINE DELAUNAYSPARSEP( D, N, PTS, M, Q, SIMPS, WEIGHTS, IERR,     &
                                INTERP_IN, INTERP_OUT, EPS, EXTRAP, RNORM, &
-                               IBUDGET, CHAIN, PMODE           )
+                               IBUDGET, CHAIN, PMODE, CHUNKSIZE           )
       USE REAL_PRECISION, ONLY : R8
       INTEGER, INTENT(IN) :: D, N
       REAL(KIND=R8), INTENT(INOUT) :: PTS(:,:)
@@ -49,7 +49,7 @@ INTERFACE
       REAL(KIND=R8), INTENT(OUT), OPTIONAL :: RNORM(:)
       INTEGER, INTENT(IN), OPTIONAL :: IBUDGET
       LOGICAL, INTENT(IN), OPTIONAL :: CHAIN
-      INTEGER, INTENT(IN), OPTIONAL :: PMODE
+      INTEGER, INTENT(IN), OPTIONAL :: PMODE, CHUNKSIZE
    END SUBROUTINE DELAUNAYSPARSEP
 
    ! Interface for SLATEC subroutine DWNNLS.
@@ -253,7 +253,7 @@ SUBROUTINE DELAUNAYSPARSES( D, N, PTS, M, Q, SIMPS, WEIGHTS, IERR, &
 ! 2008 standard.  
 ! 
 ! Primary Author: Tyler H. Chang
-! Last Update: January, 2019
+! Last Update: September, 2018
 ! 
 USE REAL_PRECISION, ONLY : R8
 IMPLICIT NONE
@@ -438,12 +438,16 @@ OUTER : DO MI = 1, M
    ! Inner loop searching for a simplex containing the point Q(:,MI).
    INNER : DO K = 1, IBUDGETL
 
+      ! Check if the current simplex contains Q(:,MI).
+      IF (PTINSIMP()) THEN
+         ! If chaining is on, set the next seed to this simplex.
+         IF (CHAINL) SEED(:) = SIMPS(:,MI)
+         EXIT INNER
+      END IF
+      IF (IERR(MI) .NE. 0) CYCLE OUTER ! Check for an error flag.
+
       ! If chaining is on, save each good simplex as the next seed.
       IF (CHAINL) SEED(:) = SIMPS(:,MI)
-
-      ! Check if the current simplex contains Q(:,MI).
-      IF (PTINSIMP()) EXIT INNER
-      IF (IERR(MI) .NE. 0) CYCLE OUTER ! Check for an error flag.
 
       ! Swap out the least weighted vertex, but save its value in case it
       ! needs to be restored later.
@@ -925,7 +929,7 @@ END SUBROUTINE DELAUNAYSPARSES
 
 SUBROUTINE DELAUNAYSPARSEP( D, N, PTS, M, Q, SIMPS, WEIGHTS, IERR, & 
   INTERP_IN, INTERP_OUT, EPS, EXTRAP, RNORM, IBUDGET, CHAIN,       &
-  PMODE )
+  PMODE, CHUNKSIZE )
 ! This is a parallel implementation of an algorithm for efficiently performing
 ! interpolation in R^D via the Delaunay triangulation. The algorithm is fully
 ! described and analyzed in
@@ -1040,6 +1044,7 @@ SUBROUTINE DELAUNAYSPARSEP( D, N, PTS, M, Q, SIMPS, WEIGHTS, IERR, &
 ! 83 : The LAPACK subroutine DORMQR has reported an illegal value.
 !
 ! 90 : The value of PMODE is not valid.
+! 91 : The value of CHUNKSIZE is not valid.
 !
 ! Optional arguments:
 !
@@ -1100,6 +1105,12 @@ SUBROUTINE DELAUNAYSPARSEP( D, N, PTS, M, Q, SIMPS, WEIGHTS, IERR, &
 !    recommended, unless the size of the triangulation is relatively small
 !    or the interpolation points are known to be tightly clustered.
 !
+! CHUNKSIZE contains the integer valued size of dynamically scheduled chunks
+!    during Level 1 parallelism. By default, the CHUNKSIZE is 1, for fully
+!    dynamic scheduling. Changing CHUNKSIZE is only recommended if the
+!    dimension is low or contiguous points in Q are known to be relatively
+!    nearby.
+!
 ! PMODE is an integer specifying the level of parallelism to be exploited.
 !    If PMODE = 1, then parallelism is exploited at the level of the loop
 !    over all interpolation points (Level 1 parallelism).
@@ -1126,7 +1137,7 @@ SUBROUTINE DELAUNAYSPARSEP( D, N, PTS, M, Q, SIMPS, WEIGHTS, IERR, &
 ! 2008 standard.  
 ! 
 ! Primary Author: Tyler H. Chang
-! Last Update: January, 2019
+! Last Update: September, 2018
 ! 
 USE REAL_PRECISION, ONLY : R8
 IMPLICIT NONE
@@ -1145,12 +1156,12 @@ REAL(KIND=R8), INTENT(IN), OPTIONAL:: INTERP_IN(:,:)
 REAL(KIND=R8), INTENT(OUT), OPTIONAL :: INTERP_OUT(:,:)
 REAL(KIND=R8), INTENT(IN), OPTIONAL:: EPS, EXTRAP 
 REAL(KIND=R8), INTENT(OUT), OPTIONAL :: RNORM(:)
-INTEGER, INTENT(IN), OPTIONAL :: IBUDGET, PMODE
+INTEGER, INTENT(IN), OPTIONAL :: IBUDGET, CHUNKSIZE, PMODE
 LOGICAL, INTENT(IN), OPTIONAL :: CHAIN 
 
 ! Local copies of optional input arguments.
 REAL(KIND=R8) :: EPSL, EXTRAPL
-INTEGER :: IBUDGETL
+INTEGER :: IBUDGETL, CHUNKSIZEL
 LOGICAL :: CHAINL, PLVL1, PLVL2
 
 ! Local variables.
@@ -1158,6 +1169,7 @@ LOGICAL :: PTINSIMP ! Tells if Q(:,MI) is in SIMPS(:,MI).
 INTEGER :: I, J, K ! Loop iteration variables.
 INTEGER :: IERR_PRIV ! Private copy of the error flag.
 INTEGER :: ITMP ! Temporary variable for swapping, looping, etc.
+INTEGER :: LAST ! Last index of the current chunk.
 INTEGER :: LWORK ! Size of the work array.
 INTEGER :: MI ! Index of current interpolation point.
 INTEGER :: VERTEX_PRIV ! Private copy of next vertex to add.
@@ -1289,6 +1301,13 @@ ELSE ! The default setting for PMODE is level 1 parallelism if M > 1.
       PLVL2 = .TRUE.
    END IF
 END IF
+IF (PRESENT(CHUNKSIZE)) THEN
+   IF (CHUNKSIZE .LE. 0) THEN ! Illegal chunk size.
+      IERR(:) = 91; RETURN; END IF
+   CHUNKSIZEL = CHUNKSIZE
+ELSE
+   CHUNKSIZEL = 1 ! Default to fully dynamic scheduling.
+END IF
 
 ! Scale and center the data points and interpolation points.
 CALL RESCALE(MINRAD, PTS_DIAM, PTS_SCALE)
@@ -1319,27 +1338,19 @@ IERR(:) = 40
 ! The PRIVATE list specifies uninitialized variables, of which each
 ! thread has a private copy.
 !$OMP& PRIVATE(I, J, K, ITMP, CURRRAD, MI, MINRAD, RNORML, SIDE1,    &
-!$OMP&         SIDE2, IERR_PRIV, VERTEX_PRIV, MINRAD_PRIV, PTINSIMP, &
-!$OMP&         IPIV, A, B, CENTER, LQ, PLANE, PROJ, TAU, WORK,       &
-!$OMP&         IWORK_DWNNLS, W_DWNNLS, WORK_DWNNLS, X_DWNNLS),       &
+!$OMP&         SIDE2, IERR_PRIV, LAST, VERTEX_PRIV, MINRAD_PRIV,     &
+!$OMP&         PTINSIMP, IPIV, A, B, CENTER, LQ, PLANE, PROJ, TAU,   &
+!$OMP&         IWORK_DWNNLS, W_DWNNLS, WORK, WORK_DWNNLS, X_DWNNLS), &
 !
 ! Any variables not explicitly listed above receive the SHARED scope
 ! by default and are visible across all threads.
 !$OMP& DEFAULT(SHARED), &
 !
 !$OMP& IF(PLVL1)
-!$OMP DO SCHEDULE(DYNAMIC)
+!$OMP DO SCHEDULE(DYNAMIC, CHUNKSIZEL)
 OUTER : DO MI = 1, M
-   !$OMP CRITICAL(CHECK_IERR)
    ! Check if this interpolation point was already found.
-   IF (IERR(MI) .EQ. 40) THEN
-      IERR(MI) = 0
-      IERR_PRIV = 0
-   ELSE
-      IERR_PRIV = -1
-   END IF
-   !$OMP END CRITICAL(CHECK_IERR)
-   IF(IERR_PRIV .EQ. -1) CYCLE OUTER
+   IF (IERR(MI) .EQ. 0) CYCLE OUTER
 
    ! Initialize the projection and reset the residual.
    PROJ(:) = Q(:,MI)
@@ -1348,7 +1359,7 @@ OUTER : DO MI = 1, M
    ! If there is no useable seed or if chaining is turned off, then make a new
    ! simplex.
    IF( (.NOT. CHAINL) .OR. SEED(1) .EQ. 0) THEN
-!      CALL MAKEFIRSTSIMP(); IF(IERR_PRIV .NE. 0) CYCLE OUTER
+!      CALL MAKEFIRSTSIMP(); IF(IERR(MI) .NE. 0) CYCLE OUTER
 !
 ! Due to OpenMP's handling of variable scope, the parallel implementation of
 ! the subroutine MAKEFIRSTSIMP() has been in-lined here.
@@ -1408,11 +1419,11 @@ DO I = 1, N
       MINRAD_PRIV = CURRRAD; VERTEX_PRIV = I;
    END IF
 END DO
-!$OMP CRITICAL(REDUC_1)
+!$OMP CRITICAL
 IF (MINRAD_PRIV < MINRAD) THEN
    MINRAD = MINRAD_PRIV; SIMPS(1,MI) = VERTEX_PRIV;
 END IF
-!$OMP END CRITICAL(REDUC_1)
+!$OMP END CRITICAL
 ! Find the second point, i.e., the closest point to PTS(:,SIMPS(1,MI)).
 MINRAD_PRIV = HUGE(0.0_R8)
 !$OMP BARRIER
@@ -1429,17 +1440,19 @@ DO I = 1, N
       MINRAD_PRIV = CURRRAD; VERTEX_PRIV = I
    END IF
 END DO
-!$OMP CRITICAL(REDUC_2)
+!$OMP CRITICAL
 IF (MINRAD_PRIV < MINRAD) THEN
    MINRAD = MINRAD_PRIV; SIMPS(2,MI) = VERTEX_PRIV
 END IF
-!$OMP END CRITICAL(REDUC_2)
+!$OMP END CRITICAL
 !$OMP END PARALLEL
 ! This is the end of the Level 2 parallel block.
 
 ! Set up the first row of the system A X = B.
 A(:,1) = PTS(:,SIMPS(2,MI)) - PTS(:,SIMPS(1,MI))
 B(1) = DDOT(D, A(:,1), 1, A(:,1), 1) / 2.0_R8
+! Initialize the error flag.
+IERR(MI) = 0
 
 ! Loop to collect the remaining D+1 vertices for the first simplex.
 DO I = 2, D
@@ -1457,23 +1470,16 @@ DO I = 2, D
    !
    ! The PRIVATE list specifies uninitialized variables, of which each
    ! thread has a private copy.
-   !$OMP& PRIVATE(J, CURRRAD, LQ, CENTER, WORK, TAU, IPIV, ITMP), &
-   !
-   ! The REDUCTION clause specifies a PRIVATE variable that will retain
-   ! some value (i.e., max, min, sum, etc.) upon output.
-   !$OMP& REDUCTION(MAX:IERR_PRIV), &
+   !$OMP& PRIVATE(J, CURRRAD, LQ, CENTER, WORK, TAU, IPIV, ITMP, &
+   !$OMP&         IERR_PRIV), &
    !
    ! Any variables not explicitly listed above receive the SHARED scope
    ! by default and are visible across all threads.
    !$OMP& DEFAULT(SHARED), &
    !
    !$OMP& IF(PLVL2)
-
-   ! Initialize the error flag.
-   IERR_PRIV = 0
    !$OMP DO SCHEDULE(STATIC)
    DO J = 1, N
-      IF (IERR_PRIV .NE. 0) CYCLE
       ! Check that this point is not already in the simplex.
       IF (ANY(SIMPS(:,MI) .EQ. J)) CYCLE
       ! Add P* to LS system, and compute the minimum norm solution.
@@ -1483,9 +1489,9 @@ DO I = 2, D
       ! Compute A^T P = Q R.
       CALL DGEQP3(D, I, LQ, D, IPIV, TAU, WORK, LWORK, IERR_PRIV)
       IF(IERR_PRIV < 0) THEN ! LAPACK illegal input error.
-         IERR_PRIV = 80
+         !$OMP ATOMIC WRITE
+         IERR(MI) = 80
       ELSE IF (ABS(LQ(I,I)) < EPSL) THEN ! A is rank-deficient.
-         IERR_PRIV = 0
          CYCLE ! If rank-deficient, skip this point.
       END IF
       ! Set CENTER = P^T B.
@@ -1496,7 +1502,8 @@ DO I = 2, D
       CALL DORMQR('L', 'N', D, 1, I, LQ, D, TAU, CENTER, D, WORK, LWORK, &
          IERR_PRIV)
       IF(IERR_PRIV < 0) THEN ! LAPACK illegal input error.
-         IERR_PRIV = 83
+         !$OMP ATOMIC WRITE
+         IERR(MI) = 83
       END IF
       ! Calculate the radius and compare it to the current minimum.
       CURRRAD = DNRM2(D, CENTER, 1)
@@ -1504,31 +1511,19 @@ DO I = 2, D
          MINRAD_PRIV = CURRRAD; VERTEX_PRIV = J
       END IF
    END DO
-   !$OMP CRITICAL(REDUC_3)
+   !$OMP CRITICAL
    IF (MINRAD_PRIV < MINRAD) THEN
       MINRAD = MINRAD_PRIV; SIMPS(I+1,MI) = VERTEX_PRIV
    END IF
-   !$OMP END CRITICAL(REDUC_3)
+   !$OMP END CRITICAL
    !$OMP END PARALLEL
    ! End of Level 2 parallel block.
 
    ! Check the final error flag.
-   IF (IERR_PRIV .NE. 0) THEN
-      ! Store the error code.
-      !$OMP CRITICAL(CHECK_IERR)
-      IERR(MI) = IERR_PRIV
-      !$OMP END CRITICAL(CHECK_IERR)
-      CYCLE OUTER
-   END IF
+   IF (IERR(MI) .NE. 0) CYCLE OUTER
    ! Check that a point was found. If not, then all the points must lie in a
    ! lower dimensional linear manifold (error case).
-   IF (SIMPS(I+1,MI) .EQ. 0) THEN
-      ! Store the error code.
-      !$OMP CRITICAL(CHECK_IERR)
-      IERR(MI) = 31
-      !$OMP END CRITICAL(CHECK_IERR)
-      CYCLE OUTER
-   END IF
+   IF (SIMPS(I+1,MI) .EQ. 0) THEN; IERR(MI) = 31; CYCLE OUTER; END IF
    ! If all operations were successful, add the best P* to the LS system.
    A(:,I) = PTS(:,SIMPS(I+1,MI)) - PTS(:,SIMPS(1,MI))
    B(I) = DDOT(D, A(:,I), 1, A(:,I), 1) / 2.0_R8 
@@ -1548,11 +1543,19 @@ END DO
       END DO
    END IF
 
+! Compute the last index of this chunk.
+IF (.NOT. PLVL1) THEN
+! If no Level 1 parallelism is exploited, then it is safe to check all future
+! interpolation points.
+   LAST = M 
+ELSE
+! If PMODE = 1 or 3, Level 1 parallelism is exploited, and it is only safe
+! to check interpolation points up to the end of this chunk.
+   LAST = MIN(MI - MOD(MI-1, CHUNKSIZEL) + CHUNKSIZEL - 1, M)
+END IF
+
    ! Inner loop searching for a simplex containing the point Q(:,MI).
    INNER : DO K = 1, IBUDGETL
-
-      ! If chaining is on, save each good simplex as the next seed.
-      IF (CHAINL) SEED(:) = SIMPS(:,MI)
 
       ! Check if the current simplex contains Q(:,MI).
 !
@@ -1580,103 +1583,69 @@ PTINSIMP = .FALSE.
 
 ! Compute the LU factorization of the matrix A whose rows are P_{I+1} - P_1.
 LQ = A
-CALL DGETRF(D, D, LQ, D, IPIV, IERR_PRIV)
-IF (IERR_PRIV < 0) THEN ! LAPACK illegal input.
-   ! Store the error code.
-   !$OMP CRITICAL(CHECK_IERR)
-   IERR(MI) = 81
-   !$OMP END CRITICAL(CHECK_IERR)
-   CYCLE OUTER
-ELSE IF (IERR_PRIV > 0) THEN ! Rank-deficiency detected.
-   ! Store the error code.
-   !$OMP CRITICAL(CHECK_IERR)
-   IERR(MI) = 61
-   !$OMP END CRITICAL(CHECK_IERR)
-   CYCLE OUTER
+CALL DGETRF(D, D, LQ, D, IPIV, IERR(MI))
+IF (IERR(MI) < 0) THEN ! LAPACK illegal input.
+   IERR(MI) = 81; CYCLE OUTER
+ELSE IF (IERR(MI) > 0) THEN ! Rank-deficiency detected.
+        IERR(MI) = 61; CYCLE OUTER
 END IF
 ! Solve A^T w = WORK to get the affine weights for Q(:,MI) or its projection.
 WORK(1:D) = PROJ(:) - PTS(:,SIMPS(1,MI))
-CALL DGETRS('N', D, 1, LQ, D, IPIV, WORK(1:D), D, IERR_PRIV)
-IF (IERR_PRIV < 0) THEN ! LAPACK illegal input.
-   ! Store the error code.
-   !$OMP CRITICAL(CHECK_IERR)
-   IERR(MI) = 82
-   !$OMP END CRITICAL(CHECK_IERR)
-   CYCLE OUTER
+CALL DGETRS('N', D, 1, LQ, D, IPIV, WORK(1:D), D, IERR(MI))
+IF (IERR(MI) < 0) THEN ! LAPACK illegal input.
+   IERR(MI) = 82; CYCLE OUTER
 END IF
 WEIGHTS(2:D+1,MI) = WORK(1:D)
 WEIGHTS(1,MI) = 1.0_R8 - SUM(WEIGHTS(2:D+1,MI))
 ! Check if the weights for Q(:,MI) are nonnegative.
 IF (ALL(WEIGHTS(:,MI) .GE. -EPSL)) PTINSIMP = .TRUE.
 
-! If Level 1 parallelism is active, do not parallelize this loop.
-IF (PLVL1) THEN
-   ! Loop over all remaining unsolved interoplation points. Uses PLANE(:)
-   ! as a work array.
-   DO I = MI+1, M
-      ! Check that no solution has already been found.
-      !$OMP CRITICAL(CHECK_IERR)
-      ITMP = IERR(I)
-      !$OMP END CRITICAL(CHECK_IERR)
-      IF (ITMP .NE. 40) CYCLE
-      ! Solve A^T w = PLANE to get the affine weights for Q(:,I).
-      PLANE(2:D+1) = Q(:,I) - PTS(:,SIMPS(1,MI))
-      CALL DGETRS('N', D, 1, LQ, D, IPIV, PLANE(2:D+1), D, ITMP)
-      IF (ITMP < 0) CYCLE ! Illegal input error that should never occurr.
-      ! Check if the weights define a convex combination.
-      PLANE(1) = 1.0_R8 - SUM(PLANE(2:D+1))
-      IF (ALL(PLANE(1:D+1) .GE. -EPSL)) THEN
-         !$OMP CRITICAL(CHECK_IERR)
-         IF(IERR(I) .EQ. 40) THEN
-            ! Copy the simplex indices and weights then flag as complete.
-            SIMPS(:,I) = SIMPS(:,MI)
-            WEIGHTS(:,I) = PLANE(1:D+1)
-            IERR(I) = 0
-         END IF
-         !$OMP END CRITICAL(CHECK_IERR)
-      END IF
-   END DO
-! If Level 1 parallelism is not active, there will be no conflicts for
-! parallelizing this loop.
-ELSE
-   ! Level 2 parallel block over all remaining unsolved interoplation
-   ! points. Uses PLANE(:) as a work array.
-   !$OMP PARALLEL DO &
-   !
-   ! The PRIVATE list specifies uninitialized variables, of which each
-   ! thread has a private copy.
-   !$OMP& PRIVATE(I, PLANE, ITMP), &
-   !
-   ! Any variables not explicitly listed above receive the SHARED scope
-   ! by default and are visible across all threads.
-   !$OMP& DEFAULT(SHARED), &
-   !
-   !$OMP& SCHEDULE(STATIC), &
-   !$OMP& IF(PLVL2)
-   DO I = MI+1, M
-      ! Check that no solution has already been found.
-      IF (IERR(I) .NE. 40) CYCLE
-      ! Solve A^T w = PLANE to get the affine weights for Q(:,I).
-      PLANE(2:D+1) = Q(:,I) - PTS(:,SIMPS(1,MI))
-      CALL DGETRS('N', D, 1, LQ, D, IPIV, PLANE(2:D+1), D, ITMP)
-      IF (ITMP < 0) CYCLE ! Illegal input error that should never occurr.
-      ! Check if the weights define a convex combination.
-      PLANE(1) = 1.0_R8 - SUM(PLANE(2:D+1))
-      IF (ALL(PLANE(1:D+1) .GE. -EPSL)) THEN
-         ! Copy the simplex indices and weights then flag as complete.
-         SIMPS(:,I) = SIMPS(:,MI)
-         WEIGHTS(:,I) = PLANE(1:D+1)
-         IERR(I) = 0
-      END IF
-   END DO
-   !$OMP END PARALLEL DO
-END IF
+! Level 2 parallel block over current chunk of interoplation points.
+! Compute the affine weights for the interpolation points in this chunk.
+! If PMODE=2, then LAST=M and this loop is carried out over all remaining
+! interpolation points. Uses PLANE(:) as a work array.
+!$OMP PARALLEL DO &
+!
+! The PRIVATE list specifies uninitialized variables, of which each
+! thread has a private copy.
+!$OMP& PRIVATE(I, PLANE, ITMP), &
+!
+! Any variables not explicitly listed above receive the SHARED scope
+! by default and are visible across all threads.
+!$OMP& DEFAULT(SHARED), &
+!
+!$OMP& SCHEDULE(STATIC), &
+!$OMP& IF(PLVL2)
+DO I = MI+1, LAST
+   ! Check that no solution has already been found.
+   IF (IERR(I) .NE. 40) CYCLE
+   ! Solve A^T w = PLANE to get the affine weights for Q(:,I).
+   PLANE(2:D+1) = Q(:,I) - PTS(:,SIMPS(1,MI))
+   CALL DGETRS('N', D, 1, LQ, D, IPIV, PLANE(2:D+1), D, ITMP)
+   IF (ITMP < 0) CYCLE ! Illegal input error that should never occurr.
+   ! Check if the weights define a convex combination.
+   PLANE(1) = 1.0_R8 - SUM(PLANE(2:D+1))
+   IF (ALL(PLANE(1:D+1) .GE. -EPSL)) THEN
+      ! Copy the simplex indices and weights then flag as complete.
+      SIMPS(:,I) = SIMPS(:,MI)
+      WEIGHTS(:,I) = PLANE(1:D+1)
+      IERR(I) = 0
+   END IF
+END DO
+!$OMP END PARALLEL DO
 ! End of Level 2 parallel block.
 ! RETURN
 ! END FUNCTION PTINSIMP
 ! This marks the end of the in-lined MAKEFIRSTSIMP() subroutine call.
 
-      IF (PTINSIMP) EXIT INNER
+      IF (PTINSIMP) THEN
+         ! If chaining is on, set the next seed to this simplex.
+         IF (CHAINL) SEED(:) = SIMPS(:,MI)
+         EXIT INNER
+      END IF
+
+      ! If chaining is on, save each good simplex as the next seed.
+      IF (CHAINL) SEED(:) = SIMPS(:,MI)
 
       ! Swap out the least weighted vertex, but save its value in case it
       ! needs to be restored later.
@@ -1697,7 +1666,7 @@ END IF
       END IF
 
       ! Compute the next simplex (do one flip).
-!      CALL MAKESIMPLEX(); IF (IERR_PRIV .NE. 0) CYCLE OUTER
+!      CALL MAKESIMPLEX(); IF (IERR(MI) .NE. 0) CYCLE OUTER
 !
 ! Due to OpenMP's handling of variable scope, the parallel implementation of
 ! the subroutine MAKESIMPLEX() has been in-lined here.
@@ -1752,25 +1721,17 @@ IF (D > 1) THEN ! Check that D-1 > 0, otherwise the plane is trivial.
    ! Compute the QR factorization.
    IPIV=0
    LQ = A
-   CALL DGEQP3(D, D-1, LQ, D, IPIV, TAU, WORK, LWORK, IERR_PRIV)
-   IF(IERR_PRIV < 0) THEN ! LAPACK illegal input error.
-      ! Store the error code.
-      !$OMP CRITICAL(CHECK_IERR)
-      IERR(MI) = 80
-      !$OMP END CRITICAL(CHECK_IERR)
-      CYCLE OUTER
+   CALL DGEQP3(D, D-1, LQ, D, IPIV, TAU, WORK, LWORK, IERR(MI))
+   IF(IERR(MI) < 0) THEN ! LAPACK illegal input error.
+      IERR(MI) = 80; CYCLE OUTER
    END IF
    ! The nullspace is given by the last column of Q.
    PLANE(1:D-1) = 0.0_R8
    PLANE(D) = 1.0_R8
    CALL DORMQR('L', 'N', D, 1, D-1, LQ, D, TAU, PLANE, D, WORK, &
-    LWORK, IERR_PRIV)
-   IF(IERR_PRIV < 0) THEN ! LAPACK illegal input error.
-      ! Store the error code.
-      !$OMP CRITICAL(CHECK_IERR)
-      IERR(MI) = 83
-      !$OMP END CRITICAL(CHECK_IERR)
-      CYCLE OUTER
+    LWORK, IERR(MI))
+   IF(IERR(MI) < 0) THEN ! LAPACK illegal input error.
+      IERR(MI) = 83; CYCLE OUTER
    END IF
    ! Calculate the constant \alpha defining the plane.
    PLANE(D+1) = DDOT(D,PLANE(1:D),1,PTS(:,SIMPS(1,MI)),1)
@@ -1781,10 +1742,11 @@ END IF
 ! Compute the sign for the side of PLANE containing Q(:,MI).
 SIDE1 =  DDOT(D,PLANE(1:D),1,PROJ(:),1) - PLANE(D+1)
 SIDE1 = SIGN(1.0_R8,SIDE1)
-! Initialize the center, radius, simplex, and OpenMP variabls.
+! Initialize the center, radius, simplex, error flag, and OpenMP variabls.
 SIMPS(D+1,MI) = 0
 CENTER(:) = 0.0_R8
 TAU(:) = 0.0_R8
+IERR(MI) = 0
 MINRAD = HUGE(0.0_R8)
 MINRAD_PRIV = HUGE(0.0_R8)
 VERTEX_PRIV = 0
@@ -1798,23 +1760,15 @@ VERTEX_PRIV = 0
 !
 ! The PRIVATE list specifies uninitialized variables, of which each
 ! thread has a private copy.
-!$OMP& PRIVATE(I, SIDE2, LQ, CENTER, IPIV), &
-!
-! The REDUCTION clause specifies a PRIVATE variable that will retain
-! some value (i.e., max, min, sum, etc.) upon output.
-!$OMP& REDUCTION(MAX:IERR_PRIV), &
+!$OMP& PRIVATE(I, SIDE2, LQ, CENTER, IPIV, IERR_PRIV), &
 !
 ! Any variables not explicitly listed above receive the SHARED scope
 ! by default and are visible across all threads.
 !$OMP& DEFAULT(SHARED), &
 !
 !$OMP& IF(PLVL2)
-
-! Initialize the error flag.
-IERR_PRIV = 0
 !$OMP DO SCHEDULE(STATIC)
 DO I = 1, N
-   IF(IERR_PRIV .NE. 0) CYCLE
    ! Check that P* is inside the current ball.
    IF (DNRM2(D, PTS(:,I) - CENTER(:), 1) > MINRAD_PRIV) CYCLE ! If not, skip.
    ! Check that P* is on the appropriate halfspace.
@@ -1828,39 +1782,36 @@ DO I = 1, N
    ! Compute A^T = LU.
    CALL DGETRF(D, D, LQ, D, IPIV, IERR_PRIV)
    IF (IERR_PRIV < 0) THEN ! LAPACK illegal input.
-      IERR_PRIV = 81
+      !$OMP ATOMIC WRITE
+      IERR(MI) = 81
    ELSE IF (IERR_PRIV > 0) THEN ! Rank-deficiency detected.
-      IERR_PRIV = 61
+      !$OMP ATOMIC WRITE
+      IERR(MI) = 61
    END IF
    ! Use A^T = LU to solve A X = B, where X = CENTER - P_1.
    CALL DGETRS('T', D, 1, LQ, D, IPIV, CENTER, D, IERR_PRIV)
    IF (IERR_PRIV < 0) THEN ! LAPACK illegal input.
-      IERR_PRIV = 82
+      !$OMP ATOMIC WRITE
+      IERR(MI) = 82
    END IF
    ! Update the new radius, center, and simplex.
    MINRAD_PRIV = DNRM2(D, CENTER, 1)
    CENTER(:) = CENTER(:) + PTS(:,SIMPS(1,MI))
    VERTEX_PRIV = I
 END DO
-!$OMP CRITICAL(REDUC_4)
+!$OMP CRITICAL
 ! Check if PTS(:,VERTEX_PRIV) is inside the circumball.
 IF (DNRM2(D, PTS(:,VERTEX_PRIV) - TAU(:), 1) < MINRAD) THEN
    MINRAD = MINRAD_PRIV
    TAU(:) = CENTER(:)
    SIMPS(D+1,MI) = VERTEX_PRIV
 END IF
-!$OMP END CRITICAL(REDUC_4)
+!$OMP END CRITICAL
 !$OMP END PARALLEL
 ! End level 2 parallel region.
 
 ! Check for error flags.
-IF(IERR_PRIV .NE. 0) THEN
-   ! Store the error code.
-   !$OMP CRITICAL(CHECK_IERR)
-   IERR(MI) = IERR_PRIV
-   !$OMP END CRITICAL(CHECK_IERR)
-   CYCLE OUTER
-END IF
+IF(IERR(MI) .NE. 0) CYCLE OUTER
 ! Check for extrapolation condition.
 IF(SIMPS(D+1,MI) .NE. 0) THEN
    ! Add new point to the linear system.
@@ -1877,14 +1828,11 @@ END IF
          IF (EXTRAPL < EPSL) THEN
             SIMPS(:,MI) = 0; WEIGHTS(:,MI) = 0  ! Zero all output values.
             ! Set the error flag and skip this point.
-            !$OMP CRITICAL(CHECK_IERR)
-            IERR(MI) = 2
-            !$OMP END CRITICAL(CHECK_IERR)
-            CYCLE OUTER
+            IERR(MI) = 2; CYCLE OUTER
          END IF
 
          ! Otherwise, project the extrapolation point onto the convex hull.
-!         CALL PROJECT(); IF (IERR_PRIV .NE. 0) CYCLE OUTER
+!         CALL PROJECT(); IF (IERR(MI) .NE. 0) CYCLE OUTER
 !
 ! Due to OpenMP's handling of variable scope, the parallel (identical to serial)
 ! implementation of the subroutine PROJECT() has been in-lined here.
@@ -1898,44 +1846,20 @@ END IF
 
 ! Allocate work arrays.
 IF (.NOT. ALLOCATED(IWORK_DWNNLS)) THEN
-   ALLOCATE(IWORK_DWNNLS(D+1+N), STAT=IERR_PRIV)
-   IF(IERR_PRIV .NE. 0) THEN
-      ! Store the error code.
-      !$OMP CRITICAL(CHECK_IERR)
-      IERR(MI) = 70
-      !$OMP END CRITICAL(CHECK_IERR)
-      CYCLE OUTER
-   END IF
+   ALLOCATE(IWORK_DWNNLS(D+1+N), STAT=IERR(MI))
+   IF(IERR(MI) .NE. 0) THEN; IERR(MI) = 70; CYCLE OUTER; END IF
 END IF
 IF (.NOT. ALLOCATED(WORK_DWNNLS)) THEN
-   ALLOCATE(WORK_DWNNLS(D+1+N*5), STAT=IERR_PRIV)
-   IF(IERR_PRIV .NE. 0) THEN
-      ! Store the error code.
-      !$OMP CRITICAL(CHECK_IERR)
-      IERR(MI) = 70
-      !$OMP END CRITICAL(CHECK_IERR)
-      CYCLE OUTER
-   END IF
+   ALLOCATE(WORK_DWNNLS(D+1+N*5), STAT=IERR(MI))
+   IF(IERR(MI) .NE. 0) THEN; IERR(MI) = 70; CYCLE OUTER; END IF
 END IF
 IF (.NOT. ALLOCATED(W_DWNNLS)) THEN
-   ALLOCATE(W_DWNNLS(D+1,N+1), STAT=IERR_PRIV)
-   IF(IERR_PRIV .NE. 0) THEN
-      ! Store the error code.
-      !$OMP CRITICAL(CHECK_IERR)
-      IERR(MI) = 70
-      !$OMP END CRITICAL(CHECK_IERR)
-      CYCLE OUTER
-   END IF
+   ALLOCATE(W_DWNNLS(D+1,N+1), STAT=IERR(MI))
+   IF(IERR(MI) .NE. 0) THEN; IERR(MI) = 70; CYCLE OUTER; END IF
 END IF
 IF (.NOT. ALLOCATED(X_DWNNLS)) THEN
-   ALLOCATE(X_DWNNLS(N), STAT=IERR_PRIV)
-   IF(IERR_PRIV .NE. 0) THEN
-      ! Store the error code.
-      !$OMP CRITICAL(CHECK_IERR)
-      IERR(MI) = 70
-      !$OMP END CRITICAL(CHECK_IERR)
-      CYCLE OUTER
-   END IF
+   ALLOCATE(X_DWNNLS(N), STAT=IERR(MI))
+   IF(IERR(MI) .NE. 0) THEN; IERR(MI) = 70; CYCLE OUTER; END IF
 END IF
 
 ! Initialize work array and settings values.
@@ -1947,19 +1871,11 @@ W_DWNNLS(2:D+1,N+1) = PROJ(:)    ! Copy extrapolation point.
 ! Compute the solution to the inequality constrained least squares problem to
 ! get the projection coefficients.
 CALL DWNNLS(W_DWNNLS, D+1, 1, D, N, 0, PRGOPT_DWNNLS, X_DWNNLS, RNORML, &
-   IERR_PRIV, IWORK_DWNNLS, WORK_DWNNLS)
-IF (IERR_PRIV .EQ. 1) THEN ! Failure to converge.
-   ! Store the error code.
-   !$OMP CRITICAL(CHECK_IERR)
-   IERR(MI) = 71
-   !$OMP END CRITICAL(CHECK_IERR)
-   CYCLE OUTER
+   IERR(MI), IWORK_DWNNLS, WORK_DWNNLS)
+IF (IERR(MI) .EQ. 1) THEN ! Failure to converge.
+   IERR(MI) = 71; CYCLE OUTER
 ELSE IF (IERR(MI) .EQ. 2) THEN ! Illegal input detected.
-   ! Store the error code.
-   !$OMP CRITICAL(CHECK_IERR)
-   IERR(MI) = 72
-   !$OMP END CRITICAL(CHECK_IERR)
-   CYCLE OUTER
+   IERR(MI) = 72; CYCLE OUTER
 END IF
 ! Compute the actual projection via matrix vector multiplication.
 CALL DGEMV('N', D, N, 1.0_R8, PTS, D, X_DWNNLS, 1, 0.0_R8, PROJ, 1)
@@ -1973,10 +1889,7 @@ CALL DGEMV('N', D, N, 1.0_R8, PTS, D, X_DWNNLS, 1, 0.0_R8, PROJ, 1)
             ! If present, record the unscaled RNORM output.
             IF (PRESENT(RNORM)) RNORM(MI) = RNORML*PTS_SCALE
             ! Set the error flag and skip this point.
-            !$OMP CRITICAL(CHECK_IERR)
-            IERR(MI) = 2
-            !$OMP END CRITICAL(CHECK_IERR)
-            CYCLE OUTER
+            IERR(MI) = 2; CYCLE OUTER
          END IF
 
          ! Otherwise, restore the previous simplex and continue with the 
@@ -1993,30 +1906,17 @@ CALL DGEMV('N', D, N, 1.0_R8, PTS, D, X_DWNNLS, 1, 0.0_R8, PROJ, 1)
    IF (K > IBUDGETL) THEN 
       SIMPS(:,MI) = 0; WEIGHTS(:,MI) = 0  ! Zero all output values.
       ! Set the error flag and skip this point.
-      !$OMP CRITICAL(CHECK_IERR)
-      IERR(MI) = 60
-      !$OMP END CRITICAL(CHECK_IERR)
-      CYCLE OUTER
+      IERR(MI) = 60; CYCLE OUTER
    END IF
 
    ! If the residual is nonzero, set the extrapolation flag.
-   IF (RNORML > EPSL) THEN
-      !$OMP CRITICAL(CHECK_IERR)
-      IERR(MI) = 1
-      !$OMP END CRITICAL(CHECK_IERR)
-   END IF
+   IF (RNORML > EPSL) IERR(MI) = 1
 
    ! If present, record the RNORM output.
    IF (PRESENT(RNORM)) RNORM(MI) = RNORML*PTS_SCALE
 
-END DO OUTER  ! End of outer loop over all interpolation points.
-!$OMP END DO
-
-! If INTERP_IN and INTERP_OUT are present, compute all values f(q).
-IF (PRESENT(INTERP_IN)) THEN
-   ! Level 1 parallel loop over all interpolation points.
-   !$OMP DO SCHEDULE(STATIC)
-   DO MI = 1, M
+   ! Compute interpolation point response values.
+   IF (PRESENT(INTERP_IN)) THEN
       ! Check for errors.
       IF (IERR(MI) .LE. 1) THEN
          ! Compute the weighted sum of vertex response values.
@@ -2025,9 +1925,10 @@ IF (PRESENT(INTERP_IN)) THEN
              + INTERP_IN(:,SIMPS(K,MI)) * WEIGHTS(K,MI)
          END DO
       END IF
-   END DO
-   !$OMP END DO
-END IF
+   END IF
+
+END DO OUTER  ! End of outer loop over all interpolation points.
+!$OMP END DO
 
 ! Free optional work arrays.
 IF (ALLOCATED(IWORK_DWNNLS)) DEALLOCATE(IWORK_DWNNLS)

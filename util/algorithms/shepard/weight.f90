@@ -28,7 +28,7 @@ SUBROUTINE WEIGHT(PTS, PT, WTS)
      WHERE (DISTS .LT. EPS) WTS = 1._REAL64
   ELSE
      ! Compute the weights based on inverse distances.
-     WTS(:) = 1._REAL64 / DISTS(:)
+     WTS(:) = 1._REAL64 / DISTS(:)**2
   END IF
   ! Convexify the weights.
   WTS = WTS / SUM(WTS)

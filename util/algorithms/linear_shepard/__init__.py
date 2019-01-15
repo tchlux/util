@@ -17,7 +17,8 @@ class LSHEP(Approximator):
         self.linear_shepard = fmodpy.fimport(
             os.path.join(CWD,"linear_shepard.f95"),
             module_link_args=["-lgfortran","-lblas","-llapack"], 
-            output_directory=CWD)
+            output_directory=CWD, working_directory="fmodpy", 
+            autocompile_extra_files=True, verbose=True, force_rebuild=True)
         self.lshep = self.linear_shepard.lshep
         self.lshepval = self.linear_shepard.lshepval
         self.ierrors = {}
@@ -47,8 +48,10 @@ class LSHEP(Approximator):
             row = []
             for (f, a, rw) in zip(self.f, self.a, self.rw):
                 x_pt = np.array(np.reshape(x_pt,(self.x.shape[0],)), order="F")
+                ierr = 0
                 resp = self.lshepval(x_pt, self.x.shape[0], self.x.shape[1], 
-                                     self.x, f, a, rw)
+                                     self.x, f, a, rw, ierr)
+                self.ierrors[ierr] = self.ierrors.get(ierr, 0) + 1
                 row.append(resp)
             response.append(row)
             # self.ierrors[ier] = self.ierrors.get(ier,0) + 1

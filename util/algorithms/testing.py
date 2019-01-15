@@ -86,29 +86,3 @@ def test_support(model, low=0, upp=1, plot_points=3000, p=None,
     #            plot_points=plot_points, vectorized=True)
     return p, x, y
 
-
-if __name__ == "__main__":
-    from util.algorithms import *
-
-    print("Adding surface to plot..")
-    # model = LSHEP
-    # model = Shepard
-    # model = condition(Voronoi, method="MPCA", scale=True)
-    # model = condition(Delaunay, method="MPCA", scale=True)
-    # model = NearestNeighbor(k=4, method=Voronoi)
-    model = condition(KNN, display=True)(display=True)
-    # f = lambda x: (x[0] - .5)**2 + x[1]
-    p,_,_ = test_plot(model, N=500, D=2, low=-.1, upp=1.1, noise=0, # fun=f,
-                      random=True, plot_points=4000, classifier=True) # 6, 8
-    print("Generating plot HTML..")
-    p.show()
-
-
-    # import random
-    # model = KNN()
-    # n = 100
-    # x = np.random.random(size=(n,10))
-    # y = [random.choice(['a', 'b', 'c', 'd', 'e']) for i in range(n)]
-    # model.fit(x,y)
-    # from util.math import is_numeric
-    # print(model(np.random.random(10,)))
