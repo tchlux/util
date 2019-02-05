@@ -47,6 +47,7 @@ def test_Timer():
     a.start()
     assert(abs(first - a.start) > 1)
     assert(a.check() < .001)    
+    a.stop()
     print("passed.")
 
 
@@ -106,6 +107,6 @@ def test_AtomicOpen(display=False):
 
 
 if __name__ == "__main__":
-    test_algorithms()
-    # test_Timer()
+    # test_algorithms()
+    test_Timer()
     # test_AtomicOpen()

@@ -60,3 +60,9 @@ class Voronoi(WeightedApproximator):
             weights.append( supported_weights )
         return indices, weights
 
+
+if __name__ == "__main__":
+    from util.algorithms.testing import test_plot
+    model = Voronoi()
+    p, x, y = test_plot(model, random=True, N=1000)
+    p.show()

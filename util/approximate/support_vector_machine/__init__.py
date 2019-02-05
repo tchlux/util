@@ -1,8 +1,8 @@
+from util.algorithms.base import Approximator
+
 # Support Vector Regressor
 SVR_KERNEL = "poly"
 
-
-    
 # ==================================
 #      Support Vector Regressor     
 # ==================================

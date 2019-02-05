@@ -483,6 +483,8 @@ class Data(list):
                 raise(StopIteration)
             self.index += 1
             return self.data[self.indices[self.index-1], self.column]
+        # Define the "in" method to return True for contained values.
+        def __in__(self, value): return any(v == value for v in self)
         # Use the iteration to generate a string of this column
         def __str__(self):
             return str(list(self))
@@ -650,7 +652,7 @@ class Data(list):
             (type(self.types) == type(None))):
             raise(self.Empty("Cannot set item for empty data."))
         self.numeric = None # Reset the numeric representation (if it existed)
-        # Special case assignment of new column
+        # Special case assignment of new column (*RETURN* to exit function).
         if ((type(index) == str) and (index not in self.names)):
             return self.add_column(value, name=index)
         # Get the list of rows and list of columns being assigned.
@@ -662,31 +664,25 @@ class Data(list):
         # If it has a "length" then use that to verify singleton status.
         if (singleton and hasattr(value, "__len__")):
             singleton = len(value) != (len(rows)*len(cols))
+        # Assume if the "value" is a string, then this is a singleton.
+        if (not singleton) and (type(value) == str): singleton = True
         # Assume singleton status is correct.
-        if not singleton: value_iter = value.__iter__()
-        # Iterate over rows and perform assignment
-        step = 0
-        new_type = type(None)
-        for row in rows:
+        if not singleton:
+            value_iter = value.__iter__()
+        # Reset type entirely if the new data assigns to the full column.
+        if (len(rows) == len(self)):
+            for col in cols: self.types[col] = type(None)
+        # Iterate over rows and perform assignment.
+        for step, row in enumerate(rows):
             if type(row) != int:
                 raise(self.BadIndex(f"The provided row index of type {type(row)}, {row}, is not understood."))
             for col in cols:
                 # Retreive next value from iterator if necessary.
                 if not singleton:
-                    try:
-                        value = value_iter.__next__()
-                    except StopIteration:
-                        raise(self.BadValue(f"Provided iterable only contained {step} elements, expected more."))
-                # Handle type of new value appropriately
-                if (len(rows) == len(self)):
-                    # Check to find the type of the new column (if appropriate)
-                    if (new_type == type(None)):
-                        new_type = type(value)
-                    # Check the type of the new value being assigned
-                    elif (type(value) != new_type):
-                        raise(self.BadAssignment(f"Provided value {value} of type {type(value)} does not match expected type {new_type}."))
+                    try:    value = next(value_iter)
+                    except: raise(self.BadValue(f"Provided iterable only contained {step+1} elements, expected more."))
                 # The existing column doesn't have a type, assign it.
-                elif (self.types[col] == type(None)):
+                if (self.types[col] == type(None)):
                     self.types[col] = type(value)
                 # Mark this row as contianing a missing value if assigned 'None'.
                 elif (type(value) == type(None)):
@@ -702,14 +698,10 @@ class Data(list):
                     if (id(self[row]) in self.missing):
                         if (None not in self[row]):
                             self.missing.remove(id(self[row]))
-                step += 1
-        # Update column type if it was totally reassigned.
-        if (len(rows) == len(self)):
-            self.types[cols[0]] = new_type
         # Verify that the iterable has been exhausted.
         if (not singleton):
             try:
-                value = value_iter.__next__()
+                value = next(value_iter)
                 raise(self.BadAssignment(f"Column assignment requires a column of length {len(self)}, provided values iterable was too long."))
             except StopIteration: pass
 
@@ -763,9 +755,14 @@ class Data(list):
         return string
 
     # Return True if empty.
+    @property
     def empty(self):
         return ((type(self.names) == type(None)) or 
                 (type(self.types) == type(None)))
+
+    # Declare the "start" property / function to re-initialized when called.
+    @property
+    def shape(self): return (len(self), len(self.names))
 
     # Define a convenience funciton for concatenating another
     # similarly typed and named data to self.
@@ -775,10 +772,9 @@ class Data(list):
         if type(data) != Data:
             raise(self.Unsupported(f"In-place addition only supports type {Data}, but {type(data)} was given."))
         # Special case for being empty.
-        if data.empty(): 
-            return self
+        if data.empty: return self
         # Special case for being empty.
-        elif self.empty():
+        elif self.empty:
             self.names = data.names[:]
             self.types = data.types[:]
             # Load in the data
@@ -891,6 +887,8 @@ class Data(list):
             if all(type(i)==int for i in index):
                 rows = index
                 cols = list(range(len(self.names)))
+                if (len(set(rows)) != len(rows)):
+                    raise(self.BadIndex("Provided sequence of row indices contained duplicate entries."))
             # Special case for when a list of strings is used to access columns
             elif all(type(i)==str for i in index):
                 rows = list(range(len(self)))
@@ -1052,6 +1050,10 @@ class Data(list):
             (type(self.types) == type(None))):
             raise(self.Empty("Cannot retype empty data."))
         self.numeric = None # Reset the numeric representation (if it existed)
+        # Handle a single column or type being provided.
+        if (type(columns) == str): columns = [columns]
+        if (type(types) == type): types = [types] * len(columns)
+        # Initialize "columns" if it was not provided to be the whole Data.
         if (type(columns) == type(None)):
             columns = self.names[:]
         if (len(types) != len(columns)):
@@ -1089,10 +1091,12 @@ class Data(list):
         for i,val in enumerate(column):
             # Verify valid index first..
             if (i >= len(self)):
+                # Remove the added name.
+                self.names.pop(-1)
                 # Remove the added elements if the length was not right
                 for j in range(len(self)): self[j].pop(-1)
                 # Raise error for too long of a column
-                raise(self.BadData(f"Provided column has more elements than {len(self)}, the length of this data."))
+                raise(self.BadData(f"Provided column has at least {i+1} elements, more than the length of this data ({len(self)})."))
             # Append the value to this row..
             self[i].append(val)
             if (type(val) == type(None)):
@@ -1103,14 +1107,20 @@ class Data(list):
                 # Capture the new type (type must be right)
                 new_type = type(val)
             elif (type(val) != new_type):
+                # Remove the added name.
+                self.names.pop(-1)
+                # Remove the added elements because a problem was encountered.
+                for j in range(i+1): self[j].pop(-1)
                 # This is a new type, problem!
                 raise(self.BadValue(f"Provided column has multiple types. Original type {new_type}, but '{val}' has type {type(val)}."))
         # Verify the column length
         if (i < len(self)-1):
+            # Remove the added name.
+            self.names.pop(-1)
             # Remove the added elements if the length was not right
             for j in range(i+1): self[j].pop(-1)
             # Raise error for too short of a column
-            raise(self.BadData(f"Provided column has length less than {len(self)}, the length of this data."))
+            raise(self.BadData(f"Provided column has length {i+1}, less than the length of this data ({len(self)})."))
         # Finally, record the new type
         self.types.append(new_type)
 
@@ -1118,7 +1128,7 @@ class Data(list):
     # of Data to a real-valued list. The second function will map
     # real-valued lists back to rows in the original space.
     def generate_mapping(self):
-        if self.empty(): raise(self.ImproperUsage("Cannot map empty Data."))
+        if self.empty: raise(self.ImproperUsage("Cannot map empty Data."))
         # Make sure we can handle this type of data
         if not all(t in {int,float,str} for t in self.types):
             raise(self.Unsupported("A mapping is only designed for Data composed of <float>, <int>, and <str> typed values."))
@@ -1412,12 +1422,13 @@ class Data(list):
     def k_fold(self, k=10, seed=0, only_indices=False):
         # Generate random indices
         import random
+        old_state = random.getstate()
         random.seed(seed)
         indices = list(range(len(self)))
         random.shuffle(indices)
-        # Re-seed the random number generator as not to muck with
+        # Reset the random number generator as not to muck with
         # other processes that might be using it.
-        random.seed()
+        random.setstate(old_state)
         # Store some variables for generating the folds
         total = len(self)
         if (type(self) != Data): only_indices = True
@@ -1719,9 +1730,14 @@ class Data(list):
         for c,(n,t) in enumerate(zip(self.names, self.types)):
             # Count the number of elements for each value
             counts = {}
+            to_string = False
             for val in self[n]:
-                if type(val) in {list, dict, set}: val = str(val)
-                counts[val] = counts.get(val,0) + 1
+                if to_string: val = str(val)
+                try: counts[val] = counts.get(val,0) + 1
+                except TypeError:
+                    to_string = True
+                    val = str(val)
+                    counts[val] = counts.get(val,0) + 1
             print(f"  {c:{len(str(len(self.names)))}d} -- \"{n}\"{'':{1+name_len-len(n)}s}{str(t):{type_len}s} ({len(counts)} unique value{'s' if (len(counts) != 1) else ''})")
             # Remove the "None" count from "counts" to prevent sorting problems
             none_count = counts.pop(None, 0)
@@ -1782,8 +1798,6 @@ def test_data():
     a.append([1,"a"])
     a.append([2,"b"])
     a.append([3,"c"])
-
-    # Verify add_column
 
     # Verify add column (with edge case, none type)
     a.add_column([None,None,None])
@@ -1944,8 +1958,22 @@ def test_data():
             assert(a[i,j] == a[i,name])
 
     # WARNING: Not individually verifying *all* comparison operators.
-    # WARNING: No tests for list-based index assignment
-    # WARNING: No tests for generator-based index assignment
+
+    # Verify generator-based index assignment.
+    b = a[:]
+    b[(i for i in range(0,len(b),2)), "1"] = "new"
+    assert(b[0,"1"] == b[2,"1"] == b[4,"1"] == "new")
+
+    # Verify list-based generator assignment.
+    b = a[:]
+    b[[i for i in range(0,len(b),2)], "1"] = str("test")
+    assert(b[0,"1"] == b[2,"1"] == b[4,"1"] == "test")
+
+    # Verify that assignment from a generator works.
+    b = a[:]
+    b['3'] = map(str, b['2'])
+    assert(b[0,'3'] == str(b[0,'2']))
+    assert(b[-1,'3'] == str(b[-1,'2']))
 
     # Verify the generation of a random k-fold cross validation.
     b = Data()
@@ -1969,7 +1997,7 @@ def test_data():
     b[-2,1] = 'd'
     b.append( b[0] )
     assert(str(b.fill(b[-2]).data) == str([-1,'a',1.7999999999999998]))
-    assert(str(a.fill(a[-1]).data) == str([-1,'2',2.1]))
+    assert(str(a.fill(a[-1][:]).data) == str([-1,'2',2.1]))
 
     # Test cases for using "fill" with weights.
     b.pop(-2)
@@ -1988,10 +2016,25 @@ def test_data():
     b = Data()
     try:   b[0]
     except Data.Empty: pass
-    else: assert(False)
+    else:  assert(False)
+
+    # Try assigning with a generator that is too short.
+    try:   a['3'] = (i for i in range(len(a)-1))
+    except Data.BadData: pass
+    else:  assert(False)
+
+    # Try assigning with a generator that is too long.
+    try:   a['3'] = (i for i in range(len(a)+1))
+    except Data.BadData: pass
+    else:  assert(False)
 
     # Try providing a generator that does not give strictly integers
     try:   a[(v for v in ('a',1,'b'))]
+    except Data.BadIndex: pass
+    else: assert(False)
+
+    # Try accessing by row-index and having duplicate entries.
+    try:   a[[0,0]]
     except Data.BadIndex: pass
     else: assert(False)
 
@@ -2089,6 +2132,7 @@ def test_data():
 
     # Done testing
     print("passed.")
+
 
 # =============================================================
 #      END OF Python 'Data' with named and typed columns     

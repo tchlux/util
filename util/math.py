@@ -4,7 +4,9 @@ SMALL_NUMBER = 1.4901161193847656*10**(-8)
 
 # Return a boolean "is_numeric"
 def is_numeric(obj):
-    try:    return abs(obj + obj - obj) or True
+    try:
+        abs((.3*obj + 1*obj) - .3*obj)
+        return True
     except: return False
 
 # Function for performing absolute difference between numbers (or vectors).

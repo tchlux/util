@@ -52,7 +52,7 @@ class Approximator:
             pass
         else:
             raise(UnexpectedShape("Provided 'y' should be a 1D or 2D numpy array."))
-        return self._fit(x, y, *args, **kwargs)
+        return self._fit(x.copy(), y.copy(), *args, **kwargs)
         
     # Predict y at new x locations from fit model.
     def predict(self, x, *args, **kwargs):
@@ -61,7 +61,7 @@ class Approximator:
         single_response = len(x.shape) == 1
         if single_response:
             x = np.reshape(x, (1,len(x)))
-        response = np.asarray(self._predict(x, *args, **kwargs), dtype=float)
+        response = np.asarray(self._predict(x.copy(), *args, **kwargs), dtype=float)
         if (self.classifier):
             from util.data import category_ratio
             class_response = []
@@ -113,7 +113,7 @@ class WeightedApproximator(Approximator):
                 raise(MissingOperator("Elements of provided 'y' must have defined '__mul__' operator."))
             self.y = y
         # Fit the provided x values.
-        return self._fit(x, **kwargs)
+        return self._fit(x.copy(), **kwargs)
         
     # Predict y at new x locations from fit model.
     def predict(self, x, *args, **kwargs):
@@ -122,7 +122,7 @@ class WeightedApproximator(Approximator):
         single_response = len(x.shape) == 1
         if single_response:
             x = np.reshape(x, (1,len(x)))
-        indices, weights = self._predict(x, *args, **kwargs)
+        indices, weights = self._predict(x.copy(), *args, **kwargs)
         # Return the indices and weights if no y values were provided.
         if (is_none(self.y)): 
             response = [(ids,wts) for (ids,wts) in zip(indices, weights)]

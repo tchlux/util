@@ -22,7 +22,7 @@ def unique(weighted_approximator):
         def fit(self, points, values=None, *args, **kwargs):
             if ((type(points) != np.ndarray) or (len(points.shape) != 2)):
                 raise(UnexpectedType("Expected 2D numpy array as first argument."))
-            self.original_points = points.copy()
+            self.original_points = points
             self.unique_points = {}
             for i,pt in enumerate(points):
                 pt = tuple(pt)
@@ -87,7 +87,7 @@ def condition(approximator, metric=abs_diff, method=DEFAULT_CONDITIONER,
               dim=MAX_DIM, samples=MAX_SAMPLES, scale=DEFAULT_COND_SCALE, 
               display=False, **cond_kwargs):
     if method == "PCA":
-        from util.stats import pca, rank_by_variation
+        from util.stats import pca, normalize_error
     elif method == "MPCA":
         from util.stats import mpca
     # ----------------------------------------------------------------
@@ -95,17 +95,17 @@ def condition(approximator, metric=abs_diff, method=DEFAULT_CONDITIONER,
         # Wrapped "fit" method, this incorporates dimension reduction
         # and approximation conditioning based on the selected method.
         def fit(self, x, y, *args, num_comps=None, **kwargs):
-            # Shift all components of x to be in the range [0,1].
-            x = (x - np.min(x, axis=0))
-            x /= np.clip(np.max(x, axis=0), np.finfo(x[0,0]).tiny, float('inf'))
             # Set the number of components appropriately.
             if is_none(num_comps): num_comps = min(x.shape)
             if not is_none(dim):   num_comps = min(dim, num_comps)
             # Compute the components and the values.
             if method == "PCA":
+                # Compute the principle components as the new axes.
                 components, values = pca(x, num_components=num_comps, **cond_kwargs)
-                components, values = rank_by_variation(components, x, y, metric)
+                # Compute the values so that the transformed points have unit metric slope.
+                values = normalize_error(np.matmul(x, components.T), y, metric, display)
             elif method == "MPCA":
+                # Use metric PCA to compute components and values.
                 components, values = mpca(x, y, metric=metric,
                                           num_components=num_comps,
                                           num_vecs=samples, 

@@ -21,7 +21,7 @@ def sorted_unique(iterable):
         return [ids[h] for h in sorted(ids)]
 
 # Save "data" in a file titled "file_name" using pickle.
-def save(data, file_name):
+def save(data, file_name="_save.pkl"):
     try:
         import pickle
         with open(file_name, "wb") as f:
@@ -33,7 +33,7 @@ def save(data, file_name):
 
 
 # Load data from a pickle file titled "file_name".
-def load(file_name):
+def load(file_name="_save.pkl"):
     try:
         import pickle
         with open(file_name, "rb") as f:
@@ -196,17 +196,20 @@ class Timer:
     # Start the timer when it is initialized by default.
     def __init__(self): self.a = self.time.time()
     # End function for this timer.
-    def end(self): self.b = self.time.time()
+    def end(self):
+        self.b = self.time.time()
+        return self.b
     # Declare the "start" property / function to re-initialized when called.
     @property
     def start(self): return Timer.callset(self.a, self.__init__)
     # Declare the "stop" property / function to "stop" when called.
     @property
-    def stop(self): return Timer.callset(self.b, self.end)
+    def stop(self): return Timer.callset(self.end(), self.end)
+    # Return the total time elapsed from start.
+    @property
+    def total(self): return self.b - self.a
     # Return the elapsed time since start.
     def check(self): return self.time.time() - self.a
-    # Return the total time elapsed from start.
-    def total(self): return self.b - self.a
     # If not stopped, return elapsed time, otherwise return total time.
     def __call__(self):
         def is_none(obj): return type(obj) == type(None)

@@ -94,7 +94,7 @@ SUBROUTINE PREDICT(POINTS, DOTS, EVAL_PT, WEIGHTS, ERROR)
      others : DO I_OTHER = 1, SIZE(INDICES)
         ! Get the actual index of the boundary point.
         IO = INDICES(I_OTHER)
-        IF (IC .EQ. IO) CYCLE
+        IF (IC .EQ. IO) CYCLE others
         ! Check to see if the dot products have been computed (cache them).
         IF (DOTS(IC,IC) .EQ. MAX_VAL) THEN
            DOTS(IC,IC) = SUM(POINTS(:,IC)**2)
@@ -116,14 +116,13 @@ SUBROUTINE PREDICT(POINTS, DOTS, EVAL_PT, WEIGHTS, ERROR)
         ! unique interpolation points) then...
         IF (ABS(DIST_C_TO_O) .GT. MIN_VAL) THEN
            RATIO = DIST_C_TO_PT / DIST_C_TO_O
-           IF (RATIO .GT. MAX_RATIO) MAX_RATIO = RATIO
-           IF (RATIO .LT. 0.) SKIP(IO) = .TRUE.
-           IF (RATIO .GE. 1.) THEN
+           IF (RATIO .GT. MAX_RATIO) THEN; MAX_RATIO = RATIO
+           ELSE IF (RATIO .LT. 0.) THEN;   SKIP(IO) = .TRUE.
+           ELSE IF (RATIO .GE. 1.) THEN
               SKIP(IC) = .TRUE.
               WEIGHTS(IC) = 0.
               CYCLE centers
            END IF
-           IF (RATIO .LT. 0.) SKIP(IO) = .TRUE.
         ELSE
            ! Duplicated center points, error! Return!
            ERROR = 1

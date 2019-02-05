@@ -7,16 +7,21 @@ from util.algorithms.wrappers import unique, condition
 
 # Import all defined algorithms
 from util.algorithms.voronoi import Voronoi
+from util.algorithms.box_mesh import BoxMesh
 from util.algorithms.nearest_neighbor import NearestNeighbor
 from util.algorithms.delaunay import Delaunay, qHullDelaunay
 from util.algorithms.neural_network import MLPRegressor
+from util.algorithms.support_vector_machine import SVR
 from util.algorithms.linear_shepard import LSHEP
 from util.algorithms.mars import MARS
 from util.algorithms.shepard import Shepard
 # Rename neural network.
+MLP = MLPRegressor
 NeuralNetwork = MLPRegressor
 NN = MLPRegressor
+# Rename nearest neighbor.
 KNN = NearestNeighbor
+
 # Import additional Delaunay testing modules.
 from util.algorithms.delaunay import DelaunayP1, DelaunayP2, DelaunayP3
 

@@ -1,4 +1,3 @@
-import time
 import numpy as np
 
 # Pre:  "iterable" is a list type, "value" is an iterable whose
@@ -49,10 +48,9 @@ class Rect:
 #         identifying those of that set that are along the convex hull
 #         of the plot of diameter versus objective function value
 def get_potential_best(rects, to_beat):
-    # Get the list of (diameter, best objective function value)
-    to_divide = [(d, rects[d][0].obj) for d in rects]
-    # Sort the list (by default sorts by diameter, which are all unique)
-    to_divide.sort()
+    # Get the list of (diameter, best objective function value) and
+    # sort the list (by default sorts by diameter, which are all unique)
+    to_divide = sorted((d, rects[d][0].obj) for d in rects)
     # Add the objective value that needs to be beaten to the front
     to_divide = [ (0, to_beat) ] + to_divide
     # Use a loop to find the convex hull
@@ -82,6 +80,7 @@ def get_potential_best(rects, to_beat):
 #         "False" when the algorithm should continue and "True" when
 #         it should halt
 #       "bounds" is a list of tuples (lower,upper) for each parameter
+#       "solution" an initial solution that is disregarded.
 # Post: Returns an (objective value, solution) tuple, best achieved
 def DiRect(objective, halt, bounds, _=None, min_improvement=0.0001):
     # Extract range information for each dimension
@@ -98,7 +97,6 @@ def DiRect(objective, halt, bounds, _=None, min_improvement=0.0001):
     best_rect = r
     # DiRect primary search loop of dividing potentially optimal rectangles
     while not halt():
-        time.sleep(0.01)
         # Establish a starting point based on the best function value
         to_beat = best_rect.obj - abs(best_rect.obj * min_improvement)
         # Get the list of rectangles that are potentially optimal
@@ -165,11 +163,9 @@ def DiRect(objective, halt, bounds, _=None, min_improvement=0.0001):
                 # Finally, re-insert the divided center point
                 insert_sorted(rects[r.diameter], r, 
                               key=lambda i:i.obj)                
-                # Check halting condition
-                if halt():
-                    return (best_rect.obj, 
-                            best_rect.center*ranges + lowers)
-    # Primary while loop terminated, return best
+                # Check halting condition, return best (obj, point)
+                if halt(): return (best_rect.obj, best_rect.center*ranges + lowers)
+    # Primary while loop terminated, return best (obj, point)
     return (best_rect.obj, best_rect.center*ranges + lowers)
                 
             

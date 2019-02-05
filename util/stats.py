@@ -47,7 +47,7 @@ def random_range(start, stop=None, step=None, count=float('inf')):
     from random import sample, randint
     from math import ceil, log2
     # Add special usage where the second argument is meant to be a count.
-    if (stop <= start) and ((step == None) or (step >= 0)):
+    if (stop != None) and (stop <= start) and ((step == None) or (step >= 0)):
         start, stop, count = 0, start, stop
     # Set a default values the same way "range" does.
     if (stop == None): start, stop = 0, start
@@ -122,39 +122,38 @@ def gen_random_metric_diff(matrix, index_metric, power=2, count=None):
 # Given a set of row-vectors, compute a convex weighting that is
 # proportional to the inverse total variation of metric distance
 # between adjacent points along each vector (component).
-def rank_by_variation(components, points, values, metric, display=True):
+def normalize_error(points, values, metric, display=True):
     # Compute the magnitudes using total variation.
-    if display: print(" computing total variation per component.. ", end="", flush=True)
-    avg_var = np.zeros(len(components))
+    if display: print(" estimating error slope per axis.. ", end="\r", flush=True)
+    avg_slope = np.zeros(points.shape[1])
     update = end = ""
-    for i in range(len(components)):
+    for axis in range(points.shape[1]):
         update = "\b"*len(end)
-        end = f"{i+1} of {len(components)}"
+        end = f"{axis+1} of {points.shape[1]}"
         if display: print(update, end=end, flush=True)
-        locations = np.matmul(points, components[i])
-        ordering = np.argsort(locations)
-        for j in range(len(ordering)-1):
-            p1, p2 = ordering[j], ordering[j+1]
-            avg_var[i] += metric(values[p1], values[p2])
-    # Invert the total variation.
-    if (min(avg_var) <= 0.0):
-        avg_var = np.where(avg_var == 0, 1., 0.)
-    else:
-        avg_var = 1 / avg_var
-    avg_var /= np.sum(avg_var)
-    # Re-order the components according to inverse total variation.
-    order = np.argsort(avg_var)[::-1]
-    # If they are not already ordered correctly, re-order the returns.
-    if not all(order[i] < order[i+1] for i in range(len(order)-1)):
-        if display: print(" reordering components by total variation..", end="\r", flush=True)
-        components, avg_var = components[order], avg_var[order]
-    if display: print("                                           ", end="\r", flush=True)
-    return components, avg_var
+        # Sort points according to this axis.
+        ordering = np.argsort(points[:,axis])
+        for i in range(len(ordering)-1):
+            p1, p2 = ordering[i], ordering[i+1]
+            diff = (points[p2,axis] - points[p1,axis])
+            if (diff > 0): avg_slope[axis] += metric(values[p1], values[p2]) / (diff * points.shape[1])
+    if display: print("\r                                   ", end="\r", flush=True)
+    # If there are dimensions with no slope, then they are the only ones needed.
+    if (min(avg_slope) <= 0.0): avg_slope = np.where(avg_slope == 0, 1., float('inf'))
+    # We want to minimize the expected error associated with the 2-norm.
+    # 
+    # E[f(x) - f(y)] = sum( E[f(x)1 - f(y)1]^2 + ... + E[f(x)d - f(y)d]^2 )^(1/2)
+    #               -> { E[f(x)1-f(y)1]^(-2), ..., E[f(x)d-f(y)d]^(-2) }
+    # 
+    # This is the normalizing vector we want, scaled to unit determinant.
+    error_fix = avg_slope**(-2)
+    return error_fix / np.prod(error_fix)**(1/points.shape[1])
 
 # Compute the metric PCA (pca of the between vectors scaled by 
 # metric difference slope).
 def mpca(points, values, metric=abs_diff, num_components=None,
          num_vecs=None, display=True):
+    if display: print(" normalizing axes by expected error..", end="\r", flush=True)
     # Set default values for num_components and num_vecs.
     if type(num_components) == type(None): num_components = min(points.shape)
     if (type(num_vecs) == type(None)): num_vecs = (len(points)**2-len(points))//2
@@ -171,9 +170,11 @@ def mpca(points, values, metric=abs_diff, num_components=None,
     # Compute the principle components of the between vectors.
     if display: print(" computing principle components..", end="\r", flush=True)
     components, _ = pca(m_vecs, num_components=num_components)
+    if display: print(" normalizing components by metric slope..", end="\r", flush=True)
+    weights = normalize_error(np.matmul(points, components.T), values, metric, display)
     if display: print("                                               ", end="\r", flush=True)
     # Return the principle components of the metric slope vectors.
-    return rank_by_variation(components, points, values, metric, display)
+    return components, weights
 
 # Compute the principle components using sklearn.
 def pca(points, num_components=None, display=True):
@@ -188,12 +189,67 @@ def pca(points, num_components=None, display=True):
     principle_components = pca.components_
     magnitudes = pca.singular_values_
     # Normalize the component magnitudes to have sum 1.
-    magnitudes /= sum(magnitudes)
+    magnitudes /= np.sum(magnitudes)
     return principle_components, magnitudes
 
 # ===================================
 #      CDF and PDF Fit Functions     
 # ===================================
+
+# A class for handling standard operators over distributions. Supports:
+#    addition with another distribution
+#    subtraction from another distribution (KS-statistic)
+#    multiplication by a constant in [0,1]
+class Distribution():
+    def __init__(self, func):
+        self._function = func
+        standard_attributes = ["min", "max", "derivative", "integral"]
+        # Copy over the attributes of the distribution function.
+        for attr in standard_attributes:
+            if hasattr(func, attr): setattr(self, attr, getattr(func, attr))
+
+    # Define addition with another distribution.
+    def __add__(self, func):
+        new_min = min(self.min, func.min)
+        new_max = max(self.max, func.max)
+        def new_func(x=None):
+            if (type(x) == type(None)): return (new_min, new_max)
+            else:                       return self._function(x) + func(x)
+        new_func.min = new_min
+        new_func.max = new_max
+        # Copy over the attributes of the distribution function.
+        standard_attributes = ["derivative", "integral"]
+        for attr in standard_attributes:
+            if (hasattr(self, attr) and hasattr(func, attr)):
+                mine = getattr(self, attr)
+                other = getattr(func, attr)
+                setattr(new_func, attr, lambda x: mine(x) + other(x))
+        # Return a distribution object.
+        return Distribution(new_func)
+
+    # Define multiplication by a number (usually a float).
+    def __rmul__(self, number):
+        def new_func(x=None, m=number, f=self._function):
+            if (type(x) == type(None)): return f(None)
+            else:                       return m * f(x)
+        new_dist = Distribution(self)
+        new_dist._function = new_func
+        # Copy over the attributes of the distribution function.
+        standard_attributes = ["derivative", "integral"]
+        for attr in standard_attributes:
+            if hasattr(self, attr):
+                f = getattr(self, attr)
+                setattr(new_dist, attr, lambda x: number * f(x))
+        return new_dist
+    __mul__ = __rmul__
+
+    # Define subtraction from another distribution. (KS statistic)
+    def __rsub__(self, func): return ks_diff(self, func)
+    __sub__ = __rsub__
+        
+    # Define how to "call" a distribution.
+    def __call__(self, *args, **kwargs):
+        return self._function(*args, *kwargs)
 
 # Construct a version of a function that has been smoothed with a gaussian.
 def gauss_smooth(func, stdev=1., n=100):
@@ -206,14 +262,21 @@ def gauss_smooth(func, stdev=1., n=100):
     # Generate a smoothed function (with the [min,max] no-arg convenience).
     def smooth_func(x=None):
         if (type(x) == type(None)): return func()
-        else:                       return sum(weights * func(eval_pts + x))
-    # Transfer attributes over to the smooth function.
-    standard_attributes = set(dir(smooth_func))
-    for attr in dir(func):
-        if attr not in standard_attributes:
-            setattr(smooth_func, attr, getattr(func, attr))
+        else:
+            try:
+                wts = (np.ones((len(x), n)) * weights)
+                pts = (x + (eval_pts * np.ones((len(x), n))).T).T
+                return np.sum(wts * func(pts), axis=1)
+            except:
+                return sum(weights * func(eval_pts + x))
+    # Construct the smooth derivative as well.
+    eps = .01 * (func.max - func.min)
+    def deriv(x): return (smooth_func(x + eps) - smooth_func(x - eps))
+    smooth_func.derivative = deriv
+    smooth_func.min = func.min
+    smooth_func.max = func.max
     # Return the smoothed function.
-    return smooth_func
+    return Distribution(smooth_func)
 
 # Returns the CDF function value for any given x-value
 #   fit -- "linear" linearly interpolates between Emperical Dist points.
@@ -250,11 +313,11 @@ def cdf_fit(data, fit="linear", smooth=None):
         # Generate linear function
         fit_params = splrep(data, data_vals, k=1)
         fit = lambda x_val: splev(x_val, fit_params, ext=3)
-        fit.derivative = lambda d=1: lambda x_val: splev(x_val, fit_params, der=d, ext=3)
+        fit.derivative = lambda x_val: splev(x_val, fit_params, der=1, ext=3)
         # Generate inverse linear function
         inv_fit_params = splrep(data_vals, data, k=1)
         inv_fit = lambda y_val: splev(y_val, inv_fit_params, ext=3)
-        inv_fit.derivative = lambda d=1: lambda y_val: splev(y_val, inv_fit_params, der=d, ext=3)
+        inv_fit.derivative = lambda y_val: splev(y_val, inv_fit_params, der=1, ext=3)
         fit.inverse = inv_fit
     elif (fit_type == "cubic"):
         # Generate piecewise cubic monotone increasing spline
@@ -299,7 +362,7 @@ def cdf_fit(data, fit="linear", smooth=None):
                 return float(x_val in data)
         # Store the inverse and derivative as attributes.
         fit.inverse = inverse
-        fit.derivative = lambda d=1: (derivative) if (d == 1) else (lambda: 0.)
+        fit.derivative = derivative
     
     # Generate a function that computes this CDF's points
     def cdf_func(x_val=None):
@@ -322,9 +385,9 @@ def cdf_fit(data, fit="linear", smooth=None):
         # Smooth the pdf fit if that was requested.
         width = (cdf_func.max - cdf_func.min)
         stdev = smooth * width
-        cdf_func = gauss_smooth(cdf_func, stdev, n)
+        cdf_func = gauss_smooth(cdf_func, stdev)
     # Return the custom function for this set of points
-    return cdf_func
+    return Distribution(cdf_func)
 
 # Return a PDF fit function that is smoothed with a gaussian kernel.
 # "smooth" is the percentage of the data width to use as the standard
@@ -336,13 +399,9 @@ def pdf_fit(data, smooth=.05, n=1000, **cdf_fit_kwargs):
         # Smooth the pdf fit if that was requested.
         width = (cdf_func.max - cdf_func.min)
         stdev = smooth * width
-        smooth_cdf_func = gauss_smooth(cdf_func, stdev, n)
-        eps = .01 * width
-        def pdf_func(x):
-            return (smooth_cdf_func(x + eps) - smooth_cdf_func(x - eps))
-    else:
-        # Return the PDF as the derivative of the CDF.
-        pdf_func = cdf_func.derivative(1)
+        cdf_func = gauss_smooth(cdf_func, stdev, n)
+    # Return the PDF as the derivative of the CDF.
+    pdf_func = cdf_func.derivative
     # Take the first derivative of the CDF function to get the PDF
     def pdf(x=None):
         # Return the min and max when nothing is provided.
@@ -360,33 +419,35 @@ def pdf_fit(data, smooth=.05, n=1000, **cdf_fit_kwargs):
     pdf.min = cdf_func.min
     pdf.max = cdf_func.max
     pdf.integral = cdf_func
-    return pdf
-
+    return Distribution(pdf)
 
 # ===============================================
 #      Statistical Measurements Involving KS     
 # ===============================================
 
-# Calculate the maximum difference between two CDF functions (two sample)
-def ks_diff(test_func, true_func, method="util"):
-    from util.optimize import minimize
+# Calculate the maximum difference between two CDF functions (two sample).
+def ks_diff(test_func, true_func, method=100):
     # Cycle through the functions to find the min and max of all ranges
-    min_pt, max_pt = true_func()
+    min_test, max_test = test_func()
+    min_true, max_true = true_func()
+    min_val, max_val = max(min_test, min_true), min(max_test, max_true)
     if method in {"scipy", "util"}:
         diff_func = lambda x: -abs(test_func(x) - true_func(x))
         if method == "scipy":
+            from scipy.optimize import minimize
             # METHOD 1:
             #  Use scipy to maximize the difference function between
             #  the two cdfs in order to find the greatest difference.
-            sol = minimize(diff_func, [(max_pt - min_pt) / 2],
-                           bounds=[(min_pt,max_pt)], method='L-BFGS-B').x
+            sol = minimize(diff_func, [(max_val - min_val) / 2],
+                           bounds=[(min_val,max_val)], method='L-BFGS-B').x
         elif method == "util":
+            from util.optimize import minimize
             # METHOD 2 (default):
             #  Use the default minimizer in "optimize" to maximize the
             #  difference function between the two cdfs in order to
             #  find the greatest difference.
-            sol = minimize(diff_func, [(max_pt - min_pt) / 2],
-                           bounds=[(min_pt,max_pt)])
+            sol = minimize(diff_func, [(max_val - min_val) / 2],
+                           bounds=[(min_val,max_val)])
         greatest_diff = abs(test_func(sol) - true_func(sol))
     else:
         # METHOD 3:
@@ -394,18 +455,19 @@ def ks_diff(test_func, true_func, method="util"):
         #  between the functions at all of those points. Generate a
         #  grid of points and "zoom in" around the greatest difference
         #  points to identify the spot with largest gap.
-        x_points = np.linspace(min_pt, max_pt, 1000)
+        n = 100
+        if (type(method) == int): n = method
+        width = (max_val - min_val)
+        x_points = np.linspace(min_val, max_val, n)
         diff = abs(test_func(x_points) - true_func(x_points))
-
+        # Cycle zooming in about the greatest difference.
         greatest_diff = -float('inf')
         while (diff[np.argmax(diff)] > greatest_diff):
-            lower = np.argmax(diff) - 1
-            upper = np.argmax(diff) + 1
-            min_pt = x_points[max(lower, 0)] - (
-                1 if lower < 0 else 0)
-            max_pt = x_points[min(upper,len(x_points)-1)] + (
-                1 if upper >= len(x_points) else 0)
-            x_points = np.linspace(min_pt, max_pt, 1000)
+            lower = max(np.argmax(diff) - 1, 0)
+            upper = min(np.argmax(diff) + 1, n-1)
+            min_pt = max(x_points[lower], min_val)
+            max_pt = min(x_points[upper], max_val)
+            x_points = np.linspace(min_pt, max_pt, n)
             diff = abs(test_func(x_points) - true_func(x_points))
             greatest_diff = max(max(diff), greatest_diff)
     return greatest_diff
@@ -453,6 +515,54 @@ def normal_confidence(distribution):
     ks_statistic = kstest(new_distribution, "norm").statistic
     return ks_p_value(ks_statistic, len(distribution))
 
+
+# =====================================================
+#      Approximating the desired number of samples     
+# =====================================================
+
+# Given a list of numbers, return True if the given values provide an
+# estimate to the underlying distribution with confidence bounded error.
+def samples(samples=None, error=None, confidence=None):
+    # Determine what to calculate based on what was provided.
+    from util.math import is_none
+    if   is_none(samples):                       to_calculate = "samples"
+    elif is_none(error):                         to_calculate = "error"
+    elif is_none(confidence):                    to_calculate = "confidence"
+    else:                                        to_calculate = "verify"
+    # Set the default values for other things that were not provided.
+    if type(error) == type(None):      error      = 0.1
+    if type(confidence) == type(None): confidence = 0.95
+    # If the user provided something with a length, use that number.
+    if hasattr(samples, "__len__"): samples = len(samples)
+    # Construct a function for measuring the percentage of outcomes
+    # contained within "deviation" from the mean of a normal distribution.
+    from math import erf
+    normal_cdf = lambda x: (erf(x / 2**(1/2)) + 1) / 2
+    contained = lambda deviation: normal_cdf(deviation) - normal_cdf(-deviation)
+    # Handle individually each of the different use-cases of this function.
+    if (to_calculate in {"samples", "verify", "error"}):
+        from math import ceil
+        from util.optimize import zero
+        # Compute the number of standard deviations required to achieve "confidence".
+        stdevs = zero(lambda deviation: contained(deviation) - confidence, 0, 100)
+        # Use the computed standard deviation and the proven convergence
+        # rate of empirical distribution functions to compute sample count.
+        # 
+        #   error <= stdevs * (1/2) * (1 - 1/2) / len(samples)**(1/2)
+        # 
+        needed_samples = ceil((stdevs / (4*error))**2)
+        # The user could provide nothing and get the needed number of
+        # samples, something with a length and see if they're done, or
+        # a number and this will verify that is enough samples.
+        if (type(samples) == type(None)): return needed_samples
+        elif (to_calculate == "error"):   return stdevs / (4 * samples**(1/2))
+        else:                             return samples >= needed_samples
+    elif (to_calculate in {"confidence"}):
+        # Convert the provided error into the devitaion in terms of a
+        # standard normal distribution by growing it according to samples.
+        deviation = error * 4 * samples**(1/2)
+        confidence = normal_cdf(deviation) - normal_cdf(-deviation)
+        return confidence
 
 # ====================================================
 #      Measuring the Difference Between Sequences     
@@ -742,179 +852,54 @@ def pdf_fit_func(*args, **kwargs):
     return pdf_fit(*args, **kwargs)
 
 
+# ====================================================================
+#                 TEST CODE FOR util.stats PACKAGE
+# ====================================================================
 
-if __name__ == "__main__":
-    print()
-
-    import pickle, os
-    import numpy as np
-    from util.plot import Plot, multiplot
-    
-    TEST_MPCA = True
-    TEST_FIT_FUNCS = False
-    TEST_EPDF_DIFF = False
-    TEST_RANDOM_RANGE = False
-    TEST_EFFECT = False
-
-    if TEST_EFFECT:
-        a = {"a":.4, "b":.1, "c":.5, "d":.0}
-        b = {"a":.1, "b":.3, "c":.5, "d":.1}
-        c = {"a":.0, "b":.0, "c":.0, "d":1.}
-        assert(.3 == categorical_diff(a, b))
-        assert(1. == categorical_diff(a, c))
-        assert(.9 == categorical_diff(b, c))
-        a = ['a','a','a','a','b','b','b','b']
-        b = ['a','a','b','b','b','a','a','b']
-        c = ['a','a','a','b','b','a','a','a']
-        assert(0. == effect(a,b))
-        assert(0. == effect(a,c))
-        # assert((4/6 + 3/6 + 0/6 + 0/6)/4 == effect(b, c))
-        a = list(range(1000))
-        b = list(range(1000))
-        assert(effect(a,b) == 1.0)
-        b = np.random.random(size=(1000,))
-        assert(effect(a,b) < .1)
-        a = ['a', 'a', 'a', 'b', 'a', 'b', 'a', 'b', 'a', 'b', 'a', 'a', 'a', 'c', 'a', 'c', 'a', 'c', 'a', 'c']
-        b = [890.79, 1048.97, 658.43, 659.39, 722.0, 723.34, 1040.76, 1058.02, 1177.0, 1170.94, 415.56, 462.03, 389.09, 676.82, 688.49, 735.56, 552.58, 1127.29, 1146.42, 1251.12]
-        assert(0.0 == effect(a,b) - 0.5264043528589452)
-
-    if TEST_EPDF_DIFF:
-        # ----------------------------------------------------------------
-        def demo(seq):
-            print('-'*70)
-            print(len(seq), seq)
-            print()
-            total = 0
-            for vals in edf_pair_gen(seq):
-                total += vals[-1]
-                print("[% 4s, % 3s] (%.2f) --"%vals, round(total,3))
-            print('-'*70)
-            print()
-        demo( [0] + list(range(9)) )
-        demo( sorted(np.random.random(size=(10,))) )
-        demo( list(range(9)) + [8] )
-        # ----------------------------------------------------------------
-        # a = [1, 1, 3, 3, 5, 6]
-        # b = [0, 1, 2, 3, 4]
-        # 
-        n = 100
-        print(f"a = [0,100] ({n} samples)")
-        print(f"b = [v + d for v in a]")
+def _test_mpca(display=False):
+    if display:
         print()
-        for d in (.0, .01, .1, .5, .55, .9, 1., 1.5):
-            a = [v / n for v in list(range(n+1))]
-            b = [v+d for v in a]
-            print(f"d = {d:.2f}   a~b = {epdf_diff(a,b):.2f}   b~a = {epdf_diff(b,a):.2f}   a~a = {epdf_diff(a,a):.2f}   b~b = {epdf_diff(b,b):.2f}")
-        print()
+        print("-"*70)
+        print("Begin tests for 'mpca'")
 
-        for d in (.0, .01, .1, .5, .55, .9, 1., 1.5):
-            # Generate a random sequence.
-            a = sorted((np.random.random(size=(10,))))
-            b = sorted((np.random.random(size=(1000,)) + d))
-            diff = epdf_diff(a, b)
-            print(f"d = {d:.2f}","",
-                  "[%.2f, %.2f]"%(min(a),max(a)), "[%.2f, %.2f]"%(min(b),max(b)),"",
-                  diff
-            )
-        print()
-        # ----------------------------------------------------------------
-        from util.plot import Plot
+    GENERATE_APPROXIMATIONS = True
+    BIG_PLOTS = False
+    SHOW_2D_POINTS = False
 
-        # Generate a random sequence.
-        a = sorted((np.random.random(size=(2000,))))
-        b = sorted((np.random.random(size=(2000,))))
+    import random
+    # Generate some points for testing.
+    np.random.seed(4) # 4
+    random.seed(0) # 0
+    rgen = np.random.RandomState(1) # 10
+    n = 100
+    points = (rgen.rand(n,2) - .5) * 2
+    # points *= np.array([.5, 1.])
 
-        p = Plot()
-        p1 = pdf_fit(a, smooth=0.00001)
-        p2 = pdf_fit(b, smooth=0.00001)
-        p.add_func("a", p1, p1()) #(-.5,2))
-        p.add_func("b", p2, p2()) #(-.5,2))
-        p.show(show=False, y_range=[-.5,1.5])
+    # Create some testing functions (for learning different behaviors)
+    funcs = [
+        lambda x: x[1]               , # Linear on y
+        lambda x: abs(x[0] + x[1])   , # "V" function on 1:1 diagonal
+        lambda x: abs(2*x[0] + x[1]) , # "V" function on 2:1 diagonal
+        lambda x: x[0]**2            , # Quadratic on x
+        lambda x: (x[0] + x[1])**2   , # Quadratic on 1:1 diagonal
+        lambda x: (2*x[0] + x[1])**3 , # Cubic on 2:1 diagonal
+        lambda x: (x[0]**3)          , # Cubic on x
+        lambda x: rgen.rand()        , # Random function
+    ]
+    # Calculate the response values associated with each function.
+    responses = np.vstack(tuple(tuple(map(f, points)) for f in funcs)).T
 
-        p = Plot()
-        p1 = cdf_fit(a)
-        p2 = cdf_fit(b)
-        p.add_func("a", p1, p1()) #(-.5,2))
-        p.add_func("b", p2, p2()) #(-.5,2))
-        p.show(append=True)
-        # ----------------------------------------------------------------
+    # Reduce to just the first function
+    choice = 3
+    func = funcs[choice]
+    response = responses[:,choice]
 
+    # Run the princinple response analysis function.
+    components, values = mpca(points, response)
+    values /= np.sum(values)
+    conditioner = np.matmul(components, np.diag(values))
 
-    if TEST_FIT_FUNCS:
-        # ==============================================
-        #      Test the fit functions and smoothing     
-        # ==============================================
-        # Make data
-        smooth = .1
-        data = np.random.normal(size=(1000,))
-        # data[:len(data)//2] += 2
-        min_max = (min(data) - .1, max(data) + .1)
-        print()
-        print("(min, max) : (%.2f, %.2f)"%(min_max))
-        print("Normal confidence: %.2f%%"%(100*normal_confidence(data)))
-        print()
-        # Make PDF plot
-        pfit = pdf_fit(data)
-        p = Plot()
-        p.add_func("PDF", pfit, min_max)
-        # Make smooth PDF
-        pfit = pdf_fit(data, smooth=smooth)
-        p.add_func("Smooth PDF", pfit, min_max)
-        p.show(show=False)
-
-        # Make CDF plota
-        cfit = cdf_fit(data)
-        p = Plot()
-        p.add_func("CDF", cfit, min_max)
-        # Make CDF whose derivative is the default PDF.
-        stdev = .05 * (cfit.max - cfit.min)
-        cfit = gauss_smooth(cfit, stdev)
-        p.add_func("CDF for default PDF", cfit, min_max)
-        # Make smooth cdf
-        stdev = smooth * (cfit.max - cfit.min)
-        cfit = gauss_smooth(cfit, stdev)
-        p.add_func("Smooth CDF", cfit, min_max)
-        p.show(append=True)
-
-    # Example / Test case of Principle Response Analyais
-    if TEST_MPCA:
-
-        GENERATE_APPROXIMATIONS = False
-        BIG_PLOTS = False
-        SHOW_2D_POINTS = False
-
-        import random
-        # Generate some points for testing.
-        np.random.seed(4) # 4
-        random.seed(0) # 0
-        rgen = np.random.RandomState(1) # 10
-        n = 100
-        points = (rgen.rand(n,2) - .5) * 2
-        # points *= np.array([.5, 1.])
-
-        # Create some testing functions (for learning different behaviors)
-        funcs = [
-            lambda x: x[1]               , # Linear on y
-            lambda x: abs(x[0] + x[1])   , # "V" function on 1:1 diagonal
-            lambda x: abs(2*x[0] + x[1]) , # "V" function on 2:1 diagonal
-            lambda x: x[0]**2            , # Quadratic on x
-            lambda x: (x[0] + x[1])**2   , # Quadratic on 1:1 diagonal
-            lambda x: (2*x[0] + x[1])**3 , # Cubic on 2:1 diagonal
-            lambda x: (x[0]**3)          , # Cubic on x
-            lambda x: rgen.rand()        , # Random function
-        ]
-        # Calculate the response values associated with each function.
-        responses = np.vstack(tuple(tuple(map(f, points)) for f in funcs)).T
-
-        # Reduce to just the first function
-        choice = 2
-        func = funcs[choice]
-        response = responses[:,choice]
-
-        # Run the princinple response analysis function.
-        components, values = mpca(points, response)
-        conditioner = np.matmul(components, np.diag(values))
-
+    if display:
         print()
         print("Components")
         print(components)
@@ -926,117 +911,368 @@ if __name__ == "__main__":
         print(conditioner)
         print()
 
-        # Generate a plot of the response surfaces.
-        from util.plot import Plot, multiplot
-        print("Generating plots of source function..")
-
-        # Add function 1
-        p1 = Plot()
-        p1.add("Points", *(points.T), response, opacity=.8)
-        p1.add_func("Surface", func, [-1,1], [-1,1], plot_points=100)
-
-        if GENERATE_APPROXIMATIONS:
-            from util.algorithms import NearestNeighbor
-            model = NearestNeighbor()
-            model.fit(points, response)
-            p1.add_func("Unconditioned Approximation", model, [-1,1], [-1,1],
-                        mode="markers", opacity=.8)
-            # Generate a conditioned approximation
-            model = NearestNeighbor()
-            model.fit(np.matmul(conditioner, points), response)
-            approx = lambda x: model(np.matmul(conditioner, x))
-            p1.add_func("Best Approximation", approx, [-1,1], [-1,1],
-                        mode="markers", opacity=.8)
+    components = np.array([[1.0, 0.], [0., 1.]])
+    values = normalize_error(np.matmul(points, components.T), response, abs_diff)
+    values /= np.sum(values)
+    if display:
+        print()
+        print()
+        print("True Components")
+        print(components)
+        print()
+        print("True Values")
+        print(values)
+        print()
 
 
-        print("Generating metric principle components..")
+    # Generate a plot of the response surfaces.
+    from util.plot import Plot, multiplot
+    if display: print("Generating plots of source function..")
 
-        # Return the between vectors and the differences between those points.
-        def between(x, y, unique=True):
-            vecs = []
-            diffs = []
-            for i1 in range(x.shape[0]):
-                start = i1+1 if unique else 0
-                for i2 in range(start, x.shape[0]):
-                    if (i1 == i2): continue
-                    vecs.append(x[i2] - x[i1])
-                    diffs.append(y[i2] - y[i1])
-            return np.array(vecs), np.array(diffs)
+    # Add function 1
+    p1 = Plot()
+    p1.add("Points", *(points.T), response, opacity=.8)
+    p1.add_func("Surface", func, [-1,1], [-1,1], plot_points=100)
 
-        # Plot the between slopes to verify they are working.
-        # Calculate the between slopes
-        vecs, diffs = between(points, response)
-        vec_lengths = np.sqrt(np.sum(vecs**2, axis=1))
-        between_slopes = diffs / vec_lengths
-        bs = ((vecs.T / vec_lengths) * between_slopes).T
-        # Extrac a random subset for display
-        size = 100
-        random_subset = np.arange(len(bs))
-        rgen.shuffle(random_subset)
-        bs = bs[random_subset[:size],:]
-        # Normalize the between slopes so they fit on the plot
-        max_bs_len = np.max(np.sqrt(np.sum(bs**2, axis=1)))
-        bs /= max_bs_len
-        # Get a random subset of the between slopes and plot them.
-        p2 = Plot("","Metric PCA on Z","")
-        p2.add("Between Slopes", *(bs.T), color=p2.color(4, alpha=.4))
+    if GENERATE_APPROXIMATIONS:
+        from util.algorithms import NearestNeighbor, Delaunay, condition
+        p = Plot()
+        # Add the source points and a Delaunay fit.
+        p.add("Points", *(points.T), response, opacity=.8)
+        p.add_func("Truth", func, [-1,1], [-1,1])
+        # Add an unconditioned nearest neighbor fit.
+        model = NearestNeighbor()
+        model.fit(points, response)
+        p.add_func("Unconditioned Approximation", model, [-1,1], [-1,1],
+                    mode="markers", opacity=.8)
+        # Generate a conditioned approximation
+        model = condition(NearestNeighbor, method="MPCA")()
+        model.fit(points, response)
+        p.add_func("Best Approximation", model, [-1,1], [-1,1],
+                    mode="markers", opacity=.8)
 
-        if SHOW_2D_POINTS:
-            # Add the points and transformed points for demonstration.
-            new_pts = np.matmul(np.matmul(conditioner, points), np.linalg.inv(components))
-            p2.add("Original Points", *(points.T))
-            p2.add("Transformed Points", *(new_pts.T), color=p2.color(6, alpha=.7))
+        if display: p.plot(show=False, height=400, width=650)
 
-        # Add the principle response components 
-        for i,(vec,m) in enumerate(zip(components, values)):
-            vec = vec * m
-            p2.add(f"PC {i+1}", [0,vec[0]], [0,vec[1]], mode="lines")
-            ax, ay = (vec / sum(vec**2)**.5) * 3
-            p2.add_annotation(f"{m:.2f}", vec[0], vec[1])
+    if display: print("Generating metric principle components..")
+
+    # Return the between vectors and the differences between those points.
+    def between(x, y, unique=True):
+        vecs = []
+        diffs = []
+        for i1 in range(x.shape[0]):
+            start = i1+1 if unique else 0
+            for i2 in range(start, x.shape[0]):
+                if (i1 == i2): continue
+                vecs.append(x[i2] - x[i1])
+                diffs.append(y[i2] - y[i1])
+        return np.array(vecs), np.array(diffs)
+
+    # Plot the between slopes to verify they are working.
+    # Calculate the between slopes
+    vecs, diffs = between(points, response)
+    vec_lengths = np.sqrt(np.sum(vecs**2, axis=1))
+    between_slopes = diffs / vec_lengths
+    bs = ((vecs.T / vec_lengths) * between_slopes).T
+    # Extrac a random subset for display
+    size = 100
+    random_subset = np.arange(len(bs))
+    rgen.shuffle(random_subset)
+    bs = bs[random_subset[:size],:]
+    # Normalize the between slopes so they fit on the plot
+    max_bs_len = np.max(np.sqrt(np.sum(bs**2, axis=1)))
+    bs /= max_bs_len
+    # Get a random subset of the between slopes and plot them.
+    p2 = Plot("","Metric PCA on Z","")
+    p2.add("Between Slopes", *(bs.T), color=p2.color(4, alpha=.4))
+
+    if SHOW_2D_POINTS:
+        # Add the points and transformed points for demonstration.
+        new_pts = np.matmul(np.matmul(conditioner, points), np.linalg.inv(components))
+        p2.add("Original Points", *(points.T))
+        p2.add("Transformed Points", *(new_pts.T), color=p2.color(6, alpha=.7))
+
+    # Add the principle response components 
+    for i,(vec,m) in enumerate(zip(components, values)):
+        vec = vec * m
+        p2.add(f"PC {i+1}", [0,vec[0]], [0,vec[1]], mode="lines")
+        ax, ay = (vec / sum(vec**2)**.5) * 3
+        p2.add_annotation(f"{m:.2f}", vec[0], vec[1])
 
 
-        p3 = Plot("", "PCA on X", "")
-        p3.add("Points", *(points.T), color=p3.color(4, alpha=.4))
+    p3 = Plot("", "PCA on X", "")
+    p3.add("Points", *(points.T), color=p3.color(4, alpha=.4))
 
-        # Add the normal principle components
-        components, values = pca(points)
-        for i,(vec,m) in enumerate(zip(components, values)):
-            vec = vec * m
-            p3.add(f"PC {i+1}", [0,vec[0]], [0,vec[1]], mode="lines")
-            ax, ay = (vec / sum(vec**2)**.5) * 3
-            p3.add_annotation(f"{m:.2f}", vec[0], vec[1])
+    # Add the normal principle components
+    components, values = pca(points)
+    values /= np.sum(values)
+    for i,(vec,m) in enumerate(zip(components, values)):
+        vec = vec * m
+        p3.add(f"PC {i+1}", [0,vec[0]], [0,vec[1]], mode="lines")
+        ax, ay = (vec / sum(vec**2)**.5) * 3
+        p3.add_annotation(f"{m:.2f}", vec[0], vec[1])
 
 
-        if BIG_PLOTS:
-            p1.plot(file_name="source_func.html", show=False)
-            p2.plot(append=True, x_range=[-8,8], y_range=[-5,5])
-        else:
-            # Make the plots (with manual ranges)
-            p1 = p1.plot(html=False, show_legend=False)
-            p2 = p2.plot(html=False, x_range=[-1,1], y_range=[-1,1], show_legend=False)
-            p3 = p3.plot(html=False, x_range=[-1,1], y_range=[-1,1], show_legend=False)
-            # Generate the multiplot of the two side-by-side figures
-            multiplot([p1,p2,p3], height=126, width=600)
+    if BIG_PLOTS:
+        if display: p1.plot(file_name="source_func.html", show=False)
+        if display: p2.plot(append=True, x_range=[-8,8], y_range=[-5,5])
+    else:
+        # Make the plots (with manual ranges)
+        p1 = p1.plot(html=False, show_legend=False)
+        p2 = p2.plot(html=False, x_range=[-1,1], y_range=[-1,1], show_legend=False)
+        p3 = p3.plot(html=False, x_range=[-1,1], y_range=[-1,1], show_legend=False)
+        # Generate the multiplot of the two side-by-side figures
+        if display: multiplot([p1,p2,p3], height=126, width=650, append=True)
+ 
+    if display: print("-"*70)
 
-    if TEST_RANDOM_RANGE:
-        import random
-        # Check unique values witnessed with sliced range.
-        seen = {}
-        for i in range(1000):
-            random.seed(i)
-            v = tuple(random_range(4))
-            seen[v] = seen.get(v,0) + 1
+
+def _test_effect(display=False):
+    if display:
+        print()
+        print("-"*70)
+        print("Begin tests for 'effect'")
+
+    a = {"a":.4, "b":.1, "c":.5, "d":.0}
+    b = {"a":.1, "b":.3, "c":.5, "d":.1}
+    c = {"a":.0, "b":.0, "c":.0, "d":1.}
+    assert(.3 == categorical_diff(a, b))
+    assert(1. == categorical_diff(a, c))
+    assert(.9 == categorical_diff(b, c))
+    a = ['a','a','a','a','b','b','b','b']
+    b = ['a','a','b','b','b','a','a','b']
+    c = ['a','a','a','b','b','a','a','a']
+    assert(0. == effect(a,b))
+    assert(0. == effect(a,c))
+    # assert((4/6 + 3/6 + 0/6 + 0/6)/4 == effect(b, c))
+    a = list(range(1000))
+    b = list(range(1000))
+    assert(effect(a,b) == 1.0)
+    b = np.random.random(size=(1000,))
+    assert(effect(a,b) < .1)
+    a = ['a', 'a', 'a', 'b', 'a', 'b', 'a', 'b', 'a', 'b', 'a', 'a', 'a', 'c', 'a', 'c', 'a', 'c', 'a', 'c']
+    b = [890.79, 1048.97, 658.43, 659.39, 722.0, 723.34, 1040.76, 1058.02, 1177.0, 1170.94, 415.56, 462.03, 389.09, 676.82, 688.49, 735.56, 552.58, 1127.29, 1146.42, 1251.12]
+    assert(0.0 == effect(a,b) - 0.5264043528589452)
+    if display: print("-"*70)
+
+
+def _test_epdf_diff(display=False):
+    if display:
+        print()
+        print("-"*70)
+        print("Begin tests for 'epdf_diff'")
+
+    # ----------------------------------------------------------------
+    def demo(seq):
+        if display:
+            print('~'*70)
+            print(len(seq), seq)
+            print()
+        total = 0
+        for vals in edf_pair_gen(seq):
+            total += vals[-1]
+            if display: print("[% 4s, % 3s] (%.2f) --"%vals, round(total,3))
+        if display:
+            print('~'*70)
+            print()
+    demo( [0] + list(range(9)) )
+    demo( sorted(np.random.random(size=(10,))) )
+    demo( list(range(9)) + [8] )
+    # ----------------------------------------------------------------
+    # a = [1, 1, 3, 3, 5, 6]
+    # b = [0, 1, 2, 3, 4]
+    # 
+    n = 100
+    if display:
+        print(f"a = [0,100] ({n} samples)")
+        print(f"b = [v + d for v in a]")
+        print()
+    for d in (.0, .01, .1, .5, .55, .9, 1., 1.5):
+        a = [v / n for v in list(range(n+1))]
+        b = [v+d for v in a]
+        if display: print(f"d = {d:.2f}   a~b = {epdf_diff(a,b):.2f}   b~a = {epdf_diff(b,a):.2f}   a~a = {epdf_diff(a,a):.2f}   b~b = {epdf_diff(b,b):.2f}")
+    if display: print()
+
+    for d in (.0, .01, .1, .5, .55, .9, 1., 1.5):
+        # Generate a random sequence.
+        a = sorted((np.random.random(size=(10,))))
+        b = sorted((np.random.random(size=(1000,)) + d))
+        diff = epdf_diff(a, b)
+        if display:
+            print(f"d = {d:.2f}","",
+                  "[%.2f, %.2f]"%(min(a),max(a)), "[%.2f, %.2f]"%(min(b),max(b)),"",
+                  diff
+            )
+    if display: print()
+    # ----------------------------------------------------------------
+    from util.plot import Plot
+
+    # Generate a random sequence.
+    a = sorted((np.random.random(size=(2000,))))
+    b = sorted((np.random.random(size=(2000,))))
+
+    p = Plot("Empirical PDF Diff Test")
+    p1 = pdf_fit(a, smooth=0.00001)
+    p2 = pdf_fit(b, smooth=0.00001)
+    p.add_func("a", p1, p1()) #(-.5,2))
+    p.add_func("b", p2, p2()) #(-.5,2))
+    if display: p.show(show=False, y_range=[-.5,1.5])
+
+    p = Plot("Empirical CDF Diff Test")
+    p1 = cdf_fit(a)
+    p2 = cdf_fit(b)
+    p.add_func("a", p1, p1()) #(-.5,2))
+    p.add_func("b", p2, p2()) #(-.5,2))
+    if display: p.show(append=True)
+    # ----------------------------------------------------------------
+    if display: print("-"*70)
+
+
+def _test_random_range(display=False):
+    if display:
+        print()
+        print("-"*70)
+        print("Begin tests for 'random_range'")
+
+    import random
+    # Check unique values witnessed with sliced range.
+    seen = {}
+    for i in range(1000):
+        random.seed(i)
+        v = tuple(random_range(4))
+        seen[v] = seen.get(v,0) + 1
+    if display:
         for row in sorted(seen):
             print("%5d"%seen[row], row)
-        # vals = {}
-        # mults = {}
-        # for i in range(10000):
-        #     results = tuple(random_range(20))
-        #     key, (val, mult) = results[:-1], results[-1]
-        #     diff = set(key[i-1] - key[i] for i in range(len(key)))
-        #     if len(diff) <= 2:
-        #         vals[key] = vals.get(key, set())   .union({val})
-        #         mults[key] = mults.get(key, set()) .union({mult})
-        # for v in sorted(vals): print(v, "% 10s"%sorted(vals[v]), sorted(mults[v]))
-        # print(len(vals))
+    # vals = {}
+    # mults = {}
+    # for i in range(10000):
+    #     results = tuple(random_range(20))
+    #     key, (val, mult) = results[:-1], results[-1]
+    #     diff = set(key[i-1] - key[i] for i in range(len(key)))
+    #     if len(diff) <= 2:
+    #         vals[key] = vals.get(key, set())   .union({val})
+    #         mults[key] = mults.get(key, set()) .union({mult})
+    # for v in sorted(vals): print(v, "% 10s"%sorted(vals[v]), sorted(mults[v]))
+    # print(len(vals))
+    if display: print()
+    if display: print("-"*70)
 
+
+def _test_fit_funcs(display=False):
+    if display:
+        print()
+        print("-"*70)
+        print("Begin tests for 'fit_funcs'")
+
+    from util.plot import Plot
+
+    # ==============================================
+    #      Test the fit functions and smoothing     
+    # ==============================================
+    # Make data
+    smooth = .1
+    data = np.random.normal(size=(1000,))
+    # data[:len(data)//2] += 2
+    min_max = (min(data) - .1, max(data) + .1)
+    if display:
+        print()
+        print("(min, max) : (%.2f, %.2f)"%(min_max))
+        print("Normal confidence: %.2f%%"%(100*normal_confidence(data)))
+        print()
+    # Make PDF fits
+    pfit = pdf_fit(data)
+    smooth_pfit = pdf_fit(data, smooth=smooth)
+    # Make CDF fits
+    cfit = cdf_fit(data)
+    stdev = .05 * (cfit.max - cfit.min)
+    smooth_cfit = gauss_smooth(cfit, stdev)
+    stdev = smooth * (cfit.max - cfit.min)
+    smoother_cfit = gauss_smooth(cfit, stdev)
+
+    # Make PDF plots
+    p = Plot()
+    p.add_func("PDF", pfit, min_max)
+    # Make smooth PDF
+    p.add_func("Smooth PDF", smooth_pfit, min_max)
+    if display: p.show(show=False)
+    # Make CDF plots
+    p = Plot()
+    p.add_func("CDF", cfit, min_max)
+    # Make CDF whose derivative is the default PDF.
+    p.add_func("CDF for default PDF", smooth_cfit, min_max)
+    # Make smoother cdf.
+    p.add_func("Smooth CDF", smoother_cfit, min_max)
+    if display: p.show(append=True)
+    # Make an animation transitioning between two normal distributions.
+    np.random.seed(0)
+    d1 = np.random.normal(0, .5, size=(500,))
+    d2 = np.random.normal(3, 1, size=(500,))
+    f1 = cdf_fit(d1, smooth=.1)
+    f2 = cdf_fit(d2, smooth=.1)
+    p = Plot()
+    for w in np.linspace(0,1,21):
+        w = round(w,2)
+        f3 = w*f1 + (1-w)*f2
+        p.add_func("0, 1/2", f1, f1(), frame=w)
+        p.add_func("3, 1", f2, f2(), frame=w)
+        p.add_func("weighted sum", f3, f3(), frame=w)
+    if display: p.show(bounce=True, append=True)
+    if display: print()
+    if display: print("-"*70)
+
+
+def _test_samples(display=False):
+    if display:
+        print()
+        print("-"*70)
+        print("Begin tests for 'samples'")
+        print()
+    key_values = [
+        (7, .2, .95),
+        (11, .2, .99),
+        (25, .1, .95),
+        (42, .1, .99),
+        (97, .05, .95),
+        (166, .05, .99),
+        (2401, .01, .95),
+        (4147, .01, .99),
+        (8434, .1, .999),
+        (33733, .05, .999),
+        (843311, .01, .999),
+    ]
+    if display: print("samples (max error, confidence)")
+    for (s, e,c) in key_values[:-3]:
+        needed = samples(error=e, confidence=c)
+        if display: print("%6d  (%.2f, %.2f)"%(needed,e,c))
+        assert(needed == s)
+    if display: print()
+    for (s, e,c) in key_values[-3:]:
+        needed = samples(error=e, confidence=c)
+        if display: print("%6d  (%.2f, %.3f)"%(needed,e,c))
+        assert(needed == s)
+
+    if display:
+        print()
+        print("With    5 samples we are 99% confident in max error <=",
+              round(samples(5, confidence=.99), 1))
+        print("With   10 samples we are 99% confident in max error <=",
+              round(samples(10, confidence=.99), 1))
+        print("With   40 samples we are 99% confident in max error <=",
+              round(samples(40, confidence=.99), 1))
+        print("With  170 samples we are 99% confident in max error <=",
+              round(samples(170, confidence=.99), 2))
+        print("With 4000 samples we are 99% confident in max error <=",
+              round(samples(4000, confidence=.99), 2))
+
+    if display: print("-"*70)
+
+
+if __name__ == "__main__":
+    print(f"Testing {__file__}..")
+    # _test_mpca()
+    # _test_effect()
+    # _test_epdf_diff()
+    # _test_random_range()
+    # _test_fit_funcs()
+    _test_samples(True)
+    print("done.")
