@@ -1,6 +1,6 @@
 import numpy as np
 from util.math import is_none, is_numeric
-from util.algorithms import class_name
+from util.approximate import class_name
 
 # Exceptions for raising useful messages to users.
 class ImproperUsage(Exception): pass

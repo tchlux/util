@@ -2,68 +2,82 @@
 import os
 import numpy as np
 import fmodpy
-from util.algorithms import Approximator
+from util.approximate import WeightedApproximator
 
 # This directory
 CWD = os.path.dirname(os.path.abspath(__file__))
 
-# =======================
-#      LSHEP Wrapper     
-# =======================
-
-# Wrapper class for using the LSHEP fortran code
-class LSHEP(Approximator):
+# Wrapper class for using the modified shepard fortran code
+class ShepMod(WeightedApproximator):
     def __init__(self):
-        self.linear_shepard = fmodpy.fimport(
-            os.path.join(CWD,"linear_shepard.f95"),
-            module_link_args=["-lgfortran","-lblas","-llapack"], 
-            output_directory=CWD, autocompile_extra_files=True)
-        self.lshep = self.linear_shepard.lshep
-        self.lshepval = self.linear_shepard.lshepval
+        self.modified_shepard = fmodpy.fimport(
+            os.path.join(CWD,"modified_shepard.f95"),
+            output_directory=CWD)
+        self.shepmod = self.modified_shepard.shepmod
+        self.shepmodval = self.modified_shepard.shepmodval
         self.ierrors = {}
-        self.x = self.f = self.a = self.rw = None
+        self.x = self.rw = None
 
     # Use fortran code to compute the boxes for the given data
-    def _fit(self, control_points, values, **kwargs):
+    def _fit(self, control_points, **kwargs):
         # Local operations
         self.x = np.asfortranarray(control_points.T)
-        self.f = []
-        self.a = []
-        self.rw = []
-        # Fit a separate LSHEP model to each dimension of output.
-        for i in range(values.shape[1]):
-            self.f.append( np.asfortranarray(values[:,i]) )
-            self.a.append( np.ones(shape=self.x.shape, order="F") )
-            self.rw.append( np.ones(shape=(self.x.shape[1],), order="F") )
-            # In-place update of self.a and self.rw
-            self.lshep(self.x.shape[0], self.x.shape[1],
-                       self.x, self.f[i], self.a[i], self.rw[i], **kwargs)
+        self.rw = np.ones(shape=(self.x.shape[1],), order="F")
+        # In-place update of self.rw (radius of influence).
+        self.shepmod(self.x.shape[0], self.x.shape[1],
+                     self.x, self.rw, **kwargs)
 
     # Use fortran code to evaluate the computed boxes
     def _predict(self, x):
         # Calculate all of the response values
-        response = []
+        indices = []
+        weights = []
+        base = np.arange(self.x.shape[1])
         for x_pt in x:
-            row = []
-            for (f, a, rw) in zip(self.f, self.a, self.rw):
-                x_pt = np.array(np.reshape(x_pt,(self.x.shape[0],)), order="F")
-                ierr = 0
-                resp = self.lshepval(x_pt, self.x.shape[0], self.x.shape[1], 
-                                     self.x, f, a, rw, ierr)
-                self.ierrors[ierr] = self.ierrors.get(ierr, 0) + 1
-                row.append(resp)
-            response.append(row)
-            # self.ierrors[ier] = self.ierrors.get(ier,0) + 1
-        # Return the response values
-        return np.array(response)
+            x_pt = np.array(np.reshape(x_pt,(self.x.shape[0],)), order="F")
+            ierr = 0
+            wts = np.zeros(self.x.shape[1], order="F")
+            self.shepmodval(x_pt, *self.x.shape, self.x, self.rw, wts, ierr)
+            # Get those indices where there is a nonzero weight.
+            ids = base[wts > 0]
+            self.ierrors[ierr] = self.ierrors.get(ierr, 0) + 1
+            # Append the impactful indices and weights.
+            indices.append( ids )
+            weights.append( wts[ids] )
+        # Return the source indices and weights associated with all
+        # interpolation points.
+        return indices, weights
 
     # Print and return a summary of the errors experienced
     def errors(self):
         print("%i normal returns."%self.ierrors.get(0,0))
         print(("%i points outside the radius of influence "+
               "of all other points.")%self.ierrors.get(1,0))
-        print(("%i points at which hyperplane normals are significantly"+
-               " different.\n  This is only hazardous for piecewise "+
-               "linear underlying functions.")%self.ierrors.get(2,0))
-        return self.ierrors.get(0,0), self.ierrors.get(1,0), self.ierrors.get(2,0)
+        return self.ierrors.get(0,0), self.ierrors.get(1,0)
 
+
+if __name__ == "__main__":
+    from util.approximate.testing import test_plot
+
+    model = ShepMod()
+    p, x, y = test_plot(model, random=True, N=20)
+    p.show()
+    print()
+    model.errors()
+
+
+    # # Test distribution prediction.
+    # from util.plot import Plot
+    # from util.stats import cdf_fit
+    # np.random.seed(0)
+    # x = np.random.random((100,4))
+    # y = [cdf_fit(np.random.random((40,))) for _ in x]
+
+    # model.fit(x,y)
+    # test = np.random.random((20,4))
+    # guesses = model(test)
+
+    # p = Plot()
+    # for i,f in enumerate(guesses):
+    #     p.add_func(f"{i+1} CDF", f, f())
+    # p.show()

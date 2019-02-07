@@ -2,7 +2,7 @@
 import os
 import numpy as np
 import fmodpy
-from util.algorithms import WeightedApproximator
+from util.approximate import WeightedApproximator
 
 # This directory
 CWD = os.path.dirname(os.path.abspath(__file__))
@@ -101,7 +101,7 @@ class qHullDelaunay(WeightedApproximator):
 # Wrapper class for using the Delaunay fortran code
 class Delaunay(WeightedApproximator):
     os.environ["OMP_NESTED"] = "TRUE"
-    from util.algorithms.delaunay import delsparse
+    from util.approximate.delaunay import delsparse
     def __init__(self, parallel=False, pmode=None):
         # Get the source fortran code module
         path_to_src = os.path.join(CWD,"delsparse.f90")
@@ -120,7 +120,7 @@ class Delaunay(WeightedApproximator):
 
     # Return just the points and the weights associated with them for
     # creating the correct interpolation
-    def _predict(self, x):
+    def _predict(self, x, allow_extrapolation=True, print_errors=True):
         # Get the predictions from VTdelaunay
         pts_in = np.asarray(self.pts.copy(), order="F")
         p_in = np.asarray(x.T, dtype=np.float64, order="F")
@@ -139,18 +139,21 @@ class Delaunay(WeightedApproximator):
             self.delaunays(self.pts.shape[0], self.pts.shape[1],
                            pts_in, p_in.shape[1], p_in, simp_out,
                            weights_out, error_out, extrap=100.0)
+        # Remove "extrapolation" errors if the user doesn't care.
+        if allow_extrapolation: error_out = np.where(error_out == 1, 0, error_out)
         # Handle any errors that may have occurred.
-        if (sum(np.where(error_out == 1, 0, error_out)) != 0):
-            unique_errors = sorted(np.unique(error_out))
-            print(" [Delaunay errors:",end="")
-            for e in unique_errors:
-                if (e in {0,1}): continue
-                print(" %3i"%e,"at","{"+",".join(tuple(
-                    str(i) for i in range(len(error_out))
-                    if (error_out[i] == e)))+"}", end=";")
-            print("] ")
+        if (sum(error_out) != 0):
+            if print_errors:
+                unique_errors = sorted(np.unique(error_out))
+                print(" [Delaunay errors:",end="")
+                for e in unique_errors:
+                    if (e == 0): continue
+                    print(" %3i"%e,"at","{"+",".join(tuple(
+                        str(i) for i in range(len(error_out))
+                        if (error_out[i] == e)))+"}", end=";")
+                print("] ")
             # Reset the errors to simplex of 1s (to be 0) and weights of 0s.
-            bad_indices = (error_out > 1)
+            bad_indices = (error_out > (1 if allow_extrapolation else 0))
             simp_out[:,bad_indices] = 1
             weights_out[:,bad_indices] = 0
         # Adjust the output simplices and weights to be expected shape
@@ -162,18 +165,18 @@ class Delaunay(WeightedApproximator):
 
 # Wrapper class for using the Delaunay fortran code
 class DelaunayP1(Delaunay):
-    from util.algorithms.delaunay import delsparse
+    from util.approximate.delaunay import delsparse
     def __init__(self, parallel=True, pmode=1):
         return super().__init__(parallel=parallel, pmode=pmode)
 
 # Wrapper class for using the Delaunay fortran code
 class DelaunayP2(Delaunay):
-    from util.algorithms.delaunay import delsparse
+    from util.approximate.delaunay import delsparse
     def __init__(self, parallel=True, pmode=2):
         return super().__init__(parallel=parallel, pmode=pmode)
 
 # Wrapper class for using the Delaunay fortran code
 class DelaunayP3(Delaunay):
-    from util.algorithms.delaunay import delsparse
+    from util.approximate.delaunay import delsparse
     def __init__(self, parallel=True, pmode=3):
         return super().__init__(parallel=parallel, pmode=pmode)

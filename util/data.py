@@ -1452,15 +1452,15 @@ class Data(list):
         if (type(model) == type(None)):
             # Use Voronoi if there are fewer than 10000 points.
             if (len(self) <= 5000):
-                from util.algorithms import Voronoi, unique
+                from util.approximate import Voronoi, unique
                 model = unique(Voronoi)()
             # Otherwise use nearest neighbor (can't get points + weights from NN)
             else:
-                from util.algorithms import unique, condition
+                from util.approximate import unique, condition
                 samples = min(self.numeric.data.shape[0], 10000)
                 dim = min(self.numeric.data.shape[1], 1000)
                 # Use nearest neighbor (can't get points + weights from NN)
-                from util.algorithms import NearestNeighbor
+                from util.approximate import NearestNeighbor
                 model = condition(unique(NearestNeighbor), dim=dim, samples=samples)()
         # Set the weights accordingly
         if (type(weights) == type(None)):
@@ -1574,11 +1574,11 @@ class Data(list):
             self.numeric = self.to_matrix()
         # Pick the filling model based on data size.
         if (type(model) == type(None)):
-            from util.algorithms import unique, condition
+            from util.approximate import unique, condition
             samples = min(self.numeric.data.shape[0], 10000)
             dim = min(self.numeric.data.shape[1], 1000)
             # Use nearest neighbor (can't get points + weights from NN)
-            from util.algorithms import NearestNeighbor
+            from util.approximate import NearestNeighbor
             model = condition(unique(NearestNeighbor), dim=dim, samples=samples)()
         # Set the weights accordingly
         if (type(weights) == type(None)):

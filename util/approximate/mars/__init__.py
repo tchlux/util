@@ -1,4 +1,4 @@
-from util.algorithms import Approximator
+from util.approximate import Approximator
 
 # MARS
 MARS_MAX_BASES = float('inf')

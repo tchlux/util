@@ -2,7 +2,7 @@
 import os, time
 import numpy as np
 import fmodpy
-from util.algorithms import WeightedApproximator
+from util.approximate import WeightedApproximator
 
 # This directory
 CWD = os.path.dirname(os.path.abspath(__file__))

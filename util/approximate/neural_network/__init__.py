@@ -1,5 +1,5 @@
 # Makes available all custom algorithms that I have worked with
-from util.algorithms import Approximator
+from util.approximate import Approximator
 
 # MLP Regressor
 MLP_R_ACTIVATION_FUNC = "relu"

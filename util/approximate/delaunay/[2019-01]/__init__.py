@@ -2,7 +2,7 @@
 import os
 import numpy as np
 import fmodpy
-from util.algorithms import WeightedApproximator
+from util.approximate import WeightedApproximator
 
 # This directory
 CWD = os.path.dirname(os.path.abspath(__file__))
@@ -101,7 +101,7 @@ class qHullDelaunay(WeightedApproximator):
 # Wrapper class for using the Delaunay fortran code
 class Delaunay(WeightedApproximator):
     os.environ["OMP_NESTED"] = "TRUE"
-    from util.algorithms.delaunay import delsparse
+    from util.approximate.delaunay import delsparse
     def __init__(self, parallel=False, pmode=None, chunksize=None):
         # Get the source fortran code module
         path_to_src = os.path.join(CWD,"delsparse.f90")
@@ -163,24 +163,24 @@ class Delaunay(WeightedApproximator):
 
 # Wrapper class for using the Delaunay fortran code
 class DelaunayP1CN(Delaunay):
-    from util.algorithms.delaunay import delsparse
+    from util.approximate.delaunay import delsparse
     def __init__(self, parallel=True, pmode=1, chunksize=None):
         return super().__init__(parallel=parallel, pmode=pmode, chunksize=chunksize)
 
 # Wrapper class for using the Delaunay fortran code
 class DelaunayP2CN(Delaunay):
-    from util.algorithms.delaunay import delsparse
+    from util.approximate.delaunay import delsparse
     def __init__(self, parallel=True, pmode=2, chunksize=None):
         return super().__init__(parallel=parallel, pmode=pmode, chunksize=chunksize)
 
 # Wrapper class for using the Delaunay fortran code
 class DelaunayP3CN(Delaunay):
-    from util.algorithms.delaunay import delsparse
+    from util.approximate.delaunay import delsparse
     def __init__(self, parallel=True, pmode=3, chunksize=None):
         return super().__init__(parallel=parallel, pmode=pmode, chunksize=chunksize)
 
 # Wrapper class for using the Delaunay fortran code
 class DelaunayPNC10(Delaunay):
-    from util.algorithms.delaunay import delsparse
+    from util.approximate.delaunay import delsparse
     def __init__(self, parallel=True, pmode=None, chunksize=10):
         return super().__init__(parallel=parallel, pmode=pmode, chunksize=chunksize)

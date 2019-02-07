@@ -2,7 +2,7 @@
 import os
 import numpy as np
 import fmodpy
-from util.algorithms import Approximator
+from util.approximate import Approximator
 
 # This directory
 CWD = os.path.dirname(os.path.abspath(__file__))

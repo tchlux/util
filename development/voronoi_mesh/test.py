@@ -1,5 +1,5 @@
 from util.plotly import Plot
-# from util.algorithms import minimize
+# from util.approximate import minimize
 from util.optimize import minimize
 import numpy as np
 from vmesh import VoronoiMesh

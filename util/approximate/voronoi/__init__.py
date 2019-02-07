@@ -2,7 +2,7 @@
 import os, time
 import numpy as np
 import fmodpy
-from util.algorithms import WeightedApproximator
+from util.approximate import WeightedApproximator
 
 # This directory
 CWD = os.path.dirname(os.path.abspath(__file__))
@@ -62,7 +62,7 @@ class Voronoi(WeightedApproximator):
 
 
 if __name__ == "__main__":
-    from util.algorithms.testing import test_plot
+    from util.approximate.testing import test_plot
     model = Voronoi()
     p, x, y = test_plot(model, random=True, N=1000)
     p.show()

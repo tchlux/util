@@ -1,4 +1,4 @@
-from util.algorithms import Approximator, test_plot
+from util.approximate import Approximator, test_plot
 import numpy as np
 
 # Inverse distance weighted values
@@ -64,7 +64,7 @@ class NearbySimplex(Approximator):
                 simp += [np.argmin(others)]
             # Use the voronoi mesh to do interpolation with this
             # (potentially underdefined) simplex
-            from util.algorithms import VoronoiMesh
+            from util.approximate import VoronoiMesh
             sub_model = VoronoiMesh()
             sub_model.fit(self.x[simp], self.y[simp])
             response.append( sub_model(pt) )
@@ -195,7 +195,7 @@ if __name__ == "__main__":
     _ = p.show()
     exit()
 
-    # from util.algorithms import Delaunay as model
+    # from util.approximate import Delaunay as model
     # model = LipschitzMedian
     model = MinimumLipschitz
 

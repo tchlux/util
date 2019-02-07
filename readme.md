@@ -13,7 +13,7 @@
 
 Contains various useful utilities.
 
-### util.algorithms
+### util.approximate
 
 Classes for many different approximation algorithms. Contains wrappers for converting pure approximators (numeric outputs) to classifiers.
 

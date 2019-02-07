@@ -2,7 +2,7 @@
 import os
 import numpy as np
 import fmodpy
-from util.algorithms import WeightedApproximator
+from util.approximate import WeightedApproximator
 
 # This directory
 CWD = os.path.dirname(os.path.abspath(__file__))
@@ -49,7 +49,7 @@ class BoxMesh(WeightedApproximator):
 
 if __name__ == "__main__":
     from util.plot import Plot
-    from util.algorithms.testing import test_plot
+    from util.approximate.testing import test_plot
     model = BoxMesh()
 
     p,x,y = test_plot(model)

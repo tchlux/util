@@ -6,7 +6,7 @@
 import numpy as np
 import time
 from util.plotly import *
-from util.algorithms import BBS, FitBoxMesh, MaxBoxMesh
+from util.approximate import BBS, FitBoxMesh, MaxBoxMesh
 
 FUN = lambda x: np.cos(x[0]) * (np.sin(x[1]) if len(x) > 1 else 1.0) + 1
 FBM_NUM_BOXES = float("inf")

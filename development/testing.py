@@ -1,8 +1,8 @@
 
 
 def test_algorithms():
-    from util.algorithms.testing import test_plot
-    from util.algorithms import condition, LSHEP, Voronoi, Delaunay, \
+    from util.approximate.testing import test_plot
+    from util.approximate import condition, LSHEP, Voronoi, Delaunay, \
         NearestNeighbor, KNN, Shepard, DelaunayP1, DelaunayP2, DelaunayP3
 
     print("Adding surface to plot..")

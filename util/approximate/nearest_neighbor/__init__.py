@@ -1,5 +1,5 @@
 import numpy as np
-from util.algorithms import WeightedApproximator
+from util.approximate import WeightedApproximator
 from util.math import is_none, abs_diff
 
 # Automatically select the value for "k" for using nearest neighbor
@@ -56,7 +56,7 @@ class Average(WeightedApproximator):
         weights = [[w]*len(self.points)] * len(points)
         return np.array(indices), np.array(weights)
 # Import another approximation algorithm that reasonably blends points.
-from util.algorithms import Voronoi
+from util.approximate import Voronoi
 
 # ===========================================
 #      Simple Nearest Neighbor Regressor     

@@ -1,4 +1,4 @@
-from util.algorithms import VoronoiMesh
+from util.approximate import VoronoiMesh
 
 # Create an instance of an algorithm that can be ued to classify
 # data. The "fit" method causes the classifier to construct the

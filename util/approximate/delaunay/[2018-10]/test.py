@@ -1,7 +1,7 @@
 if __name__ == "__main__":
     import numpy as np
     from util.plot import Plot
-    from util.algorithms import Delaunay
+    from util.approximate import Delaunay
 
     # Settings for creating the example.
     N           = 20

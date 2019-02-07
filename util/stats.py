@@ -209,7 +209,11 @@ class Distribution():
             if hasattr(func, attr): setattr(self, attr, getattr(func, attr))
 
     # Define addition with another distribution.
-    def __add__(self, func):
+    def __radd__(self, func):
+        # Special case, when distributions are used in a "sum" then an
+        # integer will be added as the "start" of the sum. Ignore this.
+        if (type(func) == int): return self
+        # Get the new minimum and maximum of this distribution and "func".
         new_min = min(self.min, func.min)
         new_max = max(self.max, func.max)
         def new_func(x=None):
@@ -226,6 +230,7 @@ class Distribution():
                 setattr(new_func, attr, lambda x: mine(x) + other(x))
         # Return a distribution object.
         return Distribution(new_func)
+    __add__ = __radd__
 
     # Define multiplication by a number (usually a float).
     def __rmul__(self, number):
@@ -935,7 +940,7 @@ def _test_mpca(display=False):
     p1.add_func("Surface", func, [-1,1], [-1,1], plot_points=100)
 
     if GENERATE_APPROXIMATIONS:
-        from util.algorithms import NearestNeighbor, Delaunay, condition
+        from util.approximate import NearestNeighbor, Delaunay, condition
         p = Plot()
         # Add the source points and a Delaunay fit.
         p.add("Points", *(points.T), response, opacity=.8)
@@ -1266,6 +1271,15 @@ def _test_samples(display=False):
 
     if display: print("-"*70)
 
+def _test_Distribution():
+    # Verify that the distribution works under a weighted sum.
+    import numpy as np
+    d = []
+    for i in range(10):
+        d.append( cdf_fit(np.random.random(100)) )
+    wts = np.random.random((10,))
+    wts /= sum(wts)
+    print(sum(dist*w for (dist,w) in zip(d, wts)))
 
 if __name__ == "__main__":
     print(f"Testing {__file__}..")
@@ -1274,5 +1288,8 @@ if __name__ == "__main__":
     # _test_epdf_diff()
     # _test_random_range()
     # _test_fit_funcs()
+    # _test_Distribution()
+
     _test_samples(True)
     print("done.")
+    
