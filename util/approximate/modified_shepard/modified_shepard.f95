@@ -31,8 +31,6 @@ CONTAINS
     ! Local variables.         
     INTEGER :: I, J, K  ! loop control variables.
     INTEGER :: NP    ! number of nodes used for the local fit.
-    INTEGER, DIMENSION(N-1) :: IDIST ! index array for DIST. 
-    REAL(KIND=REAL64) :: DIAM  ! diameter of the whole date set.
     REAL(KIND=REAL64), DIMENSION(N-1) :: DIST ! array that stores all the distances. 
 
     IER = 0
@@ -43,33 +41,29 @@ CONTAINS
     END IF
     ! Set the number of neighbors to define radius.
     NP = M + 1
-    ! Calculate RW and A. 
-    DIAM = 0.0_REAL64
+    ! Calculate the radius of influence "RW" for all interpolation nodes.
     DO K = 1, N
        J = 0
        DO I = 1, N
           IF (I /= K) THEN
+             ! Compute the squared distance to each *other* node.
              J = J + 1
              DIST(J) = DOT_PRODUCT( X(:, I) - X(:, K), X(:, I) - X(:, K) )
-             IDIST(J) = I
           END IF
        END DO
-       DIAM = MAX( DIAM, MAXVAL( DIST(1:N-1) ) )
-       CALL SORT( DIST, IDIST, NP, N - 1 )
-       DIST(1:NP) = SQRT( DIST(1:NP) ) 
-       RW(K) = DIST(NP)
+       ! Sort the squared distances to all other nodes.
+       CALL SORT( DIST, NP, N - 1 )
+       ! Only bother taking the square root of the choice distance.
+       RW(K) = SQRT(DIST(NP))
     END DO
-    RW(1:N) = MIN( SQRT( DIAM ) / 2.0_REAL64, RW(1:N) )
     RETURN
   END SUBROUTINE SHEPMOD
 
-  SUBROUTINE SORT( DIST, IDIST, NUM, LENGTH )
+  SUBROUTINE SORT( DIST, NUM, LENGTH )
     ! The subroutine SORT sorts the real array DIST of length LENGTH in ascending 
-    ! order for the smallest NUM elements. IDIST stores the original label for 
-    ! each element in array DIST. 
+    ! order for the smallest NUM elements.
     ! Local variables.
     REAL(KIND=REAL64), INTENT(INOUT), DIMENSION(:)::DIST
-    INTEGER, INTENT(INOUT), DIMENSION(:)::IDIST
     INTEGER :: I, ITEMP, J, LENGTH, NUM
     REAL(KIND=REAL64) :: TEMP
 
@@ -77,11 +71,8 @@ CONTAINS
        DO J = 1, MIN( I-1, NUM )
           IF ( DIST(I) < DIST(J) ) THEN
              TEMP = DIST(I)
-             ITEMP = IDIST(I)
              DIST(J+1:I) = DIST(J:I-1) 
-             IDIST(J+1:I) = IDIST(J:I-1)
              DIST(J) = TEMP
-             IDIST(J) = ITEMP
              EXIT 
           END IF
        END DO

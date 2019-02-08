@@ -1,6 +1,7 @@
 # Get the name of a class as listed in python source file.
-def class_name(obj): return (repr(obj)[1:-2].split(".")[-1])
-
+def class_name(obj):
+    if type(obj) == type: return (repr(obj)[1:-2].split(".")[-1])
+    else:                 return (repr(obj)[1:-2].split(".")[-1]).split(" ")[0]
 # Import the base classes for approximation and the wrappers for approximation.
 from util.approximate.base import Approximator, WeightedApproximator
 from util.approximate.wrappers import unique, condition
@@ -18,13 +19,13 @@ from util.approximate.shepard import Shepard
 from util.approximate.linear_shepard import LSHEP
 # Regression techniques.
 from util.approximate.mars import MARS
-from util.approximate.neural_network import MLPRegressor
+from util.approximate.neural_network import NeuralNetwork, BFGS1000
 from util.approximate.support_vector_machine import SVR
 
 # Rename neural network.
-MLP = MLPRegressor
-NeuralNetwork = MLPRegressor
-NN = MLPRegressor
+MLP = NeuralNetwork
+NN = NeuralNetwork
+
 # Rename nearest neighbor.
 KNN = NearestNeighbor
 

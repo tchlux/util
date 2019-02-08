@@ -22,7 +22,7 @@ class InvalidIndex(Exception): pass
 
 # Return a randomized "range" using the appropriate technique based on
 # the size of the range being generated. If the memory footprint is
-# small (<= 2MB) then a random sample is created and returned.
+# small (<= 32KB) then a random sample is created and returned.
 # If the memory footprint would be prohibitively large, a Linear
 # Congruential Generator is used to efficiently generate the sequence.
 # 
@@ -89,8 +89,16 @@ def random_range(start, stop=None, step=None, count=float('inf')):
         value = (value*multiplier + offset) % modulus
 
 
-# This function maps an index in the range [0, (count**2 - count) // 2] 
-# to a tuple of integers in the range [0,count). The mapping is complete.
+# This function maps an index in the range [0, count*(count - 1) // 2] 
+# to a tuple of integers in the range [0,count). The mapping will cover
+# all pairs if you use all indices between [0, count*(count - 1) // 2].
+def pair_to_index(p1, p2):
+    if (p1 < p2): p1, p2 = p2, p1
+    return (p1 * (p1 - 1) // 2) + p2
+
+# This function maps an index in the range [0, count*(count - 1) // 2] 
+# to a tuple of integers in the range [0,count). The mapping will cover
+# all pairs if you use all indices between [0, count*(count - 1) // 2].
 def index_to_pair(index):
     val = int(((1/4 + 2*index)**(1/2) + 1/2))
     remainder = index - val*(val - 1)//2

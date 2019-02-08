@@ -40,13 +40,13 @@ def test_Timer():
     from util.system import Timer
     a = Timer()
     first = a.start
-    assert(a.check() < .01)
+    assert(a.total() < .01)
     time.sleep(1)
     assert(first - a.start == 0)
-    assert(abs(a.check() - 1) < .01)
+    assert(abs(a.total() - 1) < .01)
     a.start()
     assert(abs(first - a.start) > 1)
-    assert(a.check() < .001)    
+    assert(a.total() < .001)    
     a.stop()
     print("passed.")
 

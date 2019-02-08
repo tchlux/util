@@ -1,3 +1,4 @@
+# --------------------------------------------------------------------
 # Import "numpy" by modifying the system path to remove conflicts.
 import sys, os
 _ = []
@@ -5,6 +6,7 @@ for i in range(len(sys.path)-1,-1,-1):
     if "util/util" in sys.path[i]: _ = [sys.path.pop(i)] + _
 import numpy as np
 sys.path = _ + sys.path
+# --------------------------------------------------------------------
 
 #      data.py     
 # =================
@@ -17,13 +19,15 @@ NP_TYPES = {str:(np.str_, 16),    # Which numpy types correspond to
             int:(np.int64,),      # the python types of variables
             float:(np.float64,)}
 PY_TYPES = {value[0]:key for (key,value) in NP_TYPES.items()}
+# 
 GENERATOR_TYPE = type(_ for _ in ())
-
-from util.math import abs_diff
 
 # coding: future_fstrings
 # from future import print_function
 
+# TODO:  Make data only deep copy when "copy()" is called or "[:,:]"
+#        is given. Otherwise return "DataView" object (limited function 
+#        that allows for deep copying if desired).
 # TODO:  Add tests for empty data object.
 # TODO:  Add "Descriptor" class for Data.names and Data.types so that
 #        they can be directly modified by users safely (with checks).
@@ -40,7 +44,17 @@ from util.math import abs_diff
 #        when adding data with subset of known columns, add rows and
 #        columns (for unknown) and None for missing.
 # TODO:  Make "to_matrix" automatically flatten elements of columns
-#        that are typed as numeric numpy arrays.
+#        that contain iterables into their base types. If the types
+#        are numeric, use float, otherwise use string. Use "is numeric"
+#        to determine if the target needs to be classified or interpolated.
+# TODO:  Make "to_matrix" automatically consider 'None' a unique value
+#        for categorical columns and add a dimension 'is present'
+#        otherwise.
+# TODO:  Write "collect" that does the combined operations of 
+#        "unique().collect()" in a more memory efficient manner (by
+#        cannabalizing the existing Data object).
+# TODO:  Write "unroll" that does the opposite operation of "collect",
+#        expanding a data set out according to list columns.
 
 QUOTES = {'"'}
 DEFAULT_DISPLAY_WAIT = 3.
@@ -195,15 +209,15 @@ def category_ratio(point):
 # =================================================
 
 # Return the type of a string (try converting to int and float)
-def get_type(string):
-    if (len(string) == 0):
+def get_type(obj):
+    if (hasattr(obj, "__len__") and (len(obj) == 0)):
         return int
     try:
-        int(string)
+        int(obj)
         return int
     except ValueError:
         try:
-            float(string)
+            float(obj)
             return float
         except ValueError:
             return str
@@ -552,6 +566,9 @@ class Data(list):
             if any(type(t) != type for t in types):
                 raise(self.BadSpecifiedType(f"An entry of provided types was not of {type(type)} class."))
             self.types = types[:]
+            # Construct default names for each column if names were not provided.
+            if (type(self.names) == type(None)):
+                self.names = [str(i) for i in range(len(types))]
         self.missing = set()
         # If data was provided, put it into this data
         if type(data) != type(None):
@@ -666,9 +683,12 @@ class Data(list):
             singleton = len(value) != (len(rows)*len(cols))
         # Assume if the "value" is a string, then this is a singleton.
         if (not singleton) and (type(value) == str): singleton = True
+        # Assume if the value is a generator and the column(s) it is
+        # assigning to are not *all* generators, it is not a singleton.
+        if ((type(value) == GENERATOR_TYPE) and
+            any(self.types[c] != GENERATOR_TYPE for c in cols)): singleton = False
         # Assume singleton status is correct.
-        if not singleton:
-            value_iter = value.__iter__()
+        if (not singleton): value_iter = value.__iter__()
         # Reset type entirely if the new data assigns to the full column.
         if (len(rows) == len(self)):
             for col in cols: self.types[col] = type(None)
@@ -981,8 +1001,11 @@ class Data(list):
         return self
 
     # Convenience method for saving to a file
-    def save(self, path):
+    def save(self, path, create=True):
         import pickle, dill, gzip
+        # Create the output folder if it does not exist.
+        output_folder = os.path.split(os.path.abspath(path))[0]
+        if create and not os.path.exists(output_folder): os.makedirs(output_folder)
         # Check for compression
         if "." not in path: path += ".pkl"
         self.numeric = None

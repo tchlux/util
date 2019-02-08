@@ -182,37 +182,45 @@ class AtomicOpen:
 # Class for timing operations. Initialize to start, call to check, use
 # the "start" and "stop" attributes / functions to observe / set.
 class Timer:
-    import time
-    a = b = None
-    # Overwrite the "__call__" method of the provided object.
-    def callset(obj, func):
-        try:
-            obj.__call__ = lambda self: func()
-            return obj
-        except AttributeError:
-            class Callable(type(obj)):
-                def __call__(self): return func()
-            return Callable(obj)
+    #-----------------------------------------------------------------
+    #                            Private
+    import time as _time
+    _a = _b = None
     # Start the timer when it is initialized by default.
-    def __init__(self): self.a = self.time.time()
+    def __init__(self): self._begin()
+    # Offer a function for explicitly beginning a timer.
+    def _begin(self):
+        self._a = self._time.time()
+        self._b = None
     # End function for this timer.
-    def end(self):
-        self.b = self.time.time()
-        return self.b
-    # Declare the "start" property / function to re-initialized when called.
-    @property
-    def start(self): return Timer.callset(self.a, self.__init__)
-    # Declare the "stop" property / function to "stop" when called.
-    @property
-    def stop(self): return Timer.callset(self.end(), self.end)
-    # Return the total time elapsed from start.
-    @property
-    def total(self): return self.b - self.a
+    def _end(self):
+        self._b = self._time.time()
+        return self._b
     # Return the elapsed time since start.
-    def check(self): return self.time.time() - self.a
+    def _check(self):
+        if (self._b == None): return self._time.time() - self._a
+        else:                return self._b - self._a
+    # Overwrite the "__call__" method of the provided object.
+    def _callset(obj, func):
+        class Float(type(obj)):
+            def __call__(self): return func()
+            def __repr__(self): return str(float(self))
+        return Float(obj)
+    #-----------------------------------------------------------------
+    #                             Public
+    # 
     # If not stopped, return elapsed time, otherwise return total time.
-    def __call__(self):
-        def is_none(obj): return type(obj) == type(None)
-        if (is_none(self.b) or (self.b < self.a)): return round(self.check(),2)
-        else:                                      return round(self.total(),2)
-
+    def __call__(self): return round(self._check(), 2)
+    # Return "start time" as attribute, "begin timer" as function.
+    @property
+    def start(self): return Timer._callset(self._a, self._begin)
+    # Return "stop time" as attribute, "end timer, return total" as function.
+    @property
+    def stop(self):
+        if (self._b == None): return Timer._callset(self._end(), self.total)
+        else:                 return Timer._callset(self._b, self.total)
+    # Return the "total time from start" if running, return "total time" if finished.
+    @property
+    def total(self):
+        if (self._b == None): return Timer._callset(self._check(), self._check)
+        else:                 return Timer._callset(self._b - self._a, lambda: self._b - self._a)

@@ -1,4 +1,5 @@
 import numpy as np
+from util.system import hash
 from util.math import is_none, is_numeric
 from util.approximate import class_name
 

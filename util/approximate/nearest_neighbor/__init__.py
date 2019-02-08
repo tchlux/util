@@ -55,8 +55,6 @@ class Average(WeightedApproximator):
         w = 1 / len(self.points)
         weights = [[w]*len(self.points)] * len(points)
         return np.array(indices), np.array(weights)
-# Import another approximation algorithm that reasonably blends points.
-from util.approximate import Voronoi
 
 # ===========================================
 #      Simple Nearest Neighbor Regressor     

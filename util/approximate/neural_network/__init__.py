@@ -16,7 +16,7 @@ EARLY_STOP = True
 # ==========================================
 #      Multi-Layer Perceptron Regressor     
 # ==========================================
-class MLPRegressor(Approximator):
+class NeuralNetwork(Approximator):
     def __init__(self, *args, activation=MLP_R_ACTIVATION_FUNC,
                  solver=MLP_R_SOLVER, zmuv=MLP_ZERO_MEAN_UNIT_VAR,
                  max_iter=MAX_ITER, early_stop=EARLY_STOP, **kwargs):
@@ -51,3 +51,10 @@ class MLPRegressor(Approximator):
         if len(output.shape) == 1: output = output[:,None]
         return output
 
+
+class BFGS1000(NeuralNetwork):
+    def __init__(self, *args, **kwargs):
+        kwargs["solver"] = "lbfgs"
+        kwargs["early_stop"] = False
+        kwargs["max_iter"] = 1000
+        super().__init__(*args, **kwargs)

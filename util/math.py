@@ -31,3 +31,4 @@ def primes(num):
 
 # Check if a variable equals none
 def is_none(v): return type(v) == type(None)
+
