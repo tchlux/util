@@ -3,6 +3,10 @@ import os
 import numpy as np
 import fmodpy
 from util.approximate import WeightedApproximator
+from util.math import SMALL
+
+epsilon = SMALL**(1/2) # = EPSILON(REAL64)^(1/4)
+ibudget = 200000 # maximum number of steps to take through mesh.
 
 # This directory
 CWD = os.path.dirname(os.path.abspath(__file__))
@@ -134,11 +138,12 @@ class Delaunay(WeightedApproximator):
             self.delaunayp(self.pts.shape[0], self.pts.shape[1],
                            pts_in, p_in.shape[1], p_in, simp_out,
                            weights_out, error_out, extrap=100.0,
-                           pmode=self.pmode)
+                           pmode=self.pmode, eps=epsilon, ibudget=ibudget)
         else:
             self.delaunays(self.pts.shape[0], self.pts.shape[1],
                            pts_in, p_in.shape[1], p_in, simp_out,
-                           weights_out, error_out, extrap=100.0)
+                           weights_out, error_out, extrap=100.0, 
+                           eps=epsilon, ibudget=ibudget)
         # Remove "extrapolation" errors if the user doesn't care.
         if allow_extrapolation: error_out = np.where(error_out == 1, 0, error_out)
         # Handle any errors that may have occurred.
@@ -180,3 +185,10 @@ class DelaunayP3(Delaunay):
     from util.approximate.delaunay import delsparse
     def __init__(self, parallel=True, pmode=3):
         return super().__init__(parallel=parallel, pmode=pmode)
+
+
+if __name__ == "__main__":
+    from util.approximate.testing import test_plot
+    m = Delaunay()
+    p, x, y = test_plot(m, random=Truex, N=20)
+    p.show()

@@ -1253,31 +1253,35 @@ def _test_samples(display=False):
         (33733, .05, .999),
         (843311, .01, .999),
     ]
-    if display: print("samples (max error, confidence)")
-    for (s, e,c) in key_values[:-3]:
-        needed = samples(error=e, confidence=c)
-        if display: print("%6d  (%.2f, %.2f)"%(needed,e,c))
-        assert(needed == s)
-    if display: print()
-    for (s, e,c) in key_values[-3:]:
-        needed = samples(error=e, confidence=c)
-        if display: print("%6d  (%.2f, %.3f)"%(needed,e,c))
-        assert(needed == s)
+    # if display: print("samples (max error, confidence)")
+    # for (s, e,c) in key_values[:-3]:
+    #     needed = samples(error=e, confidence=c)
+    #     if display: print("%6d  (%.2f, %.2f)"%(needed,e,c))
+    #     assert(needed == s)
+    # if display: print()
+    # for (s, e,c) in key_values[-3:]:
+    #     needed = samples(error=e, confidence=c)
+    #     if display: print("%6d  (%.2f, %.3f)"%(needed,e,c))
+    #     assert(needed == s)
 
     if display:
         print()
-        print("With    5 samples we are 99% confident in max error <=",
+        print("With    5 samples we are 99% confident in max CDF error <=",
               round(samples(5, confidence=.99), 1))
-        print("With   10 samples we are 99% confident in max error <=",
+        print("With   10 samples we are 99% confident in max CDF error <=",
               round(samples(10, confidence=.99), 1))
-        print("With   40 samples we are 99% confident in max error <=",
+        print("With   40 samples we are 99% confident in max CDF error <=",
               round(samples(40, confidence=.99), 1))
-        print("With  170 samples we are 99% confident in max error <=",
+        print("With  170 samples we are 99% confident in max CDF error <=",
               round(samples(170, confidence=.99), 2))
-        print("With 4000 samples we are 99% confident in max error <=",
+        print("With 4000 samples we are 99% confident in max CEF error <=",
               round(samples(4000, confidence=.99), 2))
+        print("-"*70)
 
-    if display: print("-"*70)
+    # cdf = 
+
+
+
 
 def _test_Distribution():
     # Verify that the distribution works under a weighted sum.

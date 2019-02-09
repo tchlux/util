@@ -1,6 +1,6 @@
 # Useful for checking near-equal cases when roundoff error is involved.
-SMALL_NUMBER = 1.4901161193847656*10**(-8) 
-#              ^^ SQRT(EPSILON( 0.0_REAL64 ))
+SMALL = 1.4901161193847656*10**(-8) 
+#       ^^ SQRT(EPSILON( 0.0_REAL64 ))
 
 # Return a boolean "is_numeric"
 def is_numeric(obj):
