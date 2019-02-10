@@ -1,0 +1,139 @@
+
+
+# Generate "num_points" random points in "dimension" that have uniform
+# probability over the unit ball scaled by "radius" (length of points
+# are in range [0, "radius"]).
+def ball(num_points, dimension, radius=1):
+    from numpy import random, linalg
+    # First generate random directions by normalizing the length of a
+    # vector of random-normal values (these distribute evenly on ball).
+    random_directions = random.normal(size=(dimension,num_points))
+    random_directions /= linalg.norm(random_directions, axis=0)
+    # Second generate a random radius with probability proportional to
+    # the surface area of a ball with a given radius.
+    random_radii = random.random(num_points) ** (1/dimension)
+    # Return the list of random (direction & length) points.
+    return radius * (random_directions * random_radii).T
+
+
+# Generate random points with a Latin Hyper Cube design.
+def latin(num_points, dimension):
+    from numpy import random, ones, arange
+    # Generate a "num_points^dimension" grid, making sure every grid
+    # cell has at least one point in one of its dimensions.
+    cell_width = 1 / num_points
+    cells = ones((dimension, num_points)) * arange(num_points)
+    # Randomly shuffle the selected grid cells for each point.
+    for _ in map(random.shuffle, cells): pass
+    # Convert the random selected cells into points.
+    return cell_width * (random.random((dimension,num_points)) + cells).T
+
+
+# Custom excepion for improper user-specified ranges.
+class InvalidRange(Exception):
+    def __init__(self, start, stop, step, count):
+        return super().__init__("\n\nError: random_range(start=%s,stop=%s,step=%s)[:count=%s] contains no elements."%(start,stop,step,count))
+
+# Return a randomized "range" using the appropriate technique based on
+# the size of the range being generated. If the memory footprint is
+# small (<= 32KB) then a random sample is created and returned.
+# If the memory footprint would be prohibitively large, a Linear
+# Congruential Generator is used to efficiently generate the sequence.
+# 
+# Parameters are similar to the builtin `range` with:
+#   start -- int, default of 0.
+#   stop  -- int > start for no / positive step, < start otherwise.
+#   step  -- int (!= 0), default of 1.
+#   count -- int > 0, number of samples, default (stop-start)//step.
+# 
+# Usage (and implied parameter ordering):
+#   random_range(a)             --> range(0, a, 1)[:a]
+#   random_range(a, b)          --> range(a, b, 1)[:b-a]
+#   random_range(a, b, c)       --> range(a, b, c)[:(b-a)//c]
+#   random_range(a, b, c, d)    --> range(a, b, c)[:d]
+#   random_range(a, d) [d <= a] --> range(0, a, 1)[:d]
+# 
+# If the size of the range is large, a Linear Congruential Generator is used.
+#   Memory  -- O(1) storage for a few integers, regardless of parameters.
+#   Compute -- O(n) at most 2 times the number of steps in the range, n.
+# 
+def random_range(start, stop=None, step=None, count=float('inf')):
+    from random import sample, randint
+    from math import ceil, log2
+    # Add special usage where the second argument is meant to be a count.
+    if (stop != None) and (stop <= start) and ((step == None) or (step >= 0)):
+        start, stop, count = 0, start, stop
+    # Set a default values the same way "range" does.
+    if (stop == None): start, stop = 0, start
+    if (step == None): step = 1
+    # Compute the number of numbers in this range, update count accordingly.
+    num_steps = (stop - start) // step
+    count = min(count, num_steps)
+    # Check for a usage error.
+    if (num_steps == 0) or (count <= 0): raise(InvalidRange(start, stop, step, count))
+    # Use robust random method if it has a small enough memory footprint.
+    if (num_steps <= 2**15):
+        for value in sample(range(start,stop,step), count): yield value
+        return
+    # Use the LCG for the cases where the above is too memory intensive.
+    # Use a mapping to convert a standard range into the desired range.
+    mapping = lambda i: (i*step) + start
+    # Seed range with a random integer to start.
+    value = randint(0,num_steps)
+    # 
+    # Construct an offset, multiplier, and modulus for a linear
+    # congruential generator. These generators are cyclic and
+    # non-repeating when they maintain the properties:
+    # 
+    #   1) "modulus" and "offset" are relatively prime.
+    #   2) ["multiplier" - 1] is divisible by all prime factors of "modulus".
+    #   3) ["multiplier" - 1] is divisible by 4 if "modulus" is divisible by 4.
+    # 
+    offset = randint(0,num_steps) * 2 + 1                 # Pick a random odd-valued offset.
+    multiplier = 4*(num_steps + randint(0,num_steps)) + 1 # Pick a multiplier 1 greater than a multiple of 4.
+    modulus = 2**ceil(log2(num_steps))                    # Pick a modulus just big enough to generate all numbers (power of 2).
+    # Track how many random numbers have been returned.
+    found = 0
+    while found < count:
+        # If this is a valid value, yield it in generator fashion.
+        if value < num_steps:
+            found += 1
+            yield mapping(value)
+        # Calculate the next value in the sequence.
+        value = (value*multiplier + offset) % modulus
+
+
+# Generate "count" random indices of pairs that are within "length" bounds.
+def pairs(length, count=None):
+    from util.pairs import index_to_pair
+    # Compute the hard maximum in the number of pairs.
+    max_pairs = length*(length - 1) // 2
+    # Initialize count if it wasn't provided.
+    if type(count) == type(None): count = max_pairs
+    count = min(count, max_pairs)
+    # Get a random set of pairs (no repeats).
+    for c,i in enumerate(random_range(count)):
+        if (i >= count): break
+        yield index_to_pair(i)
+    print(" "*40, end="\r", flush=True)
+
+
+
+# Generate a random cumulative distribution function by picking
+# "nodes" random step sizes. Return twice differentiable CDF fit.
+def cdf(nodes=10, **kwargs):
+    import numpy as np
+    from util.stats import cdf_fit
+    # Generate random steps in the x and y direction (that sum to 1).
+    x_steps = np.random.random((nodes+1,))**3
+    x_steps /= sum(x_steps)
+    y_steps = np.random.random((nodes+1,))**3
+    y_steps /= sum(y_steps)
+    # Convert the step sizes into actual data.
+    x = np.zeros(nodes+2)
+    y = np.zeros(nodes+2)
+    for i in range(1,nodes+2):
+        x[i] = x[i-1] + x_steps[i-1]
+        y[i] = y[i-1] + y_steps[i-1]
+    # Return the CDF fit over the generate CDF points.
+    return cdf_fit((x,y), **kwargs)

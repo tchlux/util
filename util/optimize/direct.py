@@ -81,13 +81,14 @@ def get_potential_best(rects, to_beat):
 #         it should halt
 #       "bounds" is a list of tuples (lower,upper) for each parameter
 #       "solution" an initial solution that is disregarded.
+#       "args" are additional arguments that need to be passed to "objective".
 # Post: Returns an (objective value, solution) tuple, best achieved
-def DiRect(objective, halt, bounds, _=None, min_improvement=0.0001):
+def DiRect(objective, halt, bounds, _=None, min_improvement=0.0001, args=tuple()):
     # Extract range information for each dimension
     ranges = np.array( [ upper-lower for (lower,upper) in bounds] )
     lowers = np.array( [lower for (lower,_) in bounds] )
     # Define a new objective function in terms of the unit hypercube
-    obj_func = lambda s: objective( (s*ranges) + lowers )
+    obj_func = lambda s: objective( (s*ranges) + lowers, *args )
     # Initialize the first rectangle (the entire area)
     center = np.array([0.5] * len(bounds))
     sides = np.array([1.0] * len(bounds))

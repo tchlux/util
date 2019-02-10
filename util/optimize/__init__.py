@@ -2,7 +2,7 @@
 import time, os
 import numpy as np
 # Algorithm for one-dimensional optimization.
-from util.optimize.newton import Newton as zero
+from util.optimize.newton import Secant as zero
 # Algorithms for multi-dimensional optimization.
 from util.optimize.ampgo import AMPGO
 from util.optimize.adaptive_normal import AdaptiveNormal
@@ -13,7 +13,9 @@ from util.optimize.random import Random
 DEFAULT_SEARCH_SIZE = 2.0**(10)
 DEFAULT_MAX_TIME_SEC = 2.0**(-1)
 DEFAULT_MIN_STEPS = 10
+DEFAULT_MAX_STEPS = 10000
 DEFAULT_MIN_IMPROVEMENT = 0.0
+
 
 # Tracker settings.
 CHECKPOINT_FILE = "optimization_checkpoint.py"
@@ -24,10 +26,11 @@ CHECKPOINT_FILE = "optimization_checkpoint.py"
 # Class for tracking convergence of optimization algorithm
 class Tracker:
     # Initialization of storage attributes
-    def __init__(self, objective, max_time, min_steps, min_improvement,
+    def __init__(self, objective, max_time, min_steps, max_steps, min_improvement,
                  display=False, checkpoint=False, checkpoint_file=CHECKPOINT_FILE):
         self.max_time = max_time
         self.min_steps = min_steps
+        self.max_steps = max_steps
         self.min_change = min_improvement
         self.display = display
         self.obj = objective
@@ -88,6 +91,8 @@ class Tracker:
         # Check for convergence (or other stopping criteria)
         converged = False
         if (self.tries >= self.min_steps):
+            # Check for max steps requirement.
+            if (self.tries >= self.max_steps): return True
             # Check for time requirement
             time_done = (time.time() - self.start > self.max_time)
             if time_done: return time_done
@@ -124,6 +129,7 @@ class Tracker:
 #   args            -- A tuple of arguments to pass to the objectivev function
 #   max_time        -- The maximum amount of computation time for optimization
 #   min_steps       -- The minimum number of evaluations of the objective function
+#   max_steps       -- The maximum number of evaluations of the objective function
 #   min_improvement -- The minimum improvement needed to continue searching
 #   display         -- Boolean, if True then try to use plotly to render
 #                      a plot of the best solution convergence by
@@ -150,8 +156,8 @@ class Tracker:
 #                      the initial restraints + stopping condition(s).
 def minimize(objective, solution, bounds=None, args=tuple(),
              max_time=DEFAULT_MAX_TIME_SEC, min_steps=DEFAULT_MIN_STEPS,
-             min_improvement=DEFAULT_MIN_IMPROVEMENT, display=False,
-             method=AdaptiveNormal, checkpoint=False,
+             max_steps=DEFAULT_MAX_STEPS,  min_improvement=DEFAULT_MIN_IMPROVEMENT, 
+             display=False, method=DiRect, checkpoint=False,
              checkpoint_file=CHECKPOINT_FILE):
     # Convert the solution into a float array (if it's not already)
     solution = np.asarray(solution, dtype=float)

@@ -1,4 +1,19 @@
 
+# This function maps an index in the range [0, count*(count - 1) // 2] 
+# to a tuple of integers in the range [0,count). The mapping will cover
+# all pairs if you use all indices between [0, count*(count - 1) // 2].
+def pair_to_index(p1, p2):
+    if (p1 < p2): p1, p2 = p2, p1
+    return (p1 * (p1 - 1) // 2) + p2
+
+# This function maps an index in the range [0, count*(count - 1) // 2] 
+# to a tuple of integers in the range [0,count). The mapping will cover
+# all pairs if you use all indices between [0, count*(count - 1) // 2].
+def index_to_pair(index):
+    val = int(((1/4 + 2*index)**(1/2) + 1/2))
+    remainder = index - val*(val - 1)//2
+    return (val, remainder)
+
 # Compute the number of original elements when given the number of pairs.
 # This is done by realizing the following:
 # 
@@ -86,8 +101,6 @@ def pairwise_distance(x1, x2=None):
     cwd = os.path.dirname(os.path.abspath(__file__))
     import fmodpy
     pairwise = fmodpy.fimport(os.path.join(cwd, "pairwise.f08"), omp=True, output_directory=cwd)
-    # Import a function to convert a pair to an index and vice-versa.
-    from util.stats import index_to_pair, pair_to_index
     # Define an error for having the wrong array shape.
     class ShapeError(Exception): pass
     if (len(x1.shape) != 2): raise(ShapeError("Only 2D NumPy arrays are allowed."))

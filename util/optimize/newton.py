@@ -1,11 +1,11 @@
 # ====================================================================
-#                          NEWTON METHOD
+#                          SECANT METHOD
 # 
 # Given a function f: R -> R, such that f(x) = 0 exactly once for 
 #  some (low <= x <= upp), this function will return an x_0 such that
-#  abs(x_0 - x) < prec using the Newton method.
+#  abs(x_0 - x) < prec using the Secant method.
 # 
-def Newton(f, low, upp, prec=2**(-2**1023), max_steps=1000, display=False):
+def Secant(f, low, upp, prec=2**(-2**1023), max_steps=1000, display=False):
     # Compute the "low" function value and the "upp" function value.
     flow = abs(f(low))
     fupp = abs(f(upp))

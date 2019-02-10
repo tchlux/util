@@ -138,12 +138,12 @@ class Delaunay(WeightedApproximator):
             self.delaunayp(self.pts.shape[0], self.pts.shape[1],
                            pts_in, p_in.shape[1], p_in, simp_out,
                            weights_out, error_out, extrap=100.0,
-                           pmode=self.pmode, eps=epsilon, ibudget=ibudget)
+                           pmode=self.pmode, ibudget=ibudget)
         else:
             self.delaunays(self.pts.shape[0], self.pts.shape[1],
                            pts_in, p_in.shape[1], p_in, simp_out,
                            weights_out, error_out, extrap=100.0, 
-                           eps=epsilon, ibudget=ibudget)
+                           ibudget=ibudget)
         # Remove "extrapolation" errors if the user doesn't care.
         if allow_extrapolation: error_out = np.where(error_out == 1, 0, error_out)
         # Handle any errors that may have occurred.
@@ -190,5 +190,5 @@ class DelaunayP3(Delaunay):
 if __name__ == "__main__":
     from util.approximate.testing import test_plot
     m = Delaunay()
-    p, x, y = test_plot(m, random=Truex, N=20)
+    p, x, y = test_plot(m, random=True, N=20)
     p.show()
