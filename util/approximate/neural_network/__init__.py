@@ -74,5 +74,6 @@ class SGD10K(NeuralNetwork):
 if __name__ == "__main__":
     from util.approximate.testing import test_plot
     m = SGD10K()
-    p, x, y = test_plot(m, random=True, N=20)
+    # m = BFGS1000()
+    p, x, y = test_plot(m, random=True, N=200)
     p.show()

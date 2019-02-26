@@ -64,5 +64,5 @@ class Voronoi(WeightedApproximator):
 if __name__ == "__main__":
     from util.approximate.testing import test_plot
     model = Voronoi()
-    p, x, y = test_plot(model, random=True, N=1000)
+    p, x, y = test_plot(model, random=True, N=20)
     p.show()

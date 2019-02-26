@@ -67,7 +67,7 @@ if __name__ == "__main__":
     from util.approximate.testing import test_plot
 
     model = ShepMod()
-    p, x, y = test_plot(model, random=False, N=20) #, low=-1, upp=2)
+    p, x, y = test_plot(model, random=True, N=200) #, low=-1, upp=2)
     p.show()
     print()
     model.errors()

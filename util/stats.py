@@ -125,7 +125,7 @@ class Distribution():
         # Get the new minimum and maximum of this distribution and "func".
         new_min = min(self.min, func.min)
         new_max = max(self.max, func.max)
-        def new_func(x=None):
+        def new_func(x=None, func=func):
             if (type(x) == type(None)): return (new_min, new_max)
             else:                       return self._function(x) + func(x)
         new_func.min = new_min
@@ -246,7 +246,21 @@ def cdf_fit(data, fit="linear", smooth=None):
         fit.inverse = inv_fit
     elif (fit_type == "cubic"):
         # Generate piecewise cubic monotone increasing spline
-        fit = PchipInterpolator(data, data_vals)
+        spline_fit = PchipInterpolator(data, data_vals)
+        # Define a fit function that extrapolates properly.
+        def fit(x):
+            try:
+                # If "x" is an array, then use array ops to fix boundaries.
+                len(x)
+                out = spline_fit(x)
+                out[x < min_pt] = 0
+                out[x > max_pt] = 1
+            except:
+                # If "x" is not an array, then fix specific test point.
+                if   (x < min_pt): out = 0.
+                elif (x > max_pt): out = 1.
+                else:              out = float(spline_fit(x))
+            return out
         # Define and save an inverse function.
         from util.optimize import zero
         def inverse(x):
@@ -262,14 +276,28 @@ def cdf_fit(data, fit="linear", smooth=None):
             return result
         fit.inverse = inverse
         # Store a derivative (that is a PDF).
-        def derivative(x=None, deriv=fit.derivative(1)):
+        def derivative(x=None, deriv=spline_fit.derivative(1)):
             if type(x) == type(None): return (min_pt, max_pt)
-            return deriv(x)
+            try:
+                # If "x" is an array, then use array ops to fix boundaries.
+                len(x)
+                out = deriv(x)
+                out[x <= min_pt] = 0
+                out[x >= max_pt] = 0
+            except:
+                # If "x" is not an array, then fix specific test point.
+                if (x <= min_pt) or (x >= max_pt): out = 0.
+                else:                              out = float(deriv(x))
+            return out
+        # Store a second derivative.
+        def second_derivative(x=None, deriv=spline_fit.derivative(2)):
+            return derivative(x, deriv)
+        # Set details for the derivative function.
         derivative.min = min_pt
         derivative.max = min_pt
         derivative.integral = fit
-        derivative.derivative = fit.derivative(2)
-        # Set the derivative.
+        derivative.derivative = second_derivative
+        # Set the derivative of the fit.
         fit.derivative = derivative
     else:
         # Construct the empirical distribution fit.

@@ -22,9 +22,9 @@ from util.approximate.mars import MARS
 from util.approximate.neural_network import NeuralNetwork, BFGS1000, SGD10K
 from util.approximate.support_vector_machine import SVR
 
-# Rename neural network.
+ # Create aliases to the neural network.
 MLP = NeuralNetwork
-NN = NeuralNetwork
+NN = SGD10K
 
 # Rename nearest neighbor.
 KNN = NearestNeighbor

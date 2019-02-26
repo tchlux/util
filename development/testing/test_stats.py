@@ -461,13 +461,24 @@ def _test_Distribution(display=False):
     # Verify that the distribution works under a weighted sum.
     import numpy as np
     d = []
-    for i in range(10):
-        d.append( cdf_fit(np.random.random(100)) )
-    wts = np.random.random((10,))
+    count = 3
+    scale = 2**(-20)
+    scale = 2**(30)
+    for i in range(count):
+        pts = np.random.random(20) * np.random.random() * scale
+        d.append( cdf_fit(pts, fit="cubic") )
+    wts = np.random.random((count,))
     wts /= sum(wts)
-    if display: print(sum(dist*w for (dist,w) in zip(d, wts)))
-    
-
+    min_max = (-scale / 3, scale + scale/3)
+    if display:
+        print(sum(dist*w for (dist,w) in zip(d, wts)))
+        from util.plot import Plot
+        p = Plot("Weighted cubic fit")
+        out = sum(dist*w for (dist,w) in zip(d, wts))
+        p.add_func("Weighted sum", out, min_max)
+        for i,(dist,w) in enumerate(zip(d, wts)):
+            p.add_func(f"Dist {i+1} -- {round(w,3)}", dist, min_max, opacity=.3)
+        p.show()
 
 def _test_cdf_fit():
     import numpy as np

@@ -856,9 +856,6 @@ ELSE IF (IERR(MI) .EQ. 2) THEN ! Illegal input detected.
 END IF
 ! Compute the actual projection via matrix vector multiplication.
 CALL DGEMV('N', D, N, 1.0_R8, PTS, D, X_DWNNLS, 1, 0.0_R8, PROJ, 1)
-! Perform a vector extrapolation to push projection further inward.
-PROJ(:) = PROJ(:) - EPSL * (Q(:,MI) - PROJ(:)) / RNORML
-RNORML = RNORML + EPSL
 RETURN
 END SUBROUTINE PROJECT
 
@@ -1996,9 +1993,6 @@ ELSE IF (IERR(MI) .EQ. 2) THEN ! Illegal input detected.
 END IF
 ! Compute the actual projection via matrix vector multiplication.
 CALL DGEMV('N', D, N, 1.0_R8, PTS, D, X_DWNNLS, 1, 0.0_R8, PROJ, 1)
-! Perform a vector extrapolation to push projection further inward.
-PROJ(:) = PROJ(:) - EPSL * (Q(:,MI) - PROJ(:)) / RNORML
-RNORML = RNORML + EPSL
 ! RETURN
 ! END SUBROUTINE PROJECT
 ! End of in-lined code for PROJECT().
