@@ -1,0 +1,15 @@
+            if half_conf != conf:
+                print()
+                print("size:       ",size)
+                print("error:      ",error)
+                print("confidence: ",confidence)
+                print()
+                print("", f"half:    {float(half_conf):.2e}")
+                print("", f"         {half_conf}")
+                print("", f"correct: {float(conf):.2e}")
+                print("", f"         {conf}")
+                print("",  "correct steps: ",steps)
+                print()
+                exit()
+
+
