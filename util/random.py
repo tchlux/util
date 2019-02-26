@@ -121,19 +121,18 @@ def pairs(length, count=None):
 
 # Generate a random cumulative distribution function by picking
 # "nodes" random step sizes. Return twice differentiable CDF fit.
-def cdf(nodes=10, **kwargs):
+def cdf(nodes=9, **kwargs):
     import numpy as np
     from util.stats import cdf_fit
+    if ("fit" not in kwargs): kwargs["fit"] = "cubic"
+    nodes += 2
     # Generate random steps in the x and y direction (that sum to 1).
-    x_steps = np.random.random((nodes+1,))**3
-    x_steps /= sum(x_steps)
-    y_steps = np.random.random((nodes+1,))**3
-    y_steps /= sum(y_steps)
-    # Convert the step sizes into actual data.
-    x = np.zeros(nodes+2)
-    y = np.zeros(nodes+2)
-    for i in range(1,nodes+2):
-        x[i] = x[i-1] + x_steps[i-1]
-        y[i] = y[i-1] + y_steps[i-1]
+    x = np.linspace(0, 1, nodes)
+    y = [0.]
+    for i in range(1,nodes-1):
+        y.append( y[-1] + np.random.random()**(nodes-i-1) * (1. - y[-1]) )
+    y.append(1.)
+    y = np.array(y)
+    print("Random cdf:", x.shape, y.shape)
     # Return the CDF fit over the generate CDF points.
     return cdf_fit((x,y), **kwargs)

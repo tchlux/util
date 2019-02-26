@@ -16,7 +16,14 @@ import fmodpy
 # ------------------------------ 3 -----------------------------------
 
 # ------------------------------ 4 -----------------------------------
+
 fmodpy.module_link_args += ["-fopenmp"]
 working_directory = os.path.abspath(".")
-fmodpy.build_mod("delsparse.f90", working_directory,
-                 "delsparse", verbose=True)
+
+try:
+    fmodpy.build_mod("delsparse.f90", working_directory,
+                     "delsparse", verbose=True)
+except SystemError:
+    # Because this is a sub-module, the system gets angry when a
+    # relative import is attempted. Ignore this error.
+    pass

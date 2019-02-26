@@ -1633,6 +1633,7 @@ class Data(list):
             raise(self.BadTarget("Target must either be a string (column name) or list of strings (column names)."))
         # Get the data all normalized (and weighted)
         normalized_data = weights * (self.numeric.data - self.numeric.shift) / self.numeric.scale
+        print("normalized_data.shape: ",normalized_data.shape)
         # Identify those columns that are being predicted
         target_column_indices = [self.names.index(c) for c in target_columns]
         results = Data(names=[c + " Predicted" for c in target_columns]+["Prediction Index"],

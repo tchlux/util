@@ -5,8 +5,9 @@ import fmodpy
 from util.approximate import WeightedApproximator
 from util.math import SMALL
 
-epsilon = SMALL**(1/2) # = EPSILON(REAL64)^(1/4)
-ibudget = 200000 # maximum number of steps to take through mesh.
+epsilon = 8 * SMALL # = 8 * SQRT(EPSILON(float))
+ibudget = 10000 # 200000 
+# IBUDGET - maximum number of steps to take through mesh, default 50K
 
 # This directory
 CWD = os.path.dirname(os.path.abspath(__file__))
@@ -138,12 +139,13 @@ class Delaunay(WeightedApproximator):
             self.delaunayp(self.pts.shape[0], self.pts.shape[1],
                            pts_in, p_in.shape[1], p_in, simp_out,
                            weights_out, error_out, extrap=100.0,
-                           pmode=self.pmode, ibudget=ibudget)
+                           pmode=self.pmode, ibudget=ibudget,
+                           eps=epsilon)
         else:
             self.delaunays(self.pts.shape[0], self.pts.shape[1],
                            pts_in, p_in.shape[1], p_in, simp_out,
                            weights_out, error_out, extrap=100.0, 
-                           ibudget=ibudget)
+                           ibudget=ibudget, eps=epsilon)
         # Remove "extrapolation" errors if the user doesn't care.
         if allow_extrapolation: error_out = np.where(error_out == 1, 0, error_out)
         # Handle any errors that may have occurred.

@@ -210,7 +210,8 @@ class Timer:
     #                             Public
     # 
     # If not stopped, return elapsed time, otherwise return total time.
-    def __call__(self): return round(self._check(), 2)
+    def __call__(self, precision=2): return float(f"{self._check():.{precision-1}e}")
+
     # Return "start time" as attribute, "begin timer" as function.
     @property
     def start(self): return Timer._callset(self._a, self._begin)

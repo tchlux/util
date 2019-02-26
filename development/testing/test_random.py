@@ -74,24 +74,24 @@ def test_random_range(display=False):
     if display: print("-"*70)
 
 
-def test_random_cdf(display=False):
+def test_random_cdf(display=True):
     if not display: return
 
     from util.plot import Plot
     p = Plot("")
-    for nodes in range(1, 30):
-        f = random_cdf()
-        p.add_func(f"Random CDF {nodes}", f, f(),
+    for nodes in range(1, 100):
+        f = cdf()
+        p.add_func(f"Random PDF {nodes}", f.derivative, f(),
                    color=p.color(nodes-1), group=nodes)
-        p.add(f"Points {nodes}", *list(zip(*f.nodes)),
-              color=p.color(nodes-1,alpha=.3), group=nodes)
+        # p.add(f"Points {nodes}", *list(zip(*f.nodes)),
+        #       color=p.color(nodes-1,alpha=.3), group=nodes)
     p.show(show=False)
 
     print()
 
     p = Plot("")
     for nodes in range(1, 30):
-        f = random_cdf(nodes=nodes)
+        f = cdf(nodes=nodes)
         p.add_func(f"Random {nodes} node CDF", f, f(),
                    color=p.color(nodes-1), group=nodes)
         p.add(f"Points {nodes}", *list(zip(*f.nodes)),

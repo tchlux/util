@@ -19,7 +19,7 @@ from util.approximate.shepard import Shepard
 from util.approximate.linear_shepard import LSHEP
 # Regression techniques.
 from util.approximate.mars import MARS
-from util.approximate.neural_network import NeuralNetwork, BFGS1000
+from util.approximate.neural_network import NeuralNetwork, BFGS1000, SGD10K
 from util.approximate.support_vector_machine import SVR
 
 # Rename neural network.

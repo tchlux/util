@@ -7,6 +7,8 @@ MLP_R_SOLVER = "sgd"
 MLP_ZERO_MEAN_UNIT_VAR = True
 MAX_ITER = 1000
 EARLY_STOP = True
+DEFAULT_HIDDEN = (100,)*10
+
 
 # Force many iterations of SGD with a chosen random state and negative tolerance.
 # model = MLP(hidden_layer_sizes=(hidden_nodes,), solver='sgd',
@@ -23,6 +25,9 @@ class NeuralNetwork(Approximator):
         from sklearn.neural_network import MLPRegressor
         self.MLPRegressor = MLPRegressor
         kwargs.update(dict(activation=activation, solver=solver, max_iter=max_iter))
+        # Set the hidden layers to a small deep network if they were not provided.
+        if "hidden_layer_sizes" not in kwargs:
+            kwargs["hidden_layer_sizes"] = DEFAULT_HIDDEN
         # If desired, force no early stopping by setting infinite tolerance.
         if not early_stop: kwargs.update(dict(tol=-float("inf")))
         self.mlp = self.MLPRegressor(*args, **kwargs)
@@ -58,3 +63,16 @@ class BFGS1000(NeuralNetwork):
         kwargs["early_stop"] = False
         kwargs["max_iter"] = 1000
         super().__init__(*args, **kwargs)
+
+class SGD10K(NeuralNetwork):
+    def __init__(self, *args, **kwargs):
+        kwargs["solver"] = "sgd"
+        kwargs["early_stop"] = False
+        kwargs["max_iter"] = 10000
+        super().__init__(*args, **kwargs)
+
+if __name__ == "__main__":
+    from util.approximate.testing import test_plot
+    m = SGD10K()
+    p, x, y = test_plot(m, random=True, N=20)
+    p.show()

@@ -1,5 +1,5 @@
 import os
-from util.math import abs_diff
+from util.math import abs_diff, SMALL
 from util.random import pairs
 
 # Import "numpy" by modifying the system path to remove conflicts.
@@ -53,7 +53,9 @@ def normalize_error(points, values, metric, display=True):
     # 
     # This is the normalizing vector we want, scaled to unit determinant.
     error_fix = avg_slope**(-2)
+    error_fix /= np.median(error_fix) # Make product of all values stable.
     return error_fix / np.prod(error_fix)**(1/points.shape[1])
+    # ^^ This line was numerically unstable (for small 
 
 # Compute the metric PCA (pca of the between vectors scaled by 
 # metric difference slope).
@@ -478,49 +480,155 @@ def normal_confidence(distribution):
 #      Approximating the desired number of samples     
 # =====================================================
 
+
+# Compute the confidence of "num_samples" samples having less than or
+# equal to "max_error" at exactly 1/2. This is achieved by factoring
+# the expression (sum_{i=j}^k choose(n,i) / 2^n) to reduce operations.
+def _half_confidence(num_samples, max_error):
+    from util.math import Fraction, choose
+    # Calculate the maximum number of steps away from the mid-point
+    # that we can take *before* violating the error condition.
+    odd = num_samples % 2
+    start = (num_samples+1) // 2
+    #         initial_error + steps * step_error <= max_error
+    #   (max_error - initial_error) / step_error >= steps
+    #  (max_error - initial_error) * num_samples >= steps
+    # knowing that                    step_error  = 1 / num_samples
+    min_error = odd * Fraction(1, (2*num_samples))    
+    steps = int((max_error - min_error) * num_samples)
+    # Put steps into allowable bounds.
+    steps = max(0, min(num_samples - start, steps))
+    # Handle two cases where there is no functioning confidence bound.
+    if (odd) and (max_error < min_error): return Fraction()
+    # Compute the fraction.
+    numerator   = 1
+    denominator = 2**(num_samples)
+    # First compute the constant multiple outside of the sum.
+    for i in range(start+steps+1, num_samples+1): numerator   *= i
+    for i in range(2,             start+1):       denominator *= i
+    # Compute the sum of the inner parts of the distribution.
+    total = 0
+    for i in range(start, start+steps+1):
+        v = 1
+        for j in range(i+1,             start+steps+1): v *= j
+        for j in range(1+num_samples-i, start+1):       v *= j
+        if (v > 1): total += v * (2 if ((i != start) or odd) else 1)
+    # Perform the final numerator update.
+    if (total > 0): numerator *= total
+    # Return the (reduced) fraction.
+    return Fraction(numerator, denominator)
+
+
 # Given a list of numbers, return True if the given values provide an
 # estimate to the underlying distribution with confidence bounded error.
-def samples(samples=None, error=None, confidence=None):
+def samples(size=None, error=None, confidence=None, at=None):
+    from util.system import Timer
+    t = Timer()
+
     # Determine what to calculate based on what was provided.
-    from util.math import is_none
-    if   is_none(samples):                       to_calculate = "samples"
-    elif is_none(error):                         to_calculate = "error"
-    elif is_none(confidence):                    to_calculate = "confidence"
-    else:                                        to_calculate = "verify"
+    from util.math import is_none, choose, Fraction
+    if   is_none(size):       to_calculate = "samples"
+    elif is_none(error):      to_calculate = "error"
+    elif is_none(confidence): to_calculate = "confidence"
+    else:                     to_calculate = "verify"
+    # Default evaluation point is at (1/2), where the error is greatest.
+    if is_none(at): at = Fraction(1, 2)
+    else:           at = Fraction(at)
     # Set the default values for other things that were not provided.
-    if type(error) == type(None):      error      = 0.1
-    if type(confidence) == type(None): confidence = 0.95
+    if type(error) == type(None):      error      = Fraction(10, 100)
+    if type(confidence) == type(None): confidence = Fraction(95, 100)
+    # Convert error and confidence to fraction types if necessary.
+    if not type(error)      == Fraction: error      = Fraction(error)
+    if not type(confidence) == Fraction: confidence = Fraction(confidence)
     # If the user provided something with a length, use that number.
-    if hasattr(samples, "__len__"): samples = len(samples)
-    # Construct a function for measuring the percentage of outcomes
-    # contained within "deviation" from the mean of a normal distribution.
-    from math import erf
-    normal_cdf = lambda x: (erf(x / 2**(1/2)) + 1) / 2
-    contained = lambda deviation: normal_cdf(deviation) - normal_cdf(-deviation)
-    # Handle individually each of the different use-cases of this function.
-    if (to_calculate in {"samples", "verify", "error"}):
-        from math import ceil
-        from util.optimize import zero
-        # Compute the number of standard deviations required to achieve "confidence".
-        stdevs = zero(lambda deviation: contained(deviation) - confidence, 0, 100)
-        # Use the computed standard deviation and the proven convergence
-        # rate of empirical distribution functions to compute sample count.
-        # 
-        #   error <= stdevs * ((1/2) * (1 - 1/2) / len(samples))**(1/2)
-        # 
-        needed_samples = ceil((stdevs / (2*error))**2)
-        # The user could provide nothing and get the needed number of
-        # samples, something with a length and see if they're done, or
-        # a number and this will verify that is enough samples.
-        if (type(samples) == type(None)): return needed_samples
-        elif (to_calculate == "error"):   return stdevs / (2 * samples**(1/2))
-        else:                             return samples >= needed_samples
-    elif (to_calculate in {"confidence"}):
-        # Convert the provided error into the devitaion in terms of a
-        # standard normal distribution by growing it according to samples.
-        deviation = error * 2 * samples**(1/2)
-        confidence = contained(deviation)
-        return confidence
+    if hasattr(size, "__len__"): size = len(size)
+    # \sum_{i=0}^n choose(n, i) * ( at^i (1-at)^(n-i) )
+    if not is_none(size):
+        # Compute the probability of any given observed EDF value.
+        prob = lambda i: choose(size, i) * (at**i * (1-at)**(size-i))
+        # If we are calculating the confidence or verifying, compute confidence.
+        if to_calculate in {"confidence", "verify"}:
+            if (at == 1/2): conf = _half_confidence(size, error)
+            else:
+                conf = Fraction()
+                steps = 0
+                # Sum those probabilities that are closer than "error" distance.
+                for i in range(size+1):
+                    p = Fraction(i, size)
+                    if (abs(p - at) <= error):
+                        steps += 1
+                        conf += prob(i)
+            # Return the total confidence.
+            if to_calculate == "confidence": return float(conf)
+            else:                            return conf >= confidence
+        elif to_calculate == "error":
+            # Store the "contained" outcomes by "allowed error".
+            error = Fraction()
+            contained = Fraction()
+            # Sort the percentiles by their distance from "at".
+            i_p = sorted(enumerate(Fraction(i,size,_normalize=False)
+                                   for i in range(size+1)),
+                         key=lambda ip: abs(ip[1]-at))
+            # Cycle through percentiles, starting closest to "at" and moving out.
+            for step in range(len(i_p)):
+                # If this step has the same probability as the last, skip.
+                if (i_p[step][1] == i_p[step-1][1]): continue
+                i, p = i_p[step]
+                # Compute the amount of data contained by this step away.
+                next_contained = contained + prob(i)
+                # If the distance from "at" is the same for two steps, take two.
+                if (step+1 < len(i_p)) and (abs(at-i_p[step][1]) == abs(at-i_p[step+1][1])):
+                    next_contained += prob( i_p[step+1][0] )
+                # Only update the "allowed error" if confidence is maintained.
+                if next_contained < confidence:
+                    contained = next_contained
+                    error = abs(i_p[step][1] - at)
+                else: break
+            return float(error)
+    else:
+        # Compute the number of samples required.
+        size, step = 2**10, 2**9
+        # print("Desired ----------------")
+        # print("error:      ",error)
+        # print("confidence: ",confidence)
+        # for size in range(2, 500):
+        #     conf_below = samples(size-1, error=error, at=at)
+        #     conf_at = samples(size, error=error, at=at)
+        #     print("", "size: ",size, float(f"{conf_below:.2e}"), float(f"{conf_at:.2e}"))
+        # exit()
+
+        under, over = 0, None
+        # We have the right size when any smaller size is not passable.
+        conf_below = samples(size=size-1, error=error, at=at)
+        conf_at = samples(size=size, error=error, at=at)
+        print("", "size: ",size, float(f"{conf_below:.2e}"), float(f"{conf_at:.2e}"))
+        while not (conf_below < confidence <= conf_at):
+            if conf_at < confidence:
+                # Update "under". Scale up if we haven't found "over".
+                under = max(under, size)
+                if (over == None): step *= 2
+                # Take the step.
+                size += step
+            else:
+                # Update "over". Take step. Scale down.
+                over = min(over if (over != None) else float('inf'), size)
+                size = size - step
+                step = step // 2
+            # Recompute the confidence at and below this step size.
+            conf_below = samples(size-1, error=error, at=at)
+            conf_at = samples(size, error=error, at=at)
+            print("", "size: ",size, float(f"{conf_below:.2e}"), float(f"{conf_at:.2e}"))
+            # Correct for strange sample size error that can happen bc
+            # of alignment of "at" and one of the sample values.
+            if conf_at < conf_below:
+                size = size-1
+                conf_at = conf_below
+                conf_below = samples(size-1, error=error, at=at)
+                print("", "size: ",size, float(f"{conf_below:.2e}"), float(f"{conf_at:.2e}"))
+        # Return the computed best sample size.
+        return size
+
+
 
 # ====================================================
 #      Measuring the Difference Between Sequences     
@@ -808,117 +916,112 @@ def modes(data, confidence=.99, tol=1/1000):
     from util.optimize import zero
     num_samples = len(data)
     error = 2*samples(num_samples, confidence=confidence)
-    cdf = cdf_fit(data, fit="cubic")
-    print("error: ",error)
-    # Find all of the zeros of the derivative (mode centers / dividers)
-    checks = np.linspace(cdf.min, cdf.max, np.ceil(1/tol))
-    second_deriv = cdf.derivative.derivative
-    deriv_evals = second_deriv(checks)
-    modes = [i for i in range(1, len(deriv_evals)) if
-             (deriv_evals[i-1] * deriv_evals[i] <= 0) and
-             (deriv_evals[i-1] >= deriv_evals[i])]
-    antimodes = [i for i in range(1, len(deriv_evals)) if
-                 (deriv_evals[i-1] * deriv_evals[i] <= 0) and
-                 (deriv_evals[i-1] < deriv_evals[i])]
-    # Compute exact modes and antimodes using a zero-finding function.
-    modes = [zero(second_deriv, checks[i-1], checks[i]) for i in modes]
-    antimodes = [zero(second_deriv, checks[i-1], checks[i]) for i in antimodes]
-    antimodes = [cdf.min] + antimodes + [cdf.max]
-    print("len(modes):     ",len(modes))
-    print("len(antimodes): ",len(antimodes))
-    # Define a function that counts the number of modes thta are too small.
-    def count_too_small():
-        return sum( (cdf(upp) - cdf(low)) < error for (low,upp) in
-                    zip(antimodes[:-1],antimodes[1:]) )
-    # Show PDF
+    print()
+    print("Smallest allowed mode: ",error)
+    print()
+    # Get the CDF points (known to be true based on data).
+    x, y = cdf_points(data)
+    cdf = cdf_fit((x,y), fit="linear")
+    x, y = x[1:], y[1:]
+    # Generate the candidate break points based on linear interpolation.
+    slopes = [(y[i+1] - y[i]) / (x[i+1] - x[i]) for i in range(len(x)-1)]
+    candidates = [i for i in range(1,len(slopes)-1)
+                  if (slopes[i] < slopes[i-1]) and (slopes[i] < slopes[i+1])]
+    # Sort candidates by their 'width', the widest being the obvious divisors.
+    candidates = sorted(candidates, key=lambda i: -(x[i+1] - x[i]))
+    print("candidates: ",candidates)
+    print("slopes:     ",[slopes[c] for c in candidates])
+    # Break the data at candidates as much as can be done with confidence.
+    breaks = [min(x), max(x)]
+    sizes = [1.]
+    chosen = []
+    print()
+    print("breaks: ",breaks)
+    print("sizes:  ",sizes)
+    print("chosen: ",chosen)
+    print()
+    # Loop until there are no candidate break points left.
+    while len(candidates) > 0:
+        new_break_idx = candidates.pop(0)
+        new_break = (x[new_break_idx + 1] + x[new_break_idx]) / 2
+        b_idx = np.searchsorted(breaks, new_break, side="right")
+        # Compute the CDF values at the upper, break, and lower positions.
+        upp = cdf(breaks[b_idx+1]) if (b_idx < len(breaks)-1) else cdf.max
+        mid = cdf(new_break)
+        low = cdf(breaks[b_idx-1])
+        print()
+        print("new_break: ", new_break)
+        print("b_idx: ",b_idx)
+        print("  upp: ",upp, upp - mid)
+        print("  mid: ",mid)
+        print("  low: ",low, mid - low)
+        # Compute the size of the smallest mode resulting from the break.
+        smallest_result = min(upp - mid, mid - low)
+        # Skip the break if it makes a mode smaller than error.
+        if smallest_result < error: continue
+
+        print()
+        print("Num_modes: ", len(sizes))
+        print("breaks:    ", breaks)
+        print("sizes:     ", sizes)
+        print()
+
+        # Update the "breaks" and "sizes" lists.
+        breaks.insert(b_idx, new_break)
+        sizes.insert(b_idx, upp - mid)
+        sizes[b_idx-1] = mid - low
+        chosen.append(new_break_idx)
+        
+    # From the "breaks" and "sizes", construct a list of "modes".
+    # Consider the most dense point between breaks the "mode".
+    modes = []
+    for i in range(len(chosen)):
+        low = 0 if (i == 0) else chosen[i-1]
+        upp = len(slopes)-1 if (i == len(chosen)-1) else chosen[i+1]
+        mode_idx = low + np.argmax(slopes[low:upp])
+        modes.append( (x[mode_idx+1] + x[mode_idx]) / 2 )
+
+
     from util.plot import Plot
     p = Plot()
-    pdf = pdf_fit(cdf.inverse(np.random.random((1000,))))
-
-    # Loop until all modes are big enough to be accepted given error tolerance.
-    step = 1
-    while count_too_small() > 0:
-        print("step: ",step, (len(modes), len(antimodes)))
-        f = len(antimodes)
-        p.add_func("PDF", pdf, cdf(), color=p.color(1), frame=f, show_in_legend=(step==1))
-        for z in modes:
-            p.add("modes", [z,z], [0,1], color=p.color(0), mode="lines",
-                  group="modes", show_in_legend=(z==modes[0] and step==1), frame=f)
-        for z in antimodes:
-            p.add("seperator", [z,z], [0,1], color=p.color(3,alpha=.3), mode="lines",
-                  group="seperator", show_in_legend=(z==antimodes[0] and (step==1)), frame=f)
-        step += 1
-
-        # Construct a dictionary of the preferred merge neighbor for
-        # small distribution.
-        avg_derivs = [cdf.derivative(np.linspace(
-            antimodes[i], antimodes[i+1], num_samples)).mean()
-                      for i in range(len(modes))]
-        preferred = {}
-        # Compute the size of each mode.
-        sizes = [cdf(antimodes[i+1]) - cdf(antimodes[i])
-                 for i in range(len(modes))]
-        # Compute those modes that have neighbors that are too small.
-        largest = [i for (i,s) in enumerate(sizes)
-                   if (i > 0 and sizes[i-1] < error)
-                   or (i < len(sizes)-1 and sizes[i+1] < error)]
-        for i,s in enumerate(sizes):
-            # Skip this mode (no preference) if it is big enough.
-            size = cdf(antimodes[i+1]) - cdf(antimodes[i])
-            if size >= error: continue
-            # Otherwise pick which neighbor should be merged with.
-            dist_to_nbr = float('inf')
-            # Check the left neighbor
-            if (i > 0):
-                dist_to_nbr = abs(avg_derivs[i] - avg_derivs[i-1])
-                preferred_nbr = i-1
-            # Check the right neighbor
-            if (i < (len(modes)-1)):
-                if (abs(avg_derivs[i] - avg_derivs[i+1]) < dist_to_nbr):
-                    preferred_nbr = i+1
-            # Record the preferred neighbor to merge with.
-            preferred[i] = preferred_nbr
-        # Merge those modes that preferred each other.
-        modes_to_remove = []
-        anti_to_remove = []
-        for mode_idx in preferred:
-            preferred_nbr = preferred[mode_idx]
-            # If the preferred neighbor mutually prefers (or is large).
-            if preferred.get(preferred_nbr, mode_idx) == mode_idx:
-                # Execute the merge operation.
-                #  - get the loctaion and sizes of the modes
-                #  - update the bounds of the new mode
-                if mode_idx < preferred_nbr:
-                    antimodes[preferred_nbr] = antimodes[mode_idx]
-                # Stage this mode for removal.
-                anti_to_remove.append(antimodes[mode_idx])
-                modes_to_remove.append(modes[mode_idx])
-                # Block any other modes from merging with this mode.
-                preferred[mode_idx] = -1
-        # Remove the modes and antimodes that were merged.
-        for m in modes_to_remove: modes.remove(m)
-        for a in anti_to_remove: antimodes.remove(a)
-    
-    f = len(antimodes)
-    p.add_func("PDF", pdf, cdf(), color=p.color(1), frame=f, show_in_legend=(step==1))
+    pdf = pdf_fit(data)
+    p.add_func("PDF", pdf, pdf(), color=p.color(1))
+    # Generate the mode lines.
+    mode_lines = [[],[]]
     for z in modes:
-        p.add("modes", [z,z], [0,1], color=p.color(0), mode="lines",
-              group="modes", show_in_legend=(z==modes[0] and step==1), frame=f)
-    for z in antimodes:
-        p.add("seperator", [z,z], [0,1], color=p.color(3,alpha=.3), mode="lines",
-              group="sep", show_in_legend=(z==antimodes[0] and (step==1)), frame=f)
-    p.show(append=True, y_range=[0,.1])
-
-
+        mode_lines[0] += [z,z,None]
+        mode_lines[1] += [0,.2,None]
+    p.add("modes", *mode_lines, color=p.color(0), mode="lines", group="modes")
+    # Generate the antimode lines.
+    break_lines = [[],[]]
+    for z in breaks:
+        break_lines[0] += [z,z,None]
+        break_lines[1] += [0,.2,None]
+    p.add("seperator", *break_lines, color=p.color(3,alpha=.3), mode="lines", group="seperator")
+    p.show()
+    # Show CDF
     p = Plot()
+    pdf = pdf_fit(data)
     p.add_func("CDF", cdf, cdf(), color=p.color(1))
+    # Generate the mode lines.
+    mode_lines = [[],[]]
     for z in modes:
-        p.add("modes", [z,z], [0,1], color=p.color(0), mode="lines",
-              group="modes", show_in_legend=(z==modes[0]))
-    for z in antimodes:
-        p.add("seperator", [z,z], [0,1], color=p.color(3), mode="lines",
-              group="sep", show_in_legend=(z==antimodes[0]))
+        mode_lines[0] += [z,z,None]
+        mode_lines[1] += [0,1,None]
+    p.add("modes", *mode_lines, color=p.color(0), mode="lines", group="modes")
+    # Generate the antimode lines.
+    break_lines = [[],[]]
+    for z in breaks:
+        break_lines[0] += [z,z,None]
+        break_lines[1] += [0,1,None]
+    p.add("seperator", *break_lines, color=p.color(3,alpha=.3), mode="lines", group="seperator")
     p.show(append=True)
+
+            
+
+    # Try and break the data up at the lowest density regions,
+    # continue breaking the data until we cannot break it any more
+    # based on confidence.
 
 
 
@@ -926,8 +1029,18 @@ def modes(data, confidence=.99, tol=1/1000):
 # ../development/testing/test_stats.py 
 if __name__ == "__main__":
     from util.random import cdf
+    np.random.seed(1)
+    data = cdf()
+    
+
+
+    from util.random import cdf
+    np.random.seed(1)
     data = cdf(nodes=3).inverse(np.random.random(100))
     modes(data)
+
+    # Look for "largest" regions of separation 
+
 
 
 # Backwards compatibility with warning for deprecation.

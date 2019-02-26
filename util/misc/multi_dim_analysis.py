@@ -97,28 +97,6 @@ class MDA_Iterator:
             return train, test, dim, names, num
 
 
-# Function for calculating (n choose k), more efficiently than
-# using the raw factorials (takes advantage of cancellation).
-# 
-# Parameters:
-#   n -- positive integer
-#   k -- positive integer less than or equal to "n"
-# 
-# Example:
-#   > choose(10,7)
-#    120
-# 
-# Notes:
-#   Undefined behaviour for negative integers and non-integer inputs.
-def choose(n, k):
-    if (n == k): return 1
-    numerator = 1
-    denominator = 1
-    for i in range(n,max(n-k,k),-1): numerator *= i
-    for i in range(1,min(n-k,k)+1):  denominator *= i
-    return int(numerator / denominator)
-
-
 # Function for generating "num_sets" random sets of size "set_size"
 # from indices listed in "points". If "well_spaced" then "data" must
 # be provided as to measure the distance between points.
@@ -227,6 +205,9 @@ def make_test_data(inputs, output, name="", input_names=None,
                    rand_seed=RANDOM_SEED, verbose=MDA_VERBOSE,
                    test_in_hull=TEST_IN_HULL,
                    train_well_spaced=TRAIN_WELL_SPACED):
+    # import the "choose" function.
+    from util.math import choose
+
     curr_dir = os.path.abspath(os.path.curdir)
     working_dir = os.path.join(curr_dir, "_".join(
         [name,"MDA_Data",str(rand_seed)]))

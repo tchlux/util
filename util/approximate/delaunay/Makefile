@@ -1,6 +1,5 @@
 FORT=gfortran
-CFLAGS=-c -std=f2008 -fPIC
-LIBS=-fopenmp
+CFLAGS=-c -std=f2008 -fopenmp -fPIC
 PYTHON=python3
 
 all: delsparse.cpython-36m-darwin.so
@@ -10,7 +9,7 @@ delsparse.cpython-36m-darwin.so: make_module.py delsparse.o slatec.o lapack.o bl
 	$(PYTHON) make_module.py
 
 delsparse.o: delsparse.f90 
-	$(FORT) $(CFLAGS) $(LIBS) delsparse.f90 -o delsparse.o
+	$(FORT) $(CFLAGS) delsparse.f90 -o delsparse.o
 
 slatec.o : slatec.f
 	$(FORT) $(CFLAGS) slatec.f -o slatec.o
