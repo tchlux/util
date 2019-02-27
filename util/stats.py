@@ -550,9 +550,6 @@ def _half_confidence(num_samples, max_error):
 # Given a list of numbers, return True if the given values provide an
 # estimate to the underlying distribution with confidence bounded error.
 def samples(size=None, error=None, confidence=None, at=None):
-    from util.system import Timer
-    t = Timer()
-
     # Determine what to calculate based on what was provided.
     from util.math import is_none, choose, Fraction
     if   is_none(size):       to_calculate = "samples"

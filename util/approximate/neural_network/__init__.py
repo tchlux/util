@@ -1,79 +1,62 @@
 # Makes available all custom algorithms that I have worked with
 from util.approximate import Approximator
 
-# MLP Regressor
-MLP_R_ACTIVATION_FUNC = "relu"
-MLP_R_SOLVER = "sgd"
-MLP_ZERO_MEAN_UNIT_VAR = True
-MAX_ITER = 1000
-EARLY_STOP = True
-DEFAULT_HIDDEN = (100,)*10
-
-
-# Force many iterations of SGD with a chosen random state and negative tolerance.
-# model = MLP(hidden_layer_sizes=(hidden_nodes,), solver='sgd',
-#             max_iter=30000, random_state=10, tol=-float('inf'),
-#             verbose=True, shuffle=False)
-
-# ==========================================
-#      Multi-Layer Perceptron Regressor     
-# ==========================================
+# Use keras and tensorflow to make a multi-layer perceptron regressor.
 class NeuralNetwork(Approximator):
-    def __init__(self, *args, activation=MLP_R_ACTIVATION_FUNC,
-                 solver=MLP_R_SOLVER, zmuv=MLP_ZERO_MEAN_UNIT_VAR,
-                 max_iter=MAX_ITER, early_stop=EARLY_STOP, **kwargs):
-        from sklearn.neural_network import MLPRegressor
-        self.MLPRegressor = MLPRegressor
-        kwargs.update(dict(activation=activation, solver=solver, max_iter=max_iter))
-        # Set the hidden layers to a small deep network if they were not provided.
-        if "hidden_layer_sizes" not in kwargs:
-            kwargs["hidden_layer_sizes"] = DEFAULT_HIDDEN
-        # If desired, force no early stopping by setting infinite tolerance.
-        if not early_stop: kwargs.update(dict(tol=-float("inf")))
-        self.mlp = self.MLPRegressor(*args, **kwargs)
-        self.zmuv = zmuv # Zero mean, unit variance
-        self.mean = 0
-        self.var = 1
-    def _fit(self, x, y, *args, **kwargs):
-        # By default, zero-mean and unit-variance the data.
-        if self.zmuv and (len(args) > 0):
-            self.mean = x.mean(axis=0)
-            self.var = (x.var(axis=0))**(1/2)
-            if (self.var <= 0): self.var = 1.0
-            x = (x - self.mean) / self.var
-            args = (x,) + args[1:]
-        # MLPRegressor doesn't like it if 1-D y's are not flattened.
-        if (y.shape[1] == 1): y = y.flatten()
-        return self.mlp.fit(x, y, *args, **kwargs)
-    def _predict(self, *args, **kwargs):
-        # By default, zero-mean and unit-variance the data.
-        if len(args) > 0:
-            x = args[0]
-            x = x - self.mean
-            x = x / self.var
-            args = (x,) + args[1:]
-        output = self.mlp.predict(*args, **kwargs)
-        if len(output.shape) == 1: output = output[:,None]
-        return output
+    def __init__(self, *args, **kwargs): pass
+    def _fit(self, x, y, *args, layers=(32,)*10, activation='relu',
+             optimizer='sgd', loss='mse', epochs=5000,
+             batch_size=None, verbose=0, **kwargs):
+        import numpy as np
+        # Silence the "backend" message from keras on import.
+        import os, sys
+        stderr = sys.stderr
+        sys.stderr = open(os.devnull, 'w')
+        from keras.models import Sequential
+        from keras.layers import Dense, Activation
+        sys.stderr = stderr
+        # Normalize the data points.
+        self.x_shift = np.mean(x, axis=0)
+        x -= self.x_shift
+        self.x_scale = np.sqrt(np.var(x, axis=0))
+        self.x_scale[self.x_scale == 0] = 1.0
+        x /= self.x_scale
+        # Normalize the data values.
+        self.y_shift = np.mean(y, axis=0)
+        y -= self.y_shift
+        self.y_scale = np.sqrt(np.var(y, axis=0))
+        self.y_scale[self.y_scale == 0] = 1.0
+        y /= self.y_scale
+        # Construct the model layers, starting with the input layer.
+        model_layers = [Dense(layers[0], input_shape=(x.shape[1],)), Activation(activation)]
+        # Add all internal layers.
+        for size in layers[1:]:
+            model_layers += [Dense(size), Activation(activation)]
+        # Add output layer.
+        model_layers += [Dense(y.shape[1])]
+        # Construct and fit the model.
+        self.mlp = Sequential(model_layers)
+        # Use mean squared error, solve with sgd.
+        self.mlp.compile(optimizer=optimizer, loss=loss)
+        if type(batch_size) == type(None): batch_size=min(200, len(x))
+        # Turn off the tensorflow warning messages (about sub-optimality).
+        #   0 = all messages are logged (default behavior)
+        #   1 = INFO messages are not printed
+        #   2 = INFO and WARNING messages are not printed
+        #   3 = INFO, WARNING, and ERROR messages are not printed
+        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+        # Fit the model.
+        self.mlp.fit(x, y, epochs=epochs, batch_size=batch_size, verbose=verbose)
 
+    def _predict(self, x, *args, **kwargs):
+        # Normalize the input data and denormalize the output prediction.
+        x = (x - self.x_shift) / self.x_scale
+        y = self.mlp.predict(x, *args, **kwargs)
+        return (y * self.y_scale) + self.y_shift
 
-class BFGS1000(NeuralNetwork):
-    def __init__(self, *args, **kwargs):
-        kwargs["solver"] = "lbfgs"
-        kwargs["early_stop"] = False
-        kwargs["max_iter"] = 1000
-        super().__init__(*args, **kwargs)
-
-class SGD10K(NeuralNetwork):
-    def __init__(self, *args, **kwargs):
-        kwargs["solver"] = "sgd"
-        kwargs["early_stop"] = False
-        kwargs["max_iter"] = 10000
-        super().__init__(*args, **kwargs)
 
 if __name__ == "__main__":
     from util.approximate.testing import test_plot
-    m = SGD10K()
-    # m = BFGS1000()
+    m = NeuralNetwork()
     p, x, y = test_plot(m, random=True, N=200)
     p.show()

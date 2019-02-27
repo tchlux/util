@@ -11,7 +11,7 @@ TABLE_TEXT = """
     \hline
   \end{tabular}
   \caption{}
-  \label{table:%s}
+  \label{table:}
 \end{table}"""
 TABLE_MULTI_COL = "\multicolumn{%i}{%s}{%s}"
 N_COLS = lambda n: "|"+"|".join(["c"]*n)+"|"
@@ -35,5 +35,5 @@ def latex_table(py_list, header=[]):
     if len(header) > 0:
         table_rows[1] = "\hline"+TABLE_SEPERATOR[2:]+table_rows[1]
     # Print out the latex table
-    print(TABLE_TEXT%(N_COLS(num_columns), TABLE_SEPERATOR.join(table_rows), header))
+    print(TABLE_TEXT%(N_COLS(num_columns), TABLE_SEPERATOR.join(table_rows)))
     

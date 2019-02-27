@@ -19,12 +19,8 @@ from util.approximate.shepard import Shepard
 from util.approximate.linear_shepard import LSHEP
 # Regression techniques.
 from util.approximate.mars import MARS
-from util.approximate.neural_network import NeuralNetwork, BFGS1000, SGD10K
+from util.approximate.neural_network import NeuralNetwork
 from util.approximate.support_vector_machine import SVR
-
- # Create aliases to the neural network.
-MLP = NeuralNetwork
-NN = SGD10K
 
 # Rename nearest neighbor.
 KNN = NearestNeighbor
