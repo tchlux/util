@@ -24,6 +24,10 @@ sudo python setup.py install
 class MARS(Approximator):
     def __init__(self, max_bases=MARS_MAX_BASES,
                  max_interaction=MARS_MAX_INTERACTION):
+        # Disable the future warnings that MARS gives.
+        import warnings
+        warnings.filterwarnings("ignore", category=FutureWarning)
+        # Import the Earth package.
         from pyearth import Earth
         self.Earth = Earth
         self.model = None
@@ -49,3 +53,9 @@ class MARS(Approximator):
         response = self.model.predict(x)
         if len(response.shape) == 1: response = response[:,None]
         return response
+
+if __name__ == "__main__":
+    from util.approximate.testing import test_plot
+    m = MARS()
+    p, x, y = test_plot(m, random=True, N=20)
+    p.show()
