@@ -29,12 +29,17 @@ if __name__ == "__main__":
     classifiers = read("classifiers.txt")
     name, email, git_username = read("author.txt")
 
+    # Transfer the git requirements over into dependency links.
+    dependency_links = [r for r in requirements if "git+" in r]
+    for r in dependency_links: requirements.pop(r)
+
     setup(
         author = name,
         author_email = email,
         name=package,
         packages=find_packages(exclude=[]),
         install_requires=requirements,
+        dependency_links=dependency_links,
         version=version,
         description = description,
         keywords = keywords,
