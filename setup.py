@@ -31,7 +31,7 @@ if __name__ == "__main__":
 
     # Transfer the git requirements over into dependency links.
     dependency_links = [r for r in requirements if "git+" in r]
-    for r in dependency_links: requirements.pop(r)
+    for r in dependency_links: requirements.delete(r)
 
     setup(
         author = name,
