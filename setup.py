@@ -34,7 +34,7 @@ if __name__ == "__main__":
     for r in dependency_links:
         try:    pkg_name = r.split("egg=")[1]
         except: raise(DependencyError("GitHub repositories must specify '#egg=<package-name>' at the end."))
-        requirements[requirements.index(r)] = pkg_name + " @ git+ssh://" r.split("://")[1]
+        requirements[requirements.index(r)] = pkg_name + " @ git+ssh://" + r.split("://")[1]
 
     setup(
         author = name,
