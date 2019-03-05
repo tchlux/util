@@ -1,4 +1,5 @@
-from util.data import QUOTES, COMMON_SEPERATORS
+from util.data import QUOTES, COMMON_SEPERATORS, UPDATE_FREQUENCY, \
+    MAX_ERROR_PRINTOUT
 
 # =================================================
 #      Automatically Reading Structured Arrays     

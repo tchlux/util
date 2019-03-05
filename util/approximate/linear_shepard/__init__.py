@@ -16,7 +16,7 @@ class LSHEP(Approximator):
     def __init__(self):
         self.linear_shepard = fmodpy.fimport(
             os.path.join(CWD,"linear_shepard.f95"),
-            module_link_args=["-lgfortran","-lblas","-llapack"], 
+            module_link_args=["-lblas","-llapack","-lgfortran"], 
             output_directory=CWD, autocompile_extra_files=True)
         self.lshep = self.linear_shepard.lshep
         self.lshepval = self.linear_shepard.lshepval
@@ -66,4 +66,11 @@ class LSHEP(Approximator):
                " different.\n  This is only hazardous for piecewise "+
                "linear underlying functions.")%self.ierrors.get(2,0))
         return self.ierrors.get(0,0), self.ierrors.get(1,0), self.ierrors.get(2,0)
+
+
+if __name__ == "__main__":
+    from util.approximate.testing import test_plot
+    m = LSHEP()
+    p, x, y = test_plot(m, random=True, N=200)
+    p.show()
 
