@@ -29,10 +29,12 @@ if __name__ == "__main__":
     classifiers = read("classifiers.txt")
     name, email, git_username = read("author.txt")
 
-    # Transfer the git requirements over into dependency links.
-    dependency_links = [r for r in requirements if "git+" in r]
+    # Translate the git requirements to proper requirements.
+    dependency_links = [r for r in requirements if "github.com" in r]
     for r in dependency_links:
-        requirements[requirements.index(r)] = r.split("egg=")[1]
+        try:    pkg_name = r.split("egg=")[1]
+        except: raise(DependencyError("GitHub repositories must specify '#egg=<package-name>' at the end."))
+        requirements[requirements.index(r)] = pkg_name + " @ git+ssh://" r.split("://")[1]
 
     setup(
         author = name,
@@ -40,7 +42,6 @@ if __name__ == "__main__":
         name=package,
         packages=find_packages(exclude=[]),
         install_requires=requirements,
-        dependency_links=dependency_links,
         version=version,
         description = description,
         keywords = keywords,
