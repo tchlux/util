@@ -341,15 +341,17 @@ def _test_fit_funcs(display=False):
 def _test_samples(display=True, test_correctness=False):
     from util.math import Fraction
     from util.plot import Plot
-    for size in tuple(range(2,42))+(128, 129, 256, 257):
-        p = Plot(f"Error at x with {size} samples")
-        for confidence in (Fraction(9,10), Fraction(185,200),
-                           Fraction(95,100), Fraction(97,100),
-                           Fraction(99,100)):
-            f = lambda x: samples(size=size, confidence=confidence, at=x[0])
-            p.add_func(f"{confidence} confidence", f, [0, 1])
-        p.show(append=True, show=(size==2))
-    exit()
+
+    if display:
+        for size in tuple(range(2,42))+(128, 129, 256, 257):
+            p = Plot(f"Error at x with {size} samples")
+            for confidence in (Fraction(9,10), Fraction(185,200),
+                               Fraction(95,100), Fraction(97,100),
+                               Fraction(99,100)):
+                f = lambda x: samples(size=size, confidence=confidence, at=x[0])
+                p.add_func(f"{confidence} confidence", f, [0, 1])
+            p.show(append=True, show=(size==2))
+        exit()
 
 
 
@@ -378,8 +380,9 @@ def _test_samples(display=True, test_correctness=False):
     if display: print("samples (max error, confidence)")
     for (s, e,c) in key_values[:-3]:
         needed = samples(error=e, confidence=c)
-        print("needed: ",needed)
-        if display: print("%6d  (%2.0f%%, %2.0f%%)"%(needed,100*e,100*c))
+        if display:
+            print("needed: ",needed)
+            print("%6d  (%2.0f%%, %2.0f%%)"%(needed,100*e,100*c))
         # if (s != None): assert(needed == s)
 
     if display:
@@ -405,7 +408,7 @@ def _test_samples(display=True, test_correctness=False):
         fit = "linear"
         truth = random.cdf(nodes=5, fit=fit)
         max_error = samples(N, confidence=.99)
-        print("Largest expected error:", max_error)
+        if display: print("Largest expected error:", max_error)
         mid_error = []
         errors = {(1/100):[], (1/4):[], (1/3):[], (1/2):[]}
         max_errors = []
@@ -417,7 +420,7 @@ def _test_samples(display=True, test_correctness=False):
             diff_func = lambda x: abs(truth(x) - guess(x))
             diffs = diff_func(np.linspace(0,1,DIFFS))
             mean_failed += [sum(diffs > max_error)]
-            print(f"Failed: {mean_failed[-1]:4d}   {sum(mean_failed)/len(mean_failed):.0f}")
+            if display: print(f"Failed: {mean_failed[-1]:4d}   {sum(mean_failed)/len(mean_failed):.0f}")
             max_errors.append(diff)
             for v in errors: errors[v].append(truth(v) - guess(v))
             # if (diff > max_error):
@@ -434,26 +437,26 @@ def _test_samples(display=True, test_correctness=False):
             #     break
 
         total_failed = sum(e > max_error for e in max_errors)
-        print(f"Failed {total_failed} out of {TESTS}, or {100*total_failed/TESTS:.1f}%.")
+        if display or (total_failed > 0):
+            print(f"Failed {total_failed} out of {TESTS}, or {100*total_failed/TESTS:.1f}%.")
 
+            p = Plot()
+            # Add the distribution of maximum errors.
+            f = cdf_fit(max_errors)
+            p.add_func(f"{len(max_errors)} max errors", f, f())
 
-        p = Plot()
-        # Add the distribution of maximum errors.
-        f = cdf_fit(max_errors)
-        p.add_func(f"{len(max_errors)} max errors", f, f())
+            # Add the distribution of errors at different values.
+            for v in sorted(errors)[::-1]:
+                mean = np.mean(errors[v])
+                std = np.std(errors[v])
+                f = cdf_fit(errors[v])
+                p.add_func(f"{v:.1f} errors ({mean:.1e}, {std:.1e}) {samples(N,confidence=.99):.2f}", f, f())
 
-        # Add the distribution of errors at different values.
-        for v in sorted(errors)[::-1]:
-            mean = np.mean(errors[v])
-            std = np.std(errors[v])
-            f = cdf_fit(errors[v])
-            p.add_func(f"{v:.1f} errors ({mean:.1e}, {std:.1e}) {samples(N,confidence=.99):.2f}", f, f())
+            p.show(append=True)
 
-        p.show(append=True)
-
-        p = Plot()
-        p.add_func("Truth", truth, truth())
-        p.show(append=True)
+            p = Plot()
+            p.add_func("Truth", truth, truth())
+            p.show(append=True)
 
 
 
@@ -516,11 +519,11 @@ def _test_cdf_fit():
 
 def test():
     print(f"Testing 'util.stats'..")
-    # _test_mpca()
-    # _test_effect()
-    # _test_epdf_diff()
-    # _test_fit_funcs()
-    # _test_Distribution()
+    _test_mpca()
+    _test_effect()
+    _test_epdf_diff()
+    _test_fit_funcs()
+    _test_Distribution()
     _test_samples(True)
     print("done.")
     

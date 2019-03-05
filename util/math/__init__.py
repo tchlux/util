@@ -5,6 +5,12 @@ from util.math.fraction import Fraction
 SMALL = 1.4901161193847656*10**(-8) 
 #       ^^ SQRT(EPSILON( 0.0_REAL64 ))
 
+# Given a list of lists, flatten it to one dimension.
+def flatten(l): return [v for row in l for v in row]
+
+# Given a list of lists, transpose it and return.
+def transpose(l): return [list(row) for row in zip(*l)]
+
 # Return a boolean "is_numeric"
 def is_numeric(obj):
     try:

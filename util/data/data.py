@@ -1,44 +1,17 @@
-# --------------------------------------------------------------------
-# Import "numpy" by modifying the system path to remove conflicts.
-import sys, os
-_ = []
-for i in range(len(sys.path)-1,-1,-1):
-    if "util/util" in sys.path[i]: _ = [sys.path.pop(i)] + _
-import numpy as np
-sys.path = _ + sys.path
-# --------------------------------------------------------------------
+import os
+from util.data.read import read_data
+from util.data.categories import regular_simplex
+from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES
 
-#      data.py     
-# =================
-COMMON_SEPERATORS = [",", " ", "	", ";"]
-UPDATE_FREQUENCY = .5  # How much time (in seconds) between updates when reading data.
-MAX_ERROR_PRINTOUT = 10 # Only print out this many errors when processing data
 
-# Declare some constants.
-NP_TYPES = {str:(np.str_, 16),    # Which numpy types correspond to 
-            int:(np.int64,),      # the python types of variables
-            float:(np.float64,)}
-PY_TYPES = {value[0]:key for (key,value) in NP_TYPES.items()}
-# 
-GENERATOR_TYPE = type(_ for _ in ())
-
-# coding: future_fstrings
-# from future import print_function
-
-# TODO:  Make data only deep copy when "copy()" is called or "[:,:]"
-#        is given. Otherwise return "DataView" object (limited function 
-#        that allows for deep copying if desired).
-# TODO:  Add tests for empty data object.
-# TODO:  Add "Descriptor" class for Data.names and Data.types so that
-#        they can be directly modified by users safely (with checks).
-# TODO:  Add "Row" class that protects item assignment types over rows
-#        and allows for item-wise equality operator.
+# TODO:  Add itemwise equality operator to "Row" class.
 # TODO:  Non-singleton comparison operator for Column Column comparison.
 # TODO:  Add addition, subtraction, multiplication, and division
 #        operators to column objects.
-# TODO:  Make "predict" not require that target columns be convertible
-#        to numeric form, only that they operate under a weighted sum.
+# TODO:  Make saving to CSV files automatically put quotes around
+#        strings that have the separator character in them.
 # TODO:  Make printout shorter for data with lots of columns.
+# TODO:  Add tests for empty data object.
 # TODO:  Check the __iadd__ for data object columns, breaking "missing".
 # TODO:  Update __iadd__ to behave differently when adding data:
 #        when adding data with subset of known columns, add rows and
@@ -48,378 +21,31 @@ GENERATOR_TYPE = type(_ for _ in ())
 #        are numeric, use float, otherwise use string. Use "is numeric"
 #        to determine if the target needs to be classified or interpolated.
 # TODO:  Make "to_matrix" automatically consider 'None' a unique value
-#        for categorical columns and add a dimension 'is present'
-#        otherwise.
+#        for categorical columns and add a dimension 'is present' otherwise.
+# TODO:  Remove the default storage of "to_matrix" output.
+# TODO:  Wrap the necessary "Numeric" attributes into the matrix,
+#        using a custom ndraray object from numpy.
+# TODO:  Make data only deep copy when "copy()" is called or "[:,:]"
+#        is given. Otherwise return "DataView" object (limited class 
+#        that allows for deep copying if desired).
 # TODO:  Write "collect" that does the combined operations of 
 #        "unique().collect()" in a more memory efficient manner (by
 #        cannabalizing the existing Data object).
 # TODO:  Write "unroll" that does the opposite operation of "collect",
 #        expanding a data set out according to list columns.
 
-QUOTES = {'"'}
-DEFAULT_DISPLAY_WAIT = 3.
+# TODO:  Make "predict" not require that target columns be convertible
+#        to numeric form, only that they operate under a weighted sum.
+# TODO:  Implment tracking for the "size" of a Row & Data object, and
+#        the recently accessed rows (keep an ordered set of them).
+# TODO:  Implement caching for rows when a Data object becomes very large.
+
+# TODO:  Implmenent 'IndexedAudio' reader that mimics the
+#        'IndexedVideo' reader and allows for access to peaks.
+# TODO:  Implemenet 'IndexedText' reader that mimics the
+#        'IndexedVideo' reader and allows for access to characters.
 
 
-# ===============================================================
-#     Convert a matrix into an image for display
-# 
-# Hard coded colors
-BLUE = np.array((100,100,255), dtype=np.uint8)
-RED = np.array((255,100,100), dtype=np.uint8)
-WHITE = np.array((255,255,255), dtype=np.uint8)
-BLACK = np.array((0,0,0), dtype=np.uint8)
-# File interactions
-DIRECTORY = os.path.abspath(".")
-TEMP_IMG = "temp.png"
-def matrix_to_img(matrix, file_name=TEMP_IMG, directory=DIRECTORY,
-                  pos_color=WHITE, mid_color=BLACK, neg_color=RED, show=False):
-    if len(matrix.shape) == 2:
-        matrix = np.asarray(matrix, dtype="float64")
-        img = np.zeros(matrix.shape + (3,), dtype=np.uint8)
-        max_val = np.max(matrix)
-        min_val = abs(np.min(matrix))
-        # Rescale the matrix of numbers to range [-1,1]
-        for row in range(matrix.shape[0]):
-            for col in range(matrix.shape[1]):
-                # Rescale positive values to range from white to blue
-                if matrix[row,col] >= 0:
-                    val = matrix[row,col] / max_val
-                    img[row,col,:] = val * pos_color + (1-val) * mid_color
-                # Rescale negative values to range from white to red
-                else:
-                    val = -matrix[row,col] / min_val
-                    img[row,col,:] = val * neg_color + (1-val) * mid_color
-    elif len(matrix.shape) == 3: img = matrix.copy()
-    else: raise(Exception(f"Unrecognized matrix shape, {matrix.shape}."))
-    # Convert the scaled values into an actual image and save to desktop.
-    img = Image.fromarray(img)
-    file_name = os.path.join(directory, file_name)
-    img.save(file_name)
-    if show: os.system(f"open {file_name}")
-# ===============================================================
-
-
-# Define a class for reading a video file without actually storing it in memory.
-class IndexedVideo:
-    import cv2
-    import numpy as np
-    class FailedSet(Exception): pass
-    class FailedRead(Exception): pass
-    class BadIndex(Exception): pass
-    class IndexTooLarge(Exception): pass
-    # Initialize by getting the information about this video from file.
-    def __init__(self, video_file_name, flatten=False, use_float=False):
-        # Store the 'flatten' attirbute for flattening images.
-        self.flatten = flatten
-        self.float = use_float
-        # Store the video using an OpenCV video capture object (with its attributes)
-        self.vid = self.cv2.VideoCapture(video_file_name)
-        self.frames = int(self.vid.get(self.cv2.CAP_PROP_FRAME_COUNT))
-        self.width  = int(self.vid.get(self.cv2.CAP_PROP_FRAME_WIDTH))
-        self.height = int(self.vid.get(self.cv2.CAP_PROP_FRAME_HEIGHT))
-        self.fps    = int(self.vid.get(self.cv2.CAP_PROP_FPS))
-        # Find the last available index in the video using the "set"
-        # method. This must be done because of a bug in OpenCV.
-        self.length = self.frames-1
-        for i in range(-1, -self.frames, -1):
-            # If the index is successfully accessed, break.
-            try:   
-                img = self[i]
-                self.length = self.frames + i
-                break
-            # Otherwise, ignore the failed read operation.
-            except self.FailedRead: pass
-        # Use the first image to get the full shape of this video.
-        self.shape = (self.length,) + self[0].shape
-        self.file_name = video_file_name
-
-    # Define the "length" of this video.
-    def __len__(self): return self.length
-
-    # Define the index operator for this video.
-    def __getitem__(self, index):
-        # Cover two possible (common) usage errors.
-        if type(index) != int: raise(self.BadIndex("Only integer indices allowed."))
-        if index > self.length: raise(self.IndexTooLarge(f"Index {index} greater than length of self, {self.length}."))
-        # Convert negative indices into positive indices.
-        if (index < 0):
-            while (index < 0): index += self.length
-        # Move the capture to the correct frame of the video.
-        success = self.vid.set(self.cv2.CAP_PROP_POS_FRAMES, index)
-        if not success: raise(self.FailedSet(f"Failed to set to video frame {index}."))
-        # Get the image at that frame.
-        success, image = self.vid.read()
-        if not success: raise(self.FailedRead(f"Failed to read video frame {index}."))
-        # Flatten / float the image if that setting is enabled.
-        if self.flatten: image = image.flatten()
-        if self.float:   image = self.np.asarray(image, dtype=float)
-        # Return the image at that frame.
-        return image
-
-
-# Given "d" categories that need to be converted into real space,
-# generate a regular simplex in (d-1)-dimensional space. (all points
-# are equally spaced from each other and the origin) This process
-# guarantees that all points are not placed on a sub-dimensional
-# manifold (as opposed to "one-hot" encoding).
-def regular_simplex(num_categories):
-    import numpy as np
-    class InvalidNumberOfCategories(Exception): pass
-    # Special cases for one and two categories
-    if num_categories < 1:
-        raise(InvalidNumberOfCategories(
-            "Number of categories must be an integer greater than 0."))
-    elif num_categories == 1:
-        return np.array([[]])
-    elif num_categories == 2:
-        return np.array([[0.],[1.]])
-    # Standard case for >2 categories
-    d = num_categories
-    # Initialize all points to be zeros.
-    points = np.zeros((d,d-1))
-    # Set the initial first point as 1
-    points[0,0] = 1
-    # Calculate all the intermediate points
-    for i in range(1,d-1):
-        # Set all points to be flipped from previous calculation while
-        # maintaining the angle "arcos(-1/d)" between vectors.
-        points[i:,i-1] = -1/(d-i) * points[i-1,i-1]
-        # Compute the new coordinate using pythagorean theorem
-        points[i,i] = (1 - sum(points[i,:i]**2))**(1/2)
-    # Set the last coordinate of the last point as the negation of the previous
-    points[i+1,i] = -points[i,i]
-    # Return the regular simplex
-    return points
-
-# Given a point, determine the affine combination of categories in the
-# defining regular simplex that produces the point.
-def category_ratio(point):
-    import numpy as np
-    categories = regular_simplex(len(point)+1)
-    # Add the "constant" column to the matrix of categories
-    categories = np.hstack((categories, np.ones((len(point)+1,1))))
-    # Add the "sum to 1" column to the affinely created point
-    point = np.hstack((point, 1))
-    # Calculate and return the affine weights
-    return np.linalg.solve(categories.T, point)
-
-
-# =================================================
-#      Automatically Reading Structured Arrays     
-# =================================================
-
-# Return the type of a string (try converting to int and float)
-def get_type(obj):
-    if (hasattr(obj, "__len__") and (len(obj) == 0)):
-        return int
-    try:
-        int(obj)
-        return int
-    except ValueError:
-        try:
-            float(obj)
-            return float
-        except ValueError:
-            return str
-
-# Return the given element without quotes (if it is a string)
-def without_quotes(s): 
-    is_str = (type(s) == str)
-    if is_str:
-        is_long_enough = (len(s) > 1)
-        if is_long_enough:
-            has_single_quotes = (s[0] == s[-1] == "'")
-            has_double_quotes = (s[0] == s[-1] == '"')
-            if (has_single_quotes or has_double_quotes):
-                return s[1:-1]
-    return s
-
-
-# Remove nested seperators inside of quotes in the line
-def remove_quoted_seperators(line, sep=None):
-    cleaned_line = ""
-    in_quotes = False
-    for char in line:
-        # Toggle 'inside' quotes.
-        if (char in QUOTES):
-            in_quotes = not in_quotes
-            if (sep == None): char = ""
-        # Add quoted bits without separ
-        if (not in_quotes):
-            cleaned_line += char
-        elif (char != sep) and (sep != None):
-            cleaned_line += char
-    return cleaned_line
-
-
-# Pre:  "filename" is the name of an existing file (including path)
-# Post: "filename" is scanned for viable seperators, those are all
-#       characters used the same number of times on each line. If at
-#       the end of the file there are still multiple candidate
-#       seperators, they are sorted by most-occuring first. If one of
-#       COMMON_SEPERATORS exist in the set, it is used, otherwise the
-#       most occurring seperator is used.
-def detect_seperator(filename="<no_provided_file>", verbose=False, opened_file=None):
-    import time
-    from util.system import AtomicOpen
-    lines = []
-    not_viable = set()
-    if not opened_file:
-        f = AtomicOpen(filename).file
-    else:
-        f = opened_file
-    # Identify the potential seperators from the first line
-    first_line = remove_quoted_seperators(f.readline().strip())
-    seperators = {char:first_line.count(char) for char in set(first_line)}
-    # Update the user
-    last_update = 0
-    should_update = lambda: (verbose and ((time.time() - last_update) > UPDATE_FREQUENCY))
-    raw_data = f.readlines()
-    # Cycle the file (narrowing down the list of potential seperators
-    for i,line in enumerate(raw_data):
-        # Update the user on progress if appropriate
-        if should_update():
-            last_update = time.time()
-            print(f"\r{(100.0*i/len(raw_data)):0.1f}% complete", flush=True, end="")
-        # Clean the line of quoted strings.
-        line = remove_quoted_seperators(line)
-        line_chars = set(line.strip())
-        # Make sure all tracked seperators appear the correct
-        # number of times in the line
-        for char in list(seperators.keys()):
-            if (line.count(char) != seperators[char]):
-                not_viable.add( char )
-                seperators.pop( char )
-        # WARNING: Do *not* break early, to verify that the
-        #          seperators are used correctly throughout the
-        #          entire file!
-    if not opened_file:
-        # Close the opened file object
-        f.close()
-    else:
-        # Go back to the beginning of the file
-        f.seek(0)
-    # Get the seperators from the dictionary sorted by the decreasing
-    # number of occurrences the character has on each line of the data.
-    seperators = sorted(seperators.keys(), key=lambda k: -seperators[k])
-    # Check to make sure there is a seperator detected
-    if len(seperators) == 0:
-        raise(Exception("ERROR: No consistently used seperator in file."))
-    if verbose:
-        print(" Detected the following possible seperators:\n  ", seperators)
-    # Search through the common seperators first, using one of them if possible
-    for sep in COMMON_SEPERATORS:
-        if sep in seperators:
-            if verbose: print(" Using '%s' as seperator."%sep)
-            break
-    else:
-        # Otherwise, use the most occurring character that could be a seperator
-        sep = seperators[0]
-        print("WARNING: Using '%s' as a seperator, even though it is unexpected."%(sep))
-    # Return the automatically detected seperator
-    return sep
-
-# Pre:  "filename" is the name of a txt file that has a header
-#       "sep" is the seperator used in the data file
-#       "display" is True if the user wants the detected types printed
-# Post: A data.Data class containing all data from the file.
-def read_data(filename="<no_provided_file>", sep=None, types=None,
-              verbose=False, opened_file=None):
-    import time
-    from util.system import AtomicOpen
-    if sep == None: sep = detect_seperator(filename, verbose, opened_file)
-    # Get the opened file object
-    if (not opened_file):
-        # Open the file to get the data
-        f = AtomicOpen(filename).file
-    else:
-        f = opened_file
-        file_name = f.name
-    # Get the first line, assuming it's the header
-    line = remove_quoted_seperators(f.readline(), sep)
-    header = [without_quotes(n.strip()).strip() for n in line.strip().split(sep)]
-    # Get the first line of data and learn the types of each column
-    line = [without_quotes(v.strip()).strip() for v in 
-            remove_quoted_seperators(f.readline().strip(), sep).split(sep)]
-    # Automatically detect types (if necessary)
-    type_digression = False
-    if type(types) == type(None):
-        types = list(map(get_type, line))
-        type_digression = True
-    # Initialize our data holder
-    data = Data(names=header, types=types)
-    # Add the first line to the data store (after inserting "None")
-    while "" in line: line[line.index("")] = None
-    data.append(line)
-    # Get the rest of the raw data from the file and close it
-    raw_data = f.readlines()
-    if (not opened_file):
-        # Close the file
-        f.close()
-    # WARNING: Provided file object left to be closed by caller
-    # Print out a nicely formatted description of the detected types
-    if verbose:
-        print("Column names and types:")
-        first_line  = ""
-        second_line = ""
-        for h,t in zip(header,types):
-            length = max(len(h), len(t.__name__))
-            first_line += f"  {h:{length}s}"
-            second_line += f"  {t.__name__:{length}s}"
-        print(first_line)
-        print(second_line)
-    # Now process the rest of the data, dynamically overwriting old data
-    errors = []
-    last_update = 0
-    should_update = lambda: (verbose and ((time.time() - last_update) > UPDATE_FREQUENCY))
-    for i,line in enumerate(raw_data):
-        # Clean up the line (in case there are nested seperators)
-        line = remove_quoted_seperators(line, sep)
-        # Update the user on progress if appropriate
-        if should_update():
-            last_update = time.time()
-            print("\r%0.1f%% complete"% (100.0*i/len(raw_data)), flush=True, end="")
-        # Read the line of data into a list format (replace empty string with None)
-        list_line = line.strip().split(sep)
-        # Remove leading and trailing quotes from strings if necessary
-        list_line = [without_quotes(el).strip() for el in list_line]
-        # Replace any empty strings with "None" for missing values
-        while "" in list_line: list_line[list_line.index("")] = None
-        # Try and add the line of data
-        try:
-            data.append(list_line)
-        except Data.BadValue:
-            if type_digression:
-                # Update the types based on digression order
-                new_types = list(map(get_type, line.strip().split(sep)))
-                type_order = {int:0, float:1, str:2}
-                new_types = [max(old,new, key=lambda v: type_order[v])
-                             for (old,new) in zip(types, new_types)]
-                # Update the user if appropriate
-                if verbose:
-                    print(f"\nType digression because of line {i+3}."+
-                          f"\n  old types: {types}"+
-                          f"\n  new types: {new_types}")
-                # Retype the existing data to match the new types
-                data.retype(new_types)
-                # Append line that matches new types
-                data.append(list_line)
-                types = new_types
-            else:
-                errors.append(i+3)
-                if len(errors) <= MAX_ERROR_PRINTOUT:
-                    print(f"\nERROR ON LINE {i+3}:\n  {line}")
-                if len(errors) == MAX_ERROR_PRINTOUT:
-                    print("Suppressing further error output. See all erroneous lines in later message.")
-    if verbose and (last_update != 0): print("\r100.0% complete.")
-    if (len(errors) > 0) and (not verbose):
-        print( "WARNING: Encountered potentially erroneous lines while\n"+
-              f"         reading '{filename}'.\n"+
-               "         Consider setting 'verbose=True' and checking errors.")
-    if verbose and (len(errors) > MAX_ERROR_PRINTOUT):
-        print(f"ERRONEOUS LINES FROM DATA:\n  {errors}")
-    # Return the data
-    return data
 
 # ======================================================
 #      Python 'Data' with named and typed columns     
@@ -428,123 +54,37 @@ def read_data(filename="<no_provided_file>", sep=None, types=None,
 # Define a python data matrix structure (named and typed columns)
 class Data(list):
     # Default values for 'self.names' and 'self.types'
-    names = None
-    types = None
+    _names = None
+    _types = None
     # Default values for "numeric" representation of self.
     numeric = None
     # Default maximum printed rows of this data.
-    _max_display = 10
+    max_display = 10
     # Default maximum string length of printed column values.
-    _max_str_len = 50
+    max_str_len = 50
+    # Define the maximum display width for a table (with many columns)
+    # before the data is automatically displayed in different format.
+    max_print_width = 100
 
-    # Local descriptive exceptions
-    class NameTypeMismatch(Exception): pass
-    class BadSpecifiedType(Exception): pass
-    class BadSpecifiedName(Exception): pass
-    class NoNamesSpecified(Exception): pass
-    class ImproperUsage(Exception): pass
-    class UnknownName(Exception): pass
-    class Unsupported(Exception): pass
-    class BadAssignment(Exception): pass
-    class BadElement(Exception): pass
-    class BadTarget(Exception): pass
-    class BadValue(Exception): pass
-    class BadIndex(Exception): pass
-    class BadData(Exception): pass
-    class Empty(Exception): pass
-    # Local mutable Column class (for column item assignment,
-    # retrieval, and iteration over a column in a data object).
-    class Column:
-        index = 0
-        def __init__(self, data, column, indices=None):
-            # Generate indices if they were not provided
-            if (type(indices) == type(None)):
-                indices = list(range(len(data)))
-            # Store the parent data and the column number 
-            self.data = data
-            self.column = column
-            self.indices = indices
-        def __setitem__(self, index, value):
-            index = self.indices[index]
-            # Default setitem for the parent data
-            self.data[index, self.column] = value
-        def __getitem__(self, index):
-            # Default getitem for the parent data
-            if (type(index) == int):
-                index = self.indices[index]
-                return self.data[index, self.column]
-            elif (type(index) == slice):
-                index = range(len(self.indices))[index]
-            elif (hasattr(index, "__iter__")):
-                pass
-            else:
-                raise(self.data.BadIndex(f"Data column does not support indexing with type {type(index)}."))
-            # Convert provided index into a list of integers.
-            indices = []
-            for i in index:
-                if (type(i) != int):
-                    raise(self.data.BadIndex(f"Data column index iterable contained type {type(i)}, expected {int}."))                    
-                indices.append( self.indices[i] )
-            # Return a new column with modified indices.
-            return self.data.Column(self.data, self.column, indices)
-        def __len__(self): return len(self.indices)
-        # Define this as an interator
-        def __iter__(self):
-            self.index = 0
-            return self
-        def __next__(self):
-            if (self.index >= len(self.indices)):
-                raise(StopIteration)
-            self.index += 1
-            return self.data[self.indices[self.index-1], self.column]
-        # Define the "in" method to return True for contained values.
-        def __in__(self, value): return any(v == value for v in self)
-        # Use the iteration to generate a string of this column
-        def __str__(self):
-            return str(list(self))
-        # Inequality operator
-        def __ne__(self, group):
-            return self.__eq__(group, equality=False)
-        # Iterate over the indices that exist in a set of values
-        def __eq__(self, group, equality=True):
-            # Try to convert given group to an iterable type for comparison.
-            if ((type(group) == self.data.types[self.column]) or (type(group) == type(None))):
-                group = [group]
-            elif (type(group) in {set, list}): 
-                pass
-            else:
-                raise(self.data.BadData(f"There is no defined equality operator for the provided type {type(group)}, when it does not match expected type {self.data.types[self.column]}."))
-            # Iterate over rows, generating indices that match the equality.
-            for i,v in enumerate(self):
-                if ((equality) and (v in group)):
-                    yield i
-                elif ((not equality) and (v not in group)):
-                    yield i
-        # Iterate over the indices based on a comparison operator
-        def __lt__(self, val):
-            # Iterate over values in this column
-            for i,v in enumerate(self):
-                if (v < val): yield i
-        # Iterate over the indices based on a comparison operator
-        def __gt__(self, val):
-            # Iterate over values in this column
-            for i,v in enumerate(self):
-                if (v > val): yield i
-        # Iterate over the indices based on a comparison operator
-        def __le__(self, val):
-            # Iterate over values in this column
-            for i,v in enumerate(self):
-                if (v <= val): yield i
-        # Iterate over the indices based on a comparison operator
-        def __ge__(self, val):
-            # Iterate over values in this column
-            for i,v in enumerate(self):
-                if (v >= val): yield i
+    # Import all of the exceptions.
+    from util.data.exceptions import NameTypeMismatch, \
+        BadSpecifiedType, BadSpecifiedName, NoNamesSpecified, \
+        ImproperUsage, UnknownName, Unsupported, BadAssignment, \
+        BadElement, BadTarget, BadValue, BadIndex, BadData, Empty
+    # Import the classes used to protect this data object.
+    from util.data.auxiliary import Descriptor, Column, Row
 
-    # Local class for iterating over 'rows' of this data object,
-    # prevents each row from being modified directly by users.
-    class Row(Column):
-        pass
+    # Protect the "names" and "types" attributes by using properties
+    # to control the access and setting of these values.
+    @property
+    def names(self): return self._names
+    @names.setter
+    def names(self, value): self._names = Data.Descriptor(value)
+    @property
+    def types(self): return self._types
+    @types.setter
+    def types(self, value): self._types = Data.Descriptor(value)
+
 
     #      Overwritten list Methods     
     # ==================================
@@ -577,14 +117,10 @@ class Data(list):
 
     # Redefined append operator that 
     def append(self, element):
-        # Make sure the element has a "len" property
-        try:    len(element)
-        except: raise(self.BadValue(f"Invalid appended element of type {type(element)}, which does not have 'len'."))
         self.numeric = None # Reset the numeric representation (if it existed)
         # Convert the element into a python list
-        if type(element) != list:
-            try:    element = list(element)
-            except: raise(self.BadValue(f"Invalid appended element, failed conversion to type {list}."))
+        try:    element = Data.Row(self, list(element))
+        except: raise(self.BadValue(f"Invalid appended element, failed conversion to type {Data.Row}."))
         missing_values = False
         # Check length in case names already exist
         if (type(self.names) != type(None)):
@@ -620,7 +156,7 @@ class Data(list):
             # Construct default names for each column
             self.names = [str(i) for i in range(len(element))]
         # Call the standard append operator, adding the element to self
-        super().append(list(element))
+        super().append(element)
         # Add to the list of missing values if necessary
         if (missing_values): self.missing.add(id(self[-1]))
 
@@ -739,7 +275,7 @@ class Data(list):
         rows += [ list(map(lambda t: str(t)[8:-2],self.types)) ]
         for i,row in enumerate(self):
             rows += [ row ]
-            if i >= self._max_display: break
+            if i >= self.max_display: break
         rows = [list(map(self._val_to_str,r)) for r in rows]
         lens = [max(len(r[c]) for r in rows)
                 for c in range(len(self.names))]
@@ -752,7 +288,7 @@ class Data(list):
         string += rows[1]
         string += "-"*len(rows[0]) + "\n"
         for row in rows[2:]:                string += row
-        if (len(self) > self._max_display): string += "  ...\n"
+        if (len(self) > self.max_display): string += "  ...\n"
         string += "\n"
         # Print some info about missing values if they exist.
         if len(self.missing) > 0:
@@ -763,13 +299,13 @@ class Data(list):
                     indices.append(i)
                 # WARNING: This ^^ is inefficient and is being done
                 #          because the "missing" id's are bugged.
-                if len(indices) > self._max_display:
+                if len(indices) > self.max_display:
                     break
             # Print out the indices of the rows with missing values
-            print_indices = ', '.join(map(str, indices[:self._max_display]))
+            print_indices = ', '.join(map(str, indices[:self.max_display]))
             string += f" missing values ({len(self.missing)}) at rows: \n  [{print_indices}"
             # Add elipses if there are a lot of missing values.
-            if (len(indices) > self._max_display): string += ", ..."
+            if (len(indices) > self.max_display): string += ", ..."
             string += "]\n"
         string += "="*len(rows[0]) + "\n"
         return string
@@ -867,8 +403,8 @@ class Data(list):
             # Custom string for a 'data' type object.
             string = v.__str__(short=True)
         # Shorten the string if it needs to be done.
-        if len(string) > self._max_str_len: 
-            string = string[:self._max_str_len]+".."
+        if len(string) > self.max_str_len: 
+            string = string[:self.max_str_len]+".."
         return string
 
     # Given an index (of any acceptable type), convert it into an
@@ -1098,30 +634,32 @@ class Data(list):
                     raise(self.BadSpecifiedType(f"Type casting {new_t} for column {c} is not compatible with existing value '{self[i,c]}' on row {i}."))
 
     # Given a new column, add it to this Data.
-    def add_column(self, column, name=None):
+    def add_column(self, column, name=None, idx=None):
         self.numeric = None # Reset the numeric representation (if it existed)
+        # Set the default index to add a column to be the end.
+        if (idx == None): idx = len(self.names)
         # Verify the name
         if (type(name) == type(None)):
             num = 0
             while (str(num) in self.names): num += 1
-            self.names.append(str(num))
+            self.names.insert(idx, str(num))
         elif (type(name) != str):
             raise(self.BadSpecifiedName(f"Only string names are allowed. Received name '{name}' with type {type(name)}."))
         else:
-            self.names.append(name)
+            self.names.insert(idx, name)
         # Verify the column type dynamically. Add new values to all rows.
         new_type = type(None);
         for i,val in enumerate(column):
             # Verify valid index first..
             if (i >= len(self)):
                 # Remove the added name.
-                self.names.pop(-1)
+                self.names.pop(idx)
                 # Remove the added elements if the length was not right
-                for j in range(len(self)): self[j].pop(-1)
+                for j in range(len(self)): self[j].pop(idx)
                 # Raise error for too long of a column
                 raise(self.BadData(f"Provided column has at least {i+1} elements, more than the length of this data ({len(self)})."))
             # Append the value to this row..
-            self[i].append(val)
+            self[i].insert(idx, val)
             if (type(val) == type(None)):
                 # Only add to missing values entry if it's not already there
                 if (id(self[i]) not in self.missing):
@@ -1131,21 +669,21 @@ class Data(list):
                 new_type = type(val)
             elif (type(val) != new_type):
                 # Remove the added name.
-                self.names.pop(-1)
+                self.names.pop(idx)
                 # Remove the added elements because a problem was encountered.
-                for j in range(i+1): self[j].pop(-1)
+                for j in range(i+1): self[j].pop(idx)
                 # This is a new type, problem!
                 raise(self.BadValue(f"Provided column has multiple types. Original type {new_type}, but '{val}' has type {type(val)}."))
         # Verify the column length
         if (i < len(self)-1):
             # Remove the added name.
-            self.names.pop(-1)
+            self.names.pop(idx)
             # Remove the added elements if the length was not right
-            for j in range(i+1): self[j].pop(-1)
+            for j in range(i+1): self[j].pop(idx)
             # Raise error for too short of a column
             raise(self.BadData(f"Provided column has length {i+1}, less than the length of this data ({len(self)})."))
         # Finally, record the new type
-        self.types.append(new_type)
+        self.types.insert(idx, new_type)
 
     # Generate a pair of functions. The first function will map rows
     # of Data to a real-valued list. The second function will map
@@ -1738,7 +1276,7 @@ class Data(list):
             print(self)
             return
         # Set the "max_display" to the default value for this class
-        if type(max_display) == type(None): max_display = self._max_display
+        if type(max_display) == type(None): max_display = self.max_display
         print("SUMMARY:")
         print()
         print(f"  This data has {len(self)} row{'s' if len(self) != 1 else ''}, {len(self[0])} column{'s' if len(self[0]) != 1 else ''}.")
@@ -1794,7 +1332,7 @@ class Data(list):
                     ordered_vals = sorted(counts, key=lambda v: -counts[v])
                 val_len = max(map(lambda v: len(str(v)), counts))
                 val_len = max(val_len, len("None"))
-                val_len = min(val_len, self. _max_str_len)
+                val_len = min(val_len, self.max_str_len)
                 if (t == str): val_len += 2
                 if (none_count > 0):
                     perc = 100. * (none_count / len(self))
@@ -1810,359 +1348,5 @@ class Data(list):
             print()
 
 
-# Some tests for the data
-def test_data():
-    import os
-    import numpy as np
 
-    print("Testing Data...", end=" ")
-    a = Data()
 
-    # Verify append
-    a.append([1,"a"])
-    a.append([2,"b"])
-    a.append([3,"c"])
-
-    # Verify add column (with edge case, none type)
-    a.add_column([None,None,None])
-    assert(a.types[-1] == type(None))
-    # Reassign the missing value column to floats, verify type update
-    a[a.names[-1]] = [1.2, 3.0, 2.4]
-    assert(a.types[-1] == float)
-    # WARNING: Need to check doing (<int>, <str>) assignment
-
-    # Verify in-place addition
-    b = a[:]
-    c = a[1:]
-    b += c
-    assert(tuple(b["0"]) == tuple([1,2,3,2,3]))
-
-    # Verify slicing-based singleton value assignment
-    b = a[:]
-    b[:,0] = 1
-    assert(tuple(b["0"]) == tuple([1,1,1]))
-
-    # Verify slicing-based multiple value assignment
-    b = a[:]
-    b[:,0] = [3,1,4]
-    assert(tuple(b["0"]) == tuple([3,1,4]))
-
-    # Verify double indexing with integers
-    assert(a[0,1] == "a")
-
-    # Verify double indexing with slices
-    assert(tuple(a[::-1,1]["1"]) == tuple(["c","b","a"]))
-
-    # Verify standard index access
-    assert(tuple(a[0]) == tuple([1,"a",1.2]))
-
-    # Verify column-access and automatic column naming
-    assert(tuple(a["0"]) == tuple([1,2,3]))
-
-    # Verify slicing by index
-    assert(tuple(a[:1][0]) == tuple(a[0]))
-
-    # Verify slicing by names
-    assert(tuple(a["0","2"][0]) == tuple([1,1.2]))
-
-    # Verify that copies with "copy" are deep
-    b = a.copy()
-    b.retype([str,str,str])
-    assert(a.types[0] != str)
-
-    # Verify that copies with slicing are deep and that retype works.
-    b = a[:]
-    b.retype([str,str,str])
-    assert(a.types[0] != str)
-
-    # Verify that reorder works.
-    b = a[:]
-    b.reorder(["2","0"])
-    assert(tuple(b.names) == ("2","0","1"))
-    assert(tuple(b.types) == (float,int,str))
-    for i in range(len(b)):
-        for n in b.names:
-            assert(a[i,n] == b[i,n])
-
-    # Verify automatic type generation AND automatic type-casting
-    a.append([1,2,3])
-    assert(tuple(a[-1]) == tuple([1,"2",3.0]))
-    assert(tuple(map(type,a[-1])) == (int, str, float))
-
-    # Verify caching of missing values
-    a.append([-1,None,None])
-    assert(len(a.missing) == 1)
-
-    # Verify the ability to construct real-valued arrays (and go back)
-    numeric = a.to_matrix()
-    c = Data(map(numeric.real_to, numeric.data))
-    assert(tuple(a[:-1]["1"]) == tuple(c["1"]))
-    
-    # Verify conversion into numpy structured array (without "None")
-    b = a.to_struct()
-    assert(type(b) == np.ndarray)
-    assert(type(b.dtype.names) == tuple)
-    assert(tuple(b['1']) == tuple(a['1'][:-1]))
-
-    # Verify column item retrieval and assignment
-    assert(a["0"][0] == a[0][0])
-    a["0"][0] = -10
-    a["0"][0] = 1
-
-    # Verify total column assignment
-    first_col = list(a["0"])
-    new_col = list(map(str,a["0"]))
-    a["0"] = new_col
-    assert(tuple(a["0"]) == tuple(new_col))
-    a["0"] = first_col
-
-    # Verify new column assignment
-    b = a[:]
-    first_col = list(b["0"])
-    new_col = list(map(str,b["0"]))
-    b["0-str"] = new_col
-    assert(tuple(map(str,b["0"])) == tuple(b["0-str"]))
-
-    # Verify that missing values are handled correctly by add_column
-    b = a[:]
-    b.add_column([1,2,3,4,None])
-    assert(id(b[-1]) in b.missing)
-    assert(len(b.missing) == 1)
-
-    # Verify copying a data object that has a 'None' in the first row
-    b = Data(names=["0","1"], types=[int,str])
-    b.append([0,None])
-    b.append([1,'b'])
-    c = b[:]
-    assert(tuple(b[0]) == tuple(c[0]))
-
-    # Verify accessing multiple rows by list-access
-    b = a[[0,2,3]]
-    assert(tuple(b["0"]) == tuple([1,3,1]))
-
-    # Verify load and save of a csv file
-    a.save("a-test.csv")
-    b = Data().load("a-test.csv")
-    assert(tuple(a["0"]) == tuple(b["0"]))
-    os.remove("a-test.csv")
-
-    # Verify load and save of a pkl file
-    a.save("a-test.pkl")
-    b = Data.load("a-test.pkl")
-    assert(tuple(a["0"]) == tuple(b["0"]))
-    os.remove("a-test.pkl")
-
-    # Verify load and save of a gzipped dill file
-    a.save("a-test.dill.gz")
-    b = Data().load("a-test.dill.gz")
-    assert(tuple(a["0"]) == tuple(b["0"]))
-    os.remove("a-test.dill.gz")
-
-    # Verify load and save of a gzipped csv file
-    a.save("a-test.csv.gz")
-    b = Data().load("a-test.csv.gz")
-    assert(tuple(a["0"]) == tuple(b["0"]))
-    os.remove("a-test.csv.gz")
-
-    # Verify column equivalence / equality checker by element
-    b = a[a["0"] == 1]
-    assert(tuple(b["0"]) == tuple([1,1]))
-
-    # Verify one of the inequality operators
-    b = a[a["0"] < 2]
-    assert(tuple(b["0"]) == tuple([1,1,-1]))
-
-    # Verify column membership checker by set
-    b = a[a["1"] == {'a','b','2'}]
-    assert(tuple(b["1"]) == tuple(['a','b','2']))
-
-    # Verify column index can be an integer or a string.
-    for i in range(len(a)):
-        for j,name in enumerate(a.names):
-            assert(a[i,j] == a[i,name])
-
-    # WARNING: Not individually verifying *all* comparison operators.
-
-    # Verify generator-based index assignment.
-    b = a[:]
-    b[(i for i in range(0,len(b),2)), "1"] = "new"
-    assert(b[0,"1"] == b[2,"1"] == b[4,"1"] == "new")
-
-    # Verify list-based generator assignment.
-    b = a[:]
-    b[[i for i in range(0,len(b),2)], "1"] = str("test")
-    assert(b[0,"1"] == b[2,"1"] == b[4,"1"] == "test")
-
-    # Verify that assignment from a generator works.
-    b = a[:]
-    b['3'] = map(str, b['2'])
-    assert(b[0,'3'] == str(b[0,'2']))
-    assert(b[-1,'3'] == str(b[-1,'2']))
-
-    # Verify the generation of a random k-fold cross validation.
-    b = Data()
-    for i in range(37):
-        b.append([i])
-    # Collect the list of all the "testing" rows seen
-    all_test = []
-    for (train, test) in b.k_fold(k=11, seed=1):
-        all_test += list(test["0"])
-    assert(sorted(all_test) == list(range(len(b))))
-
-    # Verify the identification of unique rows and collection process.
-    b = a[:]
-    b += a
-    cols = ['0','1']
-    b = b[cols].unique().collect(b)
-    assert(tuple(b[0,-1]) == tuple(2*[a[0,-1]]))
-
-    # Test the 'fill' method.
-    b = a[:]
-    b[-2,1] = 'd'
-    b.append( b[0] )
-    assert(str(b.fill(b[-2]).data) == str([-1,'a',1.7999999999999998]))
-    assert(str(a.fill(a[-1][:]).data) == str([-1,'2',2.1]))
-
-    # Test cases for using "fill" with weights.
-    b.pop(-2)
-    b["3"] = b["2"]
-    b["2"] = b["1"]
-    b[-1,-2] = 'b'
-    b[-1,-1] = None
-    condense = lambda v: str(v)[:4]
-    assert(tuple(map(condense, b.fill(b[-1], weights=[1., 2., 3., 4.]).data))
-           == ('1', 'a', 'b', '2.50'))
-    b[-1,-1] = None
-    assert(tuple(map(condense, b.fill(b[-1], weights=[100., 10., 1., 1000.]).data))
-           == ('1', 'a', 'b', '1.21'))
-
-    # Attempt to index an empty data
-    b = Data()
-    try:   b[0]
-    except Data.Empty: pass
-    else:  assert(False)
-
-    # Try assigning with a generator that is too short.
-    try:   a['3'] = (i for i in range(len(a)-1))
-    except Data.BadData: pass
-    else:  assert(False)
-
-    # Try assigning with a generator that is too long.
-    try:   a['3'] = (i for i in range(len(a)+1))
-    except Data.BadData: pass
-    else:  assert(False)
-
-    # Try providing a generator that does not give strictly integers
-    try:   a[(v for v in ('a',1,'b'))]
-    except Data.BadIndex: pass
-    else: assert(False)
-
-    # Try accessing by row-index and having duplicate entries.
-    try:   a[[0,0]]
-    except Data.BadIndex: pass
-    else: assert(False)
-
-    # Try adding a too-short row
-    try:
-        b = a[:]
-        b.append([9,"z"])
-    except Data.BadElement: pass
-    else: assert(False)
-
-    # Try a too-short column
-    try:
-        b = a[:]
-        b.add_column([1])
-    except Data.BadData: pass
-    else: assert(False)
-
-    # Try a too-long column
-    try:
-        b = a[:]
-        b.add_column(map(float,range(1000)))
-    except Data.BadData: pass
-    else: assert(False)
-
-    # Try adding a name that is not a string
-    try:
-        b = a[:]
-        b.add_column([1,2,3,4,5], name=1)
-    except Data.BadSpecifiedName: pass
-    else: assert(False)
-
-    # Try adding a column with multiple types
-    try:
-        b = a[:]
-        b.add_column([1,2,3,4,5.0])
-    except Data.BadValue: pass
-    else: assert(False)
-
-    # Try a mismatched-type slice assignment
-    try:
-        b = a[:]
-        b[:,0] = [1.0, 1, 1, 1, 1]
-    except Data.BadAssignment: pass
-    else: assert(False)
-
-    # Try a mismatched-type column assignment operation
-    try:   a["0"] = list(a["0"])[:-1] + ["0"]
-    except Data.BadAssignment: pass
-    else: assert(False)
-
-    # Try a too-short column assignment operation
-    try:   a["0"] = list(map(str,a["0"]))[:-1]
-    except Data.BadValue: pass
-    else: assert(False)
-
-    # Try a too-long column assignment operation
-    try:   a["0"] = list(map(str,a["0"])) + [1]
-    except Data.BadAssignment: pass
-    else: assert(False)
-
-    # Try a bad combination of names and types
-    try:   Data(names=["a","b","c"], types=[str, str])
-    except Data.NameTypeMismatch: pass
-    else: assert(False)
-
-    # Try a bad value in "names"
-    try:   Data(names=[1,2,3], types=["a","b","c"])
-    except Data.BadSpecifiedName: pass
-    else: assert(False)
-
-    # Try a bad value in "types"
-    try:   Data(names=["a","b","c"], types=[1,2,3])
-    except Data.BadSpecifiedType: pass
-    else: assert(False)
-
-    # Try bad value
-    try:   a.append(["a","b","c"])
-    except Data.BadValue: pass
-    else: assert(False)
-
-    # Try bad element
-    try:   a.append([1,2])
-    except Data.BadElement: pass
-    else: assert(False)
-
-    # Try non-existing column index
-    try:   a["hello"]
-    except Data.UnknownName: pass
-    else: assert(False)
-
-    # Try column indexing an uninitialized data
-    try:   Data()["a"]
-    except Data.Empty: pass
-    else: assert(False)
-
-    # Done testing
-    print("passed.")
-
-
-# =============================================================
-#      END OF Python 'Data' with named and typed columns     
-# =============================================================
-
-
-# Run test cases
-if __name__ == "__main__":
-    test_data()

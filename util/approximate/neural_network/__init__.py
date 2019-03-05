@@ -10,11 +10,22 @@ class NeuralNetwork(Approximator):
         import numpy as np
         # Silence the "backend" message from keras on import.
         import os, sys
-        stderr = sys.stderr
-        sys.stderr = open(os.devnull, 'w')
-        from keras.models import Sequential
-        from keras.layers import Dense, Activation
-        sys.stderr = stderr
+        try:
+            # Try to silently import Keras without any messages.
+            stderr = sys.stderr
+            sys.stderr = open(os.devnull, 'w')
+            os.environ['KERAS_BACKEND'] = "tensorflow"
+            from keras.models import Sequential
+            from keras.layers import Dense, Activation
+        except:
+            # An error occurred, try and recreate it with the stderr
+            # properly directed to standard error output.
+            sys.stderr = stderr
+            from keras.models import Sequential
+            from keras.layers import Dense, Activation
+        finally:
+            # Make sure that no matter what, standard error is returned.
+            sys.stderr = stderr
         # Normalize the data points.
         self.x_shift = np.mean(x, axis=0)
         x -= self.x_shift
