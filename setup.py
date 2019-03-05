@@ -34,8 +34,8 @@ if __name__ == "__main__":
     for r in dependency_links:
         try:    pkg_name = r.split("egg=")[1]
         except: raise(DependencyError("GitHub repositories must specify '#egg=<package-name>' at the end."))
-        # requirements[requirements.index(r)] = "git+ssh://" + r.split("://")[1]
-        requirements[requirements.index(r)] = pkg_name + " @ git+ssh://" + r.split("://")[1] + ' --allow-unverified'
+        requirements[requirements.index(r)] = "git+ssh://" + r.split("://")[1]
+        # requirements[requirements.index(r)] = pkg_name + " @ git+ssh://" + r.split("://")[1] + ' --allow-unverified'
     # # Make sure that no prompts are sent to the user during install.
     # if (len(dependency_links) > 0) and ("--allow-all-external" not in requirements):
     #     requirements = ["--allow-all-external"] + requirements
