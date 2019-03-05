@@ -1,8 +1,4 @@
-<<<<<<< HEAD
 git+git://github.com/scikit-learn-contrib/py-earth.git#egg=py-earth
-=======
--e git+git://github.com/scikit-learn-contrib/py-earth.git#egg=py-earth
->>>>>>> c5df8c52836c8b542b5c7e6edfe3fb1b0af04a2e
 numpy>=1.11
 scipy>=0.19.1
 cython>=0.27.1
