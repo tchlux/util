@@ -451,6 +451,15 @@ def testing_and_verification():
             print(" Finished sleeping!", end="\r")
         print("@timeout short wait passed:",sample_func(1.5) == None)
         print("@timeout long wait passed: ",sample_func(2.5) == "Failed...")
+        # Re-run with the alternative style of decoration.
+        def sample_func(sec):
+            import time
+            print(" Going to sleep for '%.1f' seconds."%(sec), end="\r")
+            time.sleep(sec)
+            print(" Finished sleeping!", end="\r")
+        sample_func = timeout(2,"Failed...")(sample_func)
+        print("@timeout short wait passed:",sample_func(1.5) == None)
+        print("@timeout long wait passed: ",sample_func(2.5) == "Failed...")
         print()
 
     # This is a testing function for the type_check decorator.
