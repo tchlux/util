@@ -139,6 +139,7 @@ CONTAINS
              RETURN
           END IF
           ! Otherwise store the weight based on standard scheme.
+          ! WEIGHT = ((RADIUS - DIST_TO_DATA) / (RADIUS * DIST_TO_DATA))^2
           WTS(K) = ((RW(K) - DIST) / (RW(K) * DIST))**2
           ! Track the number of points inside the radius of influence.
           I = I + 1

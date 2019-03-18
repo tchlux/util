@@ -1069,6 +1069,8 @@ class Plot:
     #                     type = "log", "date", "category".
     #                     For customizing just one, use
     #                     "x_axis_settings", "y_axis_settings", etc.
+    #  hovermode       -- Setting for how to display hover tips, default
+    #                     for 2D data is closest x. Use "closest" otherwise.
     #  camera_position -- A dictionary of dictionaries of x,y,z
     #                     values, "up" is relative up vector, "center"
     #                     is the point about which a 3D plot rotates, 
@@ -1112,7 +1114,7 @@ class Plot:
              z_range=None, fixed=True, show_legend=True, layout={},
              aspect_mode='cube', legend={}, scene_settings={},
              axis_settings={}, x_axis_settings={}, y_axis_settings={},
-             z_axis_settings={},
+             z_axis_settings={}, hovermode=None,
              camera_position=DEFAULT_CAMERA_POSITION, html=True,
              file_name=None, show=True, append=False, height=None,
              width=None, loop_duration=5, bounce=False,
@@ -1182,6 +1184,9 @@ class Plot:
         if type(height) != type(None): 
             # height += 159
             plot_layout.update(dict(height=height))
+        # Transfer the "hovermode" property.
+        if type(hovermode) != type(None):
+            plot_layout.update(dict(hovermode=hovermode))
         # Set the barmode for histograms if necessary
         if (hasattr(self, 'histogram_barmode') and
             len(self.histogram_barmode) > 0):

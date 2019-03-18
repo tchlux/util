@@ -282,8 +282,7 @@ LOGICAL :: CHAINL
 
 ! Local variables.
 INTEGER :: I, J, K ! Loop iteration variables.
-INTEGER :: ITMP, JTMP ! Temporary variables for swapping, looping, etc.
-INTEGER :: IEXTRAPS ! Extrapolation budget.
+INTEGER :: ITMP ! Temporary variable for swapping, looping, etc.
 INTEGER :: LWORK ! Size of the work array.
 INTEGER :: MI ! Index of current interpolation point.
 REAL(KIND=R8) :: CURRRAD ! Radius of the current circumsphere.
@@ -420,13 +419,6 @@ OUTER : DO MI = 1, M
    PROJ(:) = Q(:,MI)
    RNORML = 0.0_R8
 
-   ! Check if extrapolation is enabled.
-   IF (EXTRAPL < EPSL) THEN
-      IEXTRAPS = -1 ! If not, set the extrapolation budget to a negative.
-   ELSE
-      IEXTRAPS = 1 ! Allow for exactly one extrapolation.
-   END IF
-
    ! If there is no useable seed or if chaining is turned off, then make a new
    ! simplex.
    IF( (.NOT. CHAINL) .OR. SEED(1) .EQ. 0) THEN
@@ -455,16 +447,16 @@ OUTER : DO MI = 1, M
 
       ! Swap out the least weighted vertex, but save its value in case it
       ! needs to be restored later.
-      JTMP = MINLOC(WEIGHTS(1:D+1,MI), DIM=1)
-      ITMP = SIMPS(JTMP,MI)
-      SIMPS(JTMP,MI) = SIMPS(D+1,MI)
+      I = MINLOC(WEIGHTS(1:D+1,MI), DIM=1)
+      ITMP = SIMPS(I,MI)
+      SIMPS(I,MI) = SIMPS(D+1,MI)
 
-      ! If the least weighted vertex (JTMP) is not the first vertex, then
-      ! just drop row (I-1) from the linear system (corresponding to the
-      ! JTMP-1st column of A^T).
-      IF(JTMP .NE. 1) THEN
-         AT(:,JTMP-1) = AT(:,D); B(JTMP-1) = B(D)
-      ! However, if JTMP = 1, then both A^T and B must be reconstructed.
+      ! If the least weighted vertex (I) is not the first vertex, then just
+      ! drop row (I-1) from the linear system (corresponding to the I-1st
+      ! column of A^T).
+      IF(I .NE. 1) THEN
+         AT(:,I-1) = AT(:,D); B(I-1) = B(D)
+      ! However, if I = 1, then both A^T and B must be reconstructed.
       ELSE
          DO J=1,D
             AT(:,J) = PTS(:,SIMPS(J+1,MI)) - PTS(:,SIMPS(1,MI))
@@ -478,84 +470,11 @@ OUTER : DO MI = 1, M
 
       ! If no vertex was found, then this is an extrapolation point.
       IF (SIMPS(D+1,MI) .EQ. 0) THEN
-
          ! If extrapolation is not allowed (EXTRAP=0), do not proceed.
-         IF (IEXTRAPS < 0) THEN
+         IF (EXTRAPL < EPSL) THEN
             SIMPS(:,MI) = 0; WEIGHTS(:,MI) = 0  ! Zero all output values.
             ! Set the error flag and skip this point.
             IERR(MI) = 2; CYCLE OUTER
-
-         ! If extrapolation is allowed (EXTRAP>0), check the budget.
-         ELSE IF (IEXTRAPS .EQ. 0) THEN
-            ! A second extrapolation has been attempted. This code is
-            ! rarely called, except in extreme cases involving poorly
-            ! conditioned simplices near the convex hull of P.
-
-            ! Swap the weights to match the simplex indices, and zero the
-            ! most negative weight.
-            WEIGHTS(JTMP,MI) = WEIGHTS(D+1,MI)
-            WEIGHTS(D+1,MI) = 0.0_R8
-            ! Loop through all the remaining facets from which Q(:,MI) is
-            ! visible, and attempt to flip across each one.
-            DO WHILE (SIMPS(D+1,MI) .EQ. 0)
-               ! Restore the previous simplex and linear system.
-               SIMPS(D+1,MI) = ITMP
-               AT(:,D) = PTS(:,ITMP) - PTS(:,SIMPS(1,MI))
-               B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_R8
-               ! Find the next most negative weight.
-               JTMP = MINLOC(WEIGHTS(1:D+1,MI), DIM=1)
-               ! Check if WEIGHTS(JTMP,MI) .GE. 0.
-               IF (WEIGHTS(JTMP,MI) .GE. -EPSL) THEN
-                  ! There is no other direction to flip, so Q(:,MI) must be
-                  ! within EPSL of the current simplex.
-                  ! Project Q(:,MI) onto the current simplex.
-                  
-                  ! Since at least one projection has already been done,
-                  ! the work arrays have already been allocated.
-                  PRGOPT_DWNNLS(1) = 1.0_R8
-                  IWORK_DWNNLS(1) = 6*D + 6
-                  IWORK_DWNNLS(2) = 2*D + 2
-                  ! Set equality constraint.
-                  W_DWNNLS(1,1:D+2) = 1.0_R8
-                  ! Populate LS coefficient matrix and RHS.
-                  FORALL (I=1:D+1) W_DWNNLS(2:D+1,I) = PTS(:,SIMPS(I,MI))
-                  W_DWNNLS(2:D+1,D+2) = PROJ(:)
-                  ! Project onto the current simplex.
-                  CALL DWNNLS(W_DWNNLS, D+1, 1, D, D+1, 0, PRGOPT_DWNNLS, &
-                     WEIGHTS(:,MI), WORK(1), IERR(MI), IWORK_DWNNLS,      &
-                     WORK_DWNNLS)
-                  IF (IERR(MI) .EQ. 1) THEN ! Failure to converge.
-                     IERR(MI) = 71; CYCLE OUTER
-                  ELSE IF (IERR(MI) .EQ. 2) THEN ! Illegal input detected.
-                     IERR(MI) = 72; CYCLE OUTER
-                  END IF
-                  ! A solution has been found; return it.
-                  EXIT INNER
-               END IF
-               ! Otherwise, swap the vertices.
-               ITMP = SIMPS(JTMP,MI)
-               SIMPS(JTMP,MI) = SIMPS(D+1,MI)
-               ! Swap the weights to match, and zero the most negative weight.
-               WEIGHTS(JTMP,MI) = WEIGHTS(D+1,MI)
-               WEIGHTS(D+1,MI) = 0.0_R8
-               ! If the least weighted vertex (JTMP) is not the first vertex,
-               ! then just drop row (JTMP-1) from the linear system
-               ! (corresponding to the JTMP-1st column of A^T).
-               IF (JTMP .NE. 1) THEN
-                  AT(:,JTMP-1) = AT(:,D); B(JTMP-1) = B(D)
-               ! However, if JTMP=1, then both A^T and B must be reconstructed.
-               ELSE
-                  DO J=1,D
-                     AT(:,J) = PTS(:,SIMPS(J+1,MI)) - PTS(:,SIMPS(1,MI))
-                     B(J) = DDOT(D, AT(:,J), 1, AT(:,J), 1) / 2.0_R8 
-                  END DO
-               END IF
-               ! Compute another simplex (try to flip again).
-               CALL MAKESIMPLEX(); IF (IERR(MI) .NE. 0) CYCLE OUTER
-            END DO
-            ! If the loop terminates, then a good direction was found.
-            ! Resume the visibility walk as normal.
-            CYCLE INNER
          END IF
 
          ! Otherwise, project the extrapolation point onto the convex hull.
@@ -576,7 +495,6 @@ OUTER : DO MI = 1, M
          SIMPS(D+1,MI) = ITMP
          AT(:,D) = PTS(:,ITMP) - PTS(:,SIMPS(1,MI))
          B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_R8
-         IEXTRAPS = IEXTRAPS - 1 ! Decrement the budget.
       END IF
 
    ! End of inner loop for finding each interpolation point.
@@ -936,12 +854,11 @@ IF (IERR(MI) .EQ. 1) THEN ! Failure to converge.
 ELSE IF (IERR(MI) .EQ. 2) THEN ! Illegal input detected.
    IERR(MI) = 72; RETURN
 END IF
-! Zero all weights that are approximately zero and renormalize the sum.
-WHERE (X_DWNNLS < EPSL) X_DWNNLS = 0.0_R8
-X_DWNNLS(:) = X_DWNNLS(:) / SUM(X_DWNNLS)
 ! Compute the actual projection via matrix vector multiplication.
 CALL DGEMV('N', D, N, 1.0_R8, PTS, D, X_DWNNLS, 1, 0.0_R8, PROJ, 1)
-RNORML = DNRM2(D, PROJ(:) - Q(:,MI), 1)
+! Perform a vector extrapolation to push projection further inward.
+PROJ(:) = PROJ(:) - EPSL * (Q(:,MI) - PROJ(:)) / RNORML
+RNORML = RNORML + EPSL
 RETURN
 END SUBROUTINE PROJECT
 
@@ -1245,8 +1162,7 @@ LOGICAL :: CHAINL, PLVL1, PLVL2
 LOGICAL :: PTINSIMP ! Tells if Q(:,MI) is in SIMPS(:,MI).
 INTEGER :: I, J, K ! Loop iteration variables.
 INTEGER :: IERR_PRIV ! Private copy of the error flag.
-INTEGER :: IEXTRAPS ! Extrapolation budget.
-INTEGER :: ITMP, JTMP ! Temporary variables for swapping, looping, etc.
+INTEGER :: ITMP ! Temporary variable for swapping, looping, etc.
 INTEGER :: LWORK ! Size of the work array.
 INTEGER :: MI ! Index of current interpolation point.
 INTEGER :: VERTEX_PRIV ! Private copy of next vertex to add.
@@ -1407,10 +1323,10 @@ IERR(:) = 40
 !
 ! The PRIVATE list specifies uninitialized variables, of which each
 ! thread has a private copy.
-!$OMP& PRIVATE(I, J, K, IEXTRAPS, ITMP, JTMP, CURRRAD, MI, MINRAD,        &
-!$OMP&         RNORML, SIDE1, SIDE2, IERR_PRIV, VERTEX_PRIV, MINRAD_PRIV, &
-!$OMP&         PTINSIMP, IPIV, AT, B, CENTER, LQ, PLANE, PROJ, TAU, WORK, &
-!$OMP&         IWORK_DWNNLS, W_DWNNLS, WORK_DWNNLS, X_DWNNLS),            &
+!$OMP& PRIVATE(I, J, K, ITMP, CURRRAD, MI, MINRAD, RNORML, SIDE1,    &
+!$OMP&         SIDE2, IERR_PRIV, VERTEX_PRIV, MINRAD_PRIV, PTINSIMP, &
+!$OMP&         IPIV, AT, B, CENTER, LQ, PLANE, PROJ, TAU, WORK,      &
+!$OMP&         IWORK_DWNNLS, W_DWNNLS, WORK_DWNNLS, X_DWNNLS),       &
 !
 ! Any variables not explicitly listed above receive the SHARED scope
 ! by default and are visible across all threads.
@@ -1433,13 +1349,6 @@ OUTER : DO MI = 1, M
    ! Initialize the projection and reset the residual.
    PROJ(:) = Q(:,MI)
    RNORML = 0.0_R8
-
-   ! Check if extrapolation is enabled.
-   IF (EXTRAPL < EPSL) THEN
-      IEXTRAPS = -1 ! If not, set the extrapolation budget to a negative.
-   ELSE
-      IEXTRAPS = 1 ! Allow for exactly one extrapolation.
-   END IF
 
    ! If there is no useable seed or if chaining is turned off, then make a new
    ! simplex.
@@ -1789,16 +1698,16 @@ END IF
 
       ! Swap out the least weighted vertex, but save its value in case it
       ! needs to be restored later.
-      JTMP = MINLOC(WEIGHTS(1:D+1,MI), DIM=1)
-      ITMP = SIMPS(JTMP,MI)
-      SIMPS(JTMP,MI) = SIMPS(D+1,MI)
+      I = MINLOC(WEIGHTS(1:D+1,MI), DIM=1)
+      ITMP = SIMPS(I,MI)
+      SIMPS(I,MI) = SIMPS(D+1,MI)
 
-      ! If the least weighted vertex (JTMP) is not the first vertex, then
-      ! just drop row (JTMP-1) from the linear system (corresponding to the
-      ! JTMP-1st column of A^T).
-      IF(JTMP .NE. 1) THEN
-         AT(:,JTMP-1) = AT(:,D); B(JTMP-1) = B(D)
-      ! However, if JTMP = 1, then both A^T and B must be reconstructed.
+      ! If the least weighted vertex (I) is not the first vertex, then just
+      ! drop row (I-1) from the linear system (corresponding to the I-1st
+      ! column of A^T).
+      IF(I .NE. 1) THEN
+         AT(:,I-1) = AT(:,D); B(I-1) = B(D)
+      ! However, if I = 1, then both A^T and B must be reconstructed.
       ELSE
          DO J=1,D
             AT(:,J) = PTS(:,SIMPS(J+1,MI)) - PTS(:,SIMPS(1,MI))
@@ -1996,280 +1905,13 @@ END IF
       ! If no vertex was found, then this is an extrapolation point.
       IF (SIMPS(D+1,MI) .EQ. 0) THEN
          ! If extrapolation is not allowed (EXTRAP=0), do not proceed.
-         IF (IEXTRAPS < 0) THEN
+         IF (EXTRAPL < EPSL) THEN
             SIMPS(:,MI) = 0; WEIGHTS(:,MI) = 0  ! Zero all output values.
             ! Set the error flag and skip this point.
             !$OMP CRITICAL(CHECK_IERR)
             IERR(MI) = 2
             !$OMP END CRITICAL(CHECK_IERR)
             CYCLE OUTER
-
-         ! If extrapolation is allowed (EXTRAP>0), check the budget.
-         ELSE IF (IEXTRAPS .EQ. 0) THEN
-            ! A second extrapolation has been attempted. This code is
-            ! rarely called, except in extreme cases involving poorly
-            ! conditioned simplices near the convex hull of P.
-
-            ! Swap the weights to match the simplex indices, and zero the
-            ! most negative weight.
-            !$OMP CRITICAL(CHECK_IERR)
-            WEIGHTS(JTMP,MI) = WEIGHTS(D+1,MI)
-            WEIGHTS(D+1,MI) = 0.0_R8
-            !$OMP END CRITICAL(CHECK_IERR)
-            ! Loop through all the remaining facets from which Q(:,MI) is
-            ! visible, and attempt to flip across each one.
-            DO WHILE (SIMPS(D+1,MI) .EQ. 0)
-               ! Restore the previous simplex and linear system.
-               SIMPS(D+1,MI) = ITMP
-               AT(:,D) = PTS(:,ITMP) - PTS(:,SIMPS(1,MI))
-               B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_R8
-               ! Find the next most negative weight.
-               JTMP = MINLOC(WEIGHTS(1:D+1,MI), DIM=1)
-               ! Check if WEIGHTS(JTMP,MI) .GE. 0.
-               IF (WEIGHTS(JTMP,MI) .GE. -EPSL) THEN
-                  ! There is no other direction to flip, so Q(:,MI) must be
-                  ! within EPSL of the current simplex.
-                  ! Project Q(:,MI) onto the current simplex.
-                  
-                  ! Since at least one projection has already been done,
-                  ! the work arrays have already been allocated.
-                  PRGOPT_DWNNLS(1) = 1.0_R8
-                  IWORK_DWNNLS(1) = 6*D + 6
-                  IWORK_DWNNLS(2) = 2*D + 2
-                  ! Set equality constraint.
-                  W_DWNNLS(1,1:D+2) = 1.0_R8
-                  ! Populate LS coefficient matrix and RHS.
-                  FORALL (I=1:D+1) W_DWNNLS(2:D+1,I) = PTS(:,SIMPS(I,MI))
-                  W_DWNNLS(2:D+1,D+2) = PROJ(:)
-                  ! Project onto the current simplex.
-                  CALL DWNNLS(W_DWNNLS, D+1, 1, D, D+1, 0, PRGOPT_DWNNLS, &
-                     WEIGHTS(:,MI), WORK(1), IERR_PRIV, IWORK_DWNNLS,     &
-                     WORK_DWNNLS)
-                  IF (IERR_PRIV .EQ. 1) THEN ! Failure to converge.
-                     !$OMP CRITICAL(CHECK_IERR)
-                     IERR(MI) = 71
-                     !$OMP END CRITICAL(CHECK_IERR)
-                     CYCLE OUTER
-                  ELSE IF (IERR_PRIV .EQ. 2) THEN ! Illegal input detected.
-                     !$OMP CRITICAL(CHECK_IERR)
-                     IERR(MI) = 72
-                     !$OMP END CRITICAL(CHECK_IERR)
-                     CYCLE OUTER
-                  END IF
-                  ! A solution has been found; return it.
-                  EXIT INNER
-               END IF
-               ! Otherwise, swap the vertices.
-               ITMP = SIMPS(JTMP,MI)
-               SIMPS(JTMP,MI) = SIMPS(D+1,MI)
-               ! Swap the weights to match, and zero the most negative weight.
-               !$OMP CRITICAL(CHECK_IERR)
-               WEIGHTS(JTMP,MI) = WEIGHTS(D+1,MI)
-               WEIGHTS(D+1,MI) = 0.0_R8
-               !$OMP END CRITICAL(CHECK_IERR)
-               ! If the least weighted vertex (JTMP) is not the first vertex,
-               ! then just drop row (JTMP-1) from the linear system
-               ! (corresponding to the JTMP-1st column of A^T).
-               IF (JTMP .NE. 1) THEN
-                  AT(:,JTMP-1) = AT(:,D); B(JTMP-1) = B(D)
-               ! However, if JTMP=1, then both A^T and B must be reconstructed.
-               ELSE
-                  DO J=1,D
-                     AT(:,J) = PTS(:,SIMPS(J+1,MI)) - PTS(:,SIMPS(1,MI))
-                     B(J) = DDOT(D, AT(:,J), 1, AT(:,J), 1) / 2.0_R8 
-                  END DO
-               END IF
-               ! Compute another simplex (try to flip again).
-!               CALL MAKESIMPLEX(); IF (IERR(MI) .NE. 0) CYCLE OUTER
-
-
-!******************************************************************************
-! Due to OpenMP's handling of variable scope, the parallel implementation of
-! the subroutine MAKESIMPLEX() has been in-lined here.
-!
-! SUBROUTINE MAKESIMPLEX()
-! Given a Delaunay facet F whose containing hyperplane does not contain
-! Q(:,MI), complete the simplex by adding a point from PTS on the same `side'
-! of F as Q(:,MI). Assume SIMPS(1:D,MI) contains the vertex indices of F
-! (corresponding to data points P_1, P_2, ..., P_D in PTS), and assume the
-! matrix A(1:D-1,:)^T and vector B(1:D-1) are filled appropriately (similarly
-! as in MAKEFIRSTSIMP()). Then for any P* (not in the hyperplane containing
-! F) in PTS, let CENTER denote the circumcenter of the simplex with vertices
-! P_1, P_2, ..., P_D, P*. Then
-!
-! X = CENTER - P_1
-!
-! is given by the solution to the nonsingular linear system
-!
-! A X = B where
-!
-! A^T = [ P_2 - P_1, P_3 - P_1, ..., P_D - P_1, P* - P_1 ] and
-! B = [ <A_{1.},A_{1.}>/2, <A_{2.},A_{2.}>/2, ..., <A_{D.},A_{D.}>/2 ]^T.
-!
-! Then CENTER = X + P_1 and RADIUS = \| X \|.  P_{D+1} will be given by the 
-! candidate P* that satisfies both of the following:
-!
-! 1) Let PLANE denote the hyperplane containing F. Then P_{D+1} and Q(:,MI) 
-! must be on the same side of PLANE.
-!
-! 2) The circumball about CENTER must not contain any points in PTS in its
-! interior (Delaunay property).
-! 
-! The above are necessary and sufficient conditions for flipping the
-! Delaunay simplex, given that F is indeed a Delaunay facet.
-!
-! On input, SIMPS(1:D,MI) should contain the vertex indices (column indices
-! from PTS) of the facet F.  Upon output, SIMPS(:,MI) will contain the vertex
-! indices of a Delaunay simplex closer to Q(:,MI).  Also, the matrix A^T and
-! vector B will be updated accordingly. If SIMPS(D+1,MI)=0, then there were
-! no points in PTS on the appropriate side of F, meaning that Q(:,MI) is an
-! extrapolation point (not a convex combination of points in PTS).
-
-! Construct a hyperplane c^T x = \alpha containing the first D vertices indexed
-! in SIMPS(:,MI). The plane is determined by its normal vector c and \alpha.
-! Let P_1, P_2, ..., P_D be the vertices indexed in SIMPS(1:D,MI). A normal
-! vector is any nonzero vector in ker A, where the matrix
-!
-! A^T = [ P_2 - P_1, P_3 - P_1, ..., P_D - P_1 ].
-!
-! Since rank A = D-1, dim ker A = 1, and ker A can be found from a QR
-! factorization of A^T:  A^T P = QR, where P permutes the columns of A^T.
-! Then the last column of Q is orthogonal to the range of A^T, and in ker A.
-IF (D > 1) THEN ! Check that D-1 > 0, otherwise the plane is trivial.
-   ! Compute the QR factorization.
-   IPIV=0
-   LQ = AT
-   CALL DGEQP3(D, D-1, LQ, D, IPIV, TAU, WORK, LWORK, IERR_PRIV)
-   IF(IERR_PRIV < 0) THEN ! LAPACK illegal input error.
-      ! Store the error code.
-      !$OMP CRITICAL(CHECK_IERR)
-      IERR(MI) = 80
-      !$OMP END CRITICAL(CHECK_IERR)
-      CYCLE OUTER
-   END IF
-   ! The nullspace is given by the last column of Q.
-   PLANE(1:D-1) = 0.0_R8
-   PLANE(D) = 1.0_R8
-   CALL DORMQR('L', 'N', D, 1, D-1, LQ, D, TAU, PLANE, D, WORK, &
-    LWORK, IERR_PRIV)
-   IF(IERR_PRIV < 0) THEN ! LAPACK illegal input error.
-      ! Store the error code.
-      !$OMP CRITICAL(CHECK_IERR)
-      IERR(MI) = 83
-      !$OMP END CRITICAL(CHECK_IERR)
-      CYCLE OUTER
-   END IF
-   ! Calculate the constant \alpha defining the plane.
-   PLANE(D+1) = DDOT(D,PLANE(1:D),1,PTS(:,SIMPS(1,MI)),1)
-ELSE ! Special case where D=1.
-   PLANE(1) = 1.0_R8
-   PLANE(2) = PTS(1,SIMPS(1,MI))
-END IF
-! Compute the sign for the side of PLANE containing Q(:,MI).
-SIDE1 =  DDOT(D,PLANE(1:D),1,PROJ(:),1) - PLANE(D+1)
-SIDE1 = SIGN(1.0_R8,SIDE1)
-! Initialize the center, radius, simplex, and OpenMP variabls.
-SIMPS(D+1,MI) = 0
-CENTER(:) = 0.0_R8
-TAU(:) = 0.0_R8
-MINRAD = HUGE(0.0_R8)
-MINRAD_PRIV = HUGE(0.0_R8)
-VERTEX_PRIV = 0
-
-! Begin Level 2 parallel loop over N points in PTS.
-!$OMP PARALLEL &
-!
-! The FIRSTPRIVATE list specifies initialized variables, of which each
-! thread has a private copy.
-!$OMP& FIRSTPRIVATE(MINRAD_PRIV, VERTEX_PRIV), &
-!
-! The PRIVATE list specifies uninitialized variables, of which each
-! thread has a private copy.
-!$OMP& PRIVATE(I, SIDE2, LQ, CENTER, IPIV), &
-!
-! The REDUCTION clause specifies a PRIVATE variable that will retain
-! some value (i.e., max, min, sum, etc.) upon output.
-!$OMP& REDUCTION(MAX:IERR_PRIV), &
-!
-! Any variables not explicitly listed above receive the SHARED scope
-! by default and are visible across all threads.
-!$OMP& DEFAULT(SHARED), &
-!
-!$OMP& IF(PLVL2)
-
-! Initialize the error flag.
-IERR_PRIV = 0
-!$OMP DO SCHEDULE(STATIC)
-DO I = 1, N
-   IF(IERR_PRIV .NE. 0) CYCLE ! If an error occurs, skip to the end.
-   ! Check that P* is inside the current ball.
-   IF (DNRM2(D, PTS(:,I) - CENTER(:), 1) > MINRAD_PRIV) CYCLE ! If not, skip.
-   ! Check that P* is on the appropriate halfspace.
-   SIDE2 = DDOT(D,PLANE(1:D),1,PTS(:,I),1) - PLANE(D+1)
-   IF (SIDE1*SIDE2 < EPSL .OR. ANY(SIMPS(:,MI) .EQ. I)) CYCLE ! If not, skip.
-   ! Add P* to the linear system, and solve to get shifted CENTER.
-   LQ(:,1:D-1) = AT(:,1:D-1)
-   CENTER(1:D-1) = B(1:D-1)
-   LQ(:,D) = PTS(:,I) - PTS(:,SIMPS(1,MI))
-   CENTER(D) = DDOT(D, LQ(:,D), 1, LQ(:,D), 1) / 2.0_R8
-   ! Compute A^T = LU.
-   CALL DGETRF(D, D, LQ, D, IPIV, IERR_PRIV)
-   IF (IERR_PRIV < 0) THEN ! LAPACK illegal input.
-      IERR_PRIV = 81
-      CYCLE ! Skip to the end of the loop.
-   ELSE IF (IERR_PRIV > 0) THEN ! Rank-deficiency detected.
-      IERR_PRIV = 61
-      CYCLE ! Skip to the end of the loop.
-   END IF
-   ! Use A^T = LU to solve A X = B, where X = CENTER - P_1.
-   CALL DGETRS('T', D, 1, LQ, D, IPIV, CENTER, D, IERR_PRIV)
-   IF (IERR_PRIV < 0) THEN ! LAPACK illegal input.
-      IERR_PRIV = 82
-      CYCLE ! Skip to the end of the loop.
-   END IF
-   ! Update the new radius, center, and simplex.
-   MINRAD_PRIV = DNRM2(D, CENTER, 1)
-   CENTER(:) = CENTER(:) + PTS(:,SIMPS(1,MI))
-   VERTEX_PRIV = I
-END DO
-!$OMP END DO
-!$OMP CRITICAL(REDUC_4)
-! Check if PTS(:,VERTEX_PRIV) is inside the circumball.
-IF (VERTEX_PRIV .NE. 0) THEN
-   IF (DNRM2(D, PTS(:,VERTEX_PRIV) - TAU(:), 1) < MINRAD) THEN
-      MINRAD = MINRAD_PRIV
-      TAU(:) = CENTER(:)
-      SIMPS(D+1,MI) = VERTEX_PRIV
-   END IF
-END IF
-!$OMP END CRITICAL(REDUC_4)
-!$OMP END PARALLEL
-! End level 2 parallel region.
-
-! Check for error flags.
-IF(IERR_PRIV .NE. 0) THEN
-   ! Store the error code.
-   !$OMP CRITICAL(CHECK_IERR)
-   IERR(MI) = IERR_PRIV
-   !$OMP END CRITICAL(CHECK_IERR)
-   CYCLE OUTER
-END IF
-! Check for extrapolation condition.
-IF(SIMPS(D+1,MI) .NE. 0) THEN
-   ! Add new point to the linear system.
-   AT(:,D) = PTS(:,SIMPS(D+1,MI)) - PTS(:,SIMPS(1,MI))
-   B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_R8
-END IF
-! RETURN
-! END SUBROUTINE MAKESIMPLEX
-! End of in-lined code for MAKESIMPLEX().
-!******************************************************************************
-
-
-            END DO
-            ! If the loop terminates, then a good direction was found.
-            ! Resume the visibility walk as normal.
-            CYCLE INNER
          END IF
 
          ! Otherwise, project the extrapolation point onto the convex hull.
@@ -2354,12 +1996,9 @@ ELSE IF (IERR(MI) .EQ. 2) THEN ! Illegal input detected.
 END IF
 ! Compute the actual projection via matrix vector multiplication.
 CALL DGEMV('N', D, N, 1.0_R8, PTS, D, X_DWNNLS, 1, 0.0_R8, PROJ, 1)
-! Zero all weights that are approximately zero and renormalize the sum.
-WHERE (X_DWNNLS < EPSL) X_DWNNLS = 0.0_R8
-X_DWNNLS(:) = X_DWNNLS(:) / SUM(X_DWNNLS)
-! Compute the actual projection via matrix vector multiplication.
-CALL DGEMV('N', D, N, 1.0_R8, PTS, D, X_DWNNLS, 1, 0.0_R8, PROJ, 1)
-RNORML = DNRM2(D, PROJ(:) - Q(:,MI), 1)
+! Perform a vector extrapolation to push projection further inward.
+PROJ(:) = PROJ(:) - EPSL * (Q(:,MI) - PROJ(:)) / RNORML
+RNORML = RNORML + EPSL
 ! RETURN
 ! END SUBROUTINE PROJECT
 ! End of in-lined code for PROJECT().
@@ -2383,7 +2022,6 @@ RNORML = DNRM2(D, PROJ(:) - Q(:,MI), 1)
          SIMPS(D+1,MI) = ITMP
          AT(:,D) = PTS(:,ITMP) - PTS(:,SIMPS(1,MI))
          B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_R8
-         IEXTRAPS = IEXTRAPS - 1 ! Decrement the budget.
       END IF
 
    ! End of inner loop for finding each interpolation point.
