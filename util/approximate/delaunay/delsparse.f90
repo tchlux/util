@@ -398,6 +398,7 @@ END IF
 CALL RESCALE(MINRAD, PTS_DIAM, PTS_SCALE)
 IF (MINRAD < EPSL) THEN ! Check for degeneracies in points spacing.
    IERR(:) = 30; RETURN; END IF
+RETURN
 
 ! Query DGEQP3 for optimal work array size (LWORK).
 LWORK = -1

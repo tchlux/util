@@ -539,8 +539,9 @@ class Data(list):
         elif (ext == "dill"):
             with file_opener(path, "rb") as f:
                 d = pickle.load(f)
-                print([list(r) for r in d][:10])
-                print(dir(d))
+                # WARNING: Getting errors with old files..
+                # print([list(r) for r in d][:10])
+                # print(dir(d))
                 self += d
         elif (ext in {"csv", "txt", "tsv"}):
             mode = "r" + ("t" if compressed else "")
