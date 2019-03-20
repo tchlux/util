@@ -4,10 +4,11 @@ from util.data.categories import regular_simplex
 from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES
 
 
+# TODO:  Check for error in "collect" when column names are
+#        duplicated. Raise errror for duplicate column names?
 # TODO:  Add itemwise equality operator to "Row" class.
-# TODO:  Non-singleton comparison operator for Column Column comparison.
 # TODO:  Add addition, subtraction, multiplication, and division
-#        operators to column objects.
+#        operators to column / row objects.
 # TODO:  Make saving to CSV files automatically put quotes around
 #        strings that have the separator character in them.
 # TODO:  Make printout shorter for data with lots of columns.
@@ -24,7 +25,7 @@ from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES
 #        for categorical columns and add a dimension 'is present' otherwise.
 # TODO:  Remove the default storage of "to_matrix" output.
 # TODO:  Wrap the necessary "Numeric" attributes into the matrix,
-#        using a custom ndraray object from numpy.
+#        using a custom ndarray object from numpy.
 # TODO:  Make data only deep copy when "copy()" is called or "[:,:]"
 #        is given. Otherwise return "DataView" object (limited class 
 #        that allows for deep copying if desired).
@@ -33,17 +34,29 @@ from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES
 #        cannabalizing the existing Data object).
 # TODO:  Write "unroll" that does the opposite operation of "collect",
 #        expanding a data set out according to list columns.
+# TODO:  Rewrite "predict" to work given a data object. This will
+#        break up the data into collections of unique missing values.
+#        Then for each collection, build a model over the appropriate
+#        matrix-format data and predict that collection. This will
+#        work more nicely with the k-fold method.
+# TODO:  Remove the "fill" method in favor of "predict".
 
 # TODO:  Make "predict" not require that target columns be convertible
 #        to numeric form, only that they operate under a weighted sum.
 # TODO:  Implment tracking for the "size" of a Row & Data object, and
 #        the recently accessed rows (keep an ordered set of them).
 # TODO:  Implement caching for rows when a Data object becomes very large.
+# TODO:  Make reading data asynchronous, so waiting is only ever done
+#        when an object is accessed by index.
 
 # TODO:  Implmenent 'IndexedAudio' reader that mimics the
 #        'IndexedVideo' reader and allows for access to peaks.
 # TODO:  Implemenet 'IndexedText' reader that mimics the
 #        'IndexedVideo' reader and allows for access to characters.
+
+# TODO:  Subclass Data object so that the methods are broken up by the
+#        type of function they provide. Stats should be an additional
+#        set of methods outside of summary / operators.
 
 
 
@@ -84,7 +97,14 @@ class Data(list):
     def types(self): return self._types
     @types.setter
     def types(self, value): self._types = Data.Descriptor(value)
-
+    # Return True if empty.
+    @property
+    def empty(self):
+        return ((type(self.names) == type(None)) or 
+                (type(self.types) == type(None)))
+    # Declare the "start" property / function to re-initialized when called.
+    @property
+    def shape(self): return (len(self), len(self.names))
 
     #      Overwritten list Methods     
     # ==================================
@@ -114,51 +134,6 @@ class Data(list):
         if type(data) != type(None):
             for row in data:
                 self.append(row)
-
-    # Redefined append operator that 
-    def append(self, element):
-        self.numeric = None # Reset the numeric representation (if it existed)
-        # Convert the element into a python list
-        try:    element = Data.Row(self, list(element))
-        except: raise(self.BadValue(f"Invalid appended element, failed conversion to type {Data.Row}."))
-        missing_values = False
-        # Check length in case names already exist
-        if (type(self.names) != type(None)):
-            if (len(element) != len(self.names)):
-                raise(self.BadElement(f"Only elements of length {len(self.names)} can be added to this data."))
-        # Check length in case types already exist
-        if (type(self.types) != type(None)):
-            if len(element) != len(self.types):
-                raise(self.BadElement(f"Only elements of length {len(self.types)} can be added to this data."))                
-            # Try type casing the new element
-            for i, (val, typ) in enumerate(zip(element, self.types)):
-                # Record 'None' types as missing entries
-                if type(val) == type(None):
-                    # This is a missing value
-                    missing_values = True
-                elif (typ == type(None)):
-                    # Update unassigned types with the new values' type
-                    self.types[i] = type(val)
-                elif (type(val) != typ):
-                    # If not missing, then check the type
-                    try:
-                        # Try casting the element as the expected type
-                        element[i] = typ(val)
-                    except ValueError:
-                        # Otherwise raise an error to the user
-                        raise(self.BadValue(f"Value '{val}' of type '{type(val)}' could not successfully be cast as '{typ}'."))
-                    except TypeError:
-                        print("Data error:", typ, typ==type(None))
-        else:
-            # Construct the expected "types" of this data
-            self.types = [type(val) for val in element]
-        if (type(self.names) == type(None)):
-            # Construct default names for each column
-            self.names = [str(i) for i in range(len(element))]
-        # Call the standard append operator, adding the element to self
-        super().append(element)
-        # Add to the list of missing values if necessary
-        if (missing_values): self.missing.add(id(self[-1]))
 
     # Overwrite the standard "[]" get operator to accept strings as well.
     def __getitem__(self, index):
@@ -310,16 +285,6 @@ class Data(list):
         string += "="*len(rows[0]) + "\n"
         return string
 
-    # Return True if empty.
-    @property
-    def empty(self):
-        return ((type(self.names) == type(None)) or 
-                (type(self.types) == type(None)))
-
-    # Declare the "start" property / function to re-initialized when called.
-    @property
-    def shape(self): return (len(self), len(self.names))
-
     # Define a convenience funciton for concatenating another
     # similarly typed and named data to self.
     def __iadd__(self, data):
@@ -355,6 +320,53 @@ class Data(list):
         self += data
         return self
 
+
+    # Redefined append operator that 
+    def append(self, element):
+        self.numeric = None # Reset the numeric representation (if it existed)
+        # Convert the element into a python list
+        try:    element = Data.Row(self, list(element))
+        except: raise(self.BadValue(f"Invalid appended element, failed conversion to type {Data.Row}."))
+        missing_values = False
+        # Check length in case names already exist
+        if (type(self.names) != type(None)):
+            if (len(element) != len(self.names)):
+                raise(self.BadElement(f"Only elements of length {len(self.names)} can be added to this data."))
+        # Check length in case types already exist
+        if (type(self.types) != type(None)):
+            if len(element) != len(self.types):
+                raise(self.BadElement(f"Only elements of length {len(self.types)} can be added to this data."))                
+            # Try type casing the new element
+            for i, (val, typ) in enumerate(zip(element, self.types)):
+                # Record 'None' types as missing entries
+                if type(val) == type(None):
+                    # This is a missing value
+                    missing_values = True
+                elif (typ == type(None)):
+                    # Update unassigned types with the new values' type
+                    self.types[i] = type(val)
+                elif (type(val) != typ):
+                    # If not missing, then check the type
+                    try:
+                        # Try casting the element as the expected type
+                        element[i] = typ(val)
+                    except ValueError:
+                        # Otherwise raise an error to the user
+                        raise(self.BadValue(f"Value '{val}' of type '{type(val)}' could not successfully be cast as '{typ}'."))
+                    except TypeError:
+                        print("Data error:", typ, typ==type(None))
+        else:
+            # Construct the expected "types" of this data
+            self.types = [type(val) for val in element]
+        if (type(self.names) == type(None)):
+            # Construct default names for each column
+            self.names = [str(i) for i in range(len(element))]
+        # Call the standard append operator, adding the element to self
+        super().append(element)
+        # Add to the list of missing values if necessary
+        if (missing_values): self.missing.add(id(self[-1]))
+
+
     # Make sure the copy of this data is a deep copy.
     def copy(self): return self[:]
 
@@ -388,7 +400,6 @@ class Data(list):
         if (id(index) in self.missing):
             self.missing.remove( id(index) )
         return super().remove( index )
-
 
     # ========================
     #      Custom Methods     
@@ -523,10 +534,14 @@ class Data(list):
         # Handle different base file extensions
         if (ext == "pkl"):
             with file_opener(path, "rb") as f:
-                self += pickle.load(f)
+                d = pickle.load(f)
+                self += d
         elif (ext == "dill"):
             with file_opener(path, "rb") as f:
-                self += dill.load(f)
+                d = pickle.load(f)
+                print([list(r) for r in d][:10])
+                print(dir(d))
+                self += d
         elif (ext in {"csv", "txt", "tsv"}):
             mode = "r" + ("t" if compressed else "")
             with file_opener(path, mode) as f:
@@ -812,23 +827,6 @@ class Data(list):
         # Return the two mapping functions and some info
         return to_real, real_to, real_names, num_inds, cat_inds
 
-    # Generate a compact numpy structured array from the contents of self.
-    def to_struct(self):
-        import numpy as np
-        # Generate the dtypes
-        dtypes = []
-        for i,(n,t) in enumerate(zip(self.names,self.types)):
-            if (t != str):
-                pair = (n,) + NP_TYPES[t]
-            else:
-                max_len = max(len(s) for s in self[n] if type(s) == str)
-                pair = (n,) + NP_TYPES[t][:1]+(max_len,)
-            dtypes.append(pair)
-        dtypes = np.dtype(dtypes)
-        # Return the numpy structured array
-        return np.array([tuple(row) for row in self if (id(row) not in self.missing)], 
-                        dtype=dtypes)
-
     # Convert this Data automatically to a real-valued array.
     # Return real-valued array, function for going to real from
     # elements of this Data, function for going back to elements of
@@ -884,6 +882,23 @@ class Data(list):
         numeric.scale[cat_inds] = 1.
         # Return the container object
         return numeric
+
+    # Generate a compact numpy structured array from the contents of self.
+    def to_struct(self):
+        import numpy as np
+        # Generate the dtypes
+        dtypes = []
+        for i,(n,t) in enumerate(zip(self.names,self.types)):
+            if (t != str):
+                pair = (n,) + NP_TYPES[t]
+            else:
+                max_len = max(len(s) for s in self[n] if type(s) == str)
+                pair = (n,) + NP_TYPES[t][:1]+(max_len,)
+            dtypes.append(pair)
+        dtypes = np.dtype(dtypes)
+        # Return the numpy structured array
+        return np.array([tuple(row) for row in self if (id(row) not in self.missing)], 
+                        dtype=dtypes)
 
     # Collect the dictionaries of unique values (with counts) for each column.
     def counts(self, columns=None):

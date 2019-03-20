@@ -1,5 +1,8 @@
 from util.data.exceptions import BadValue
 
+# This class is a protected type of list where the contents are
+# supposed to be of a specific type. It enforces that assignment and
+# append operations do not violate the type specifiation of the object.
 class Descriptor(list):
     # Initialize this descriptor, make sure all elements of 'values'
     # have the same type if provided.
@@ -38,6 +41,9 @@ class Column:
         self.data = data
         self.column = column
         self.indices = indices
+
+    #     Indexing
+    # -----------------
     def __setitem__(self, index, value):
         index = self.indices[index]
         # Default setitem for the parent data
@@ -48,7 +54,7 @@ class Column:
             index = self.indices[index]
             return self.data[index, self.column]
         elif (type(index) == slice):
-            index = range(len(self.indices))[index]
+            indices = range(len(self.indices))[index]
         elif (hasattr(index, "__iter__")):
             # Convert provided index into a list of integers.
             indices = []
@@ -60,7 +66,9 @@ class Column:
             raise(self.data.BadIndex(f"Data column does not support indexing with type {type(index)}."))
         # Return a new column with modified indices.
         return self.data.Column(self.data, self.column, indices)
-    def __len__(self): return len(self.indices)
+
+    #     Iterator
+    # ----------------
     # Define this as an interator
     def __iter__(self):
         self.index = 0
@@ -70,11 +78,19 @@ class Column:
             raise(StopIteration)
         self.index += 1
         return self.data[self.indices[self.index-1], self.column]
-    # Define the "in" method to return True for contained values.
-    def __in__(self, value): return any(v == value for v in self)
+
+    #    Descriptors
+    # -----------------
+    # Get the length of this Column
+    def __len__(self): return len(self.indices)
     # Use the iteration to generate a string of this column
     def __str__(self):
         return str(list(self))
+
+    #     Operators
+    # -----------------
+    # Define the "in" method to return True for contained values.
+    def __in__(self, value): return any(v == value for v in self)
     # Inequality operator
     def __ne__(self, group):
         return self.__eq__(group, equality=False)
@@ -82,17 +98,22 @@ class Column:
     def __eq__(self, group, equality=True):
         # Try to convert given group to an iterable type for comparison.
         if ((type(group) == self.data.types[self.column]) or (type(group) == type(None))):
-            group = [group]
-        elif (type(group) in {set, list}): 
-            pass
+            # Return indices where single value equals column values.
+            for i,v in enumerate(self):
+                if (equality and (v == group)):       yield i
+                elif (not equality) and (v != group): yield i
+        elif (type(group) == type(self)):
+            # Return indices where the two columns are equal (or not).
+            for i,(v1, v2) in enumerate(zip(self, group)):
+                if (equality and (v1 == v2)):       yield i
+                elif (not equality) and (v1 != v2): yield i
+        elif (type(group) in {set, list}):
+            # Iterate over rows, generating indices that match the equality.
+            for i,v in enumerate(self):
+                if (equality and (v in group)):             yield i
+                elif ((not equality) and (v not in group)): yield i
         else:
             raise(self.data.BadData(f"There is no defined equality operator for the provided type {type(group)}, when it does not match expected type {self.data.types[self.column]}."))
-        # Iterate over rows, generating indices that match the equality.
-        for i,v in enumerate(self):
-            if ((equality) and (v in group)):
-                yield i
-            elif ((not equality) and (v not in group)):
-                yield i
     # Iterate over the indices based on a comparison operator
     def __lt__(self, val):
         # Iterate over values in this column
@@ -173,3 +194,50 @@ class Row:
         if (len(self) != len(self.data.names)+1):
             raise(self.data.ImproperUsage(f"Invalid pop operation on {type(self)}."))
         return self.values.pop(i)
+
+    # #    Operators
+    # # ---------------
+    # # Define the "in" method to return True for contained values.
+    # def __in__(self, value): return any(v == value for v in self.values)
+    # # Inequality operator
+    # def __ne__(self, group):
+    #     return self.__eq__(group, equality=False)
+    # # Iterate over the indices that exist in a set of values
+    # def __eq__(self, group, equality=True):
+    #     # Try to convert given group to an iterable type for comparison.
+    #     if (not hasattr(group, "__len__")):
+    #         raise(self.data.ImproperUsage(f"Type '{type(group)}' cannot be compared with Row."))
+    #     elif (len(group) != len(self.values)):
+    #         raise(self.data.BadValue(f"Length '{len(group)}' does not have the same number of elements as this Row."))
+    #     elif (type(group) == type(self)):
+    #         # Return indices where the two columns are equal (or not).
+    #         for i,(v1, v2) in enumerate(zip(self, group)):
+    #             if (equality and (v1 == v2)):       yield i
+    #             elif (not equality) and (v1 != v2): yield i
+    #     elif (type(group) in {set, list}):
+    #         # Iterate over rows, generating indices that match the equality.
+    #         for i,v in enumerate(self):
+    #             if (equality and (v in group)):             yield i
+    #             elif ((not equality) and (v not in group)): yield i
+    #     else:
+    #         raise(self.data.BadData(f"There is no defined equality operator for the provided type {type(group)}, when it does not match expected type {self.data.types[self.column]}."))
+    # # Iterate over the indices based on a comparison operator
+    # def __lt__(self, val):
+    #     # Iterate over values in this column
+    #     for i,v in enumerate(self):
+    #         if (v < val): yield i
+    # # Iterate over the indices based on a comparison operator
+    # def __gt__(self, val):
+    #     # Iterate over values in this column
+    #     for i,v in enumerate(self):
+    #         if (v > val): yield i
+    # # Iterate over the indices based on a comparison operator
+    # def __le__(self, val):
+    #     # Iterate over values in this column
+    #     for i,v in enumerate(self):
+    #         if (v <= val): yield i
+    # # Iterate over the indices based on a comparison operator
+    # def __ge__(self, val):
+    #     # Iterate over values in this column
+    #     for i,v in enumerate(self):
+    #         if (v >= val): yield i

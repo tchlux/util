@@ -227,6 +227,21 @@ def test_data():
     assert(tuple(map(condense, b.fill(b[-1], weights=[100., 10., 1., 1000.]).data))
            == ('1', 'a', 'b', '1.21'))
 
+    # Verify that the names and types attributes are the correct type.
+    assert("Descriptor" in str(type(a.types)))
+    assert("Descriptor" in str(type(a.names)))
+
+    # Test the tracking of "missing" values.
+    b = a[:]
+    assert(len(b.missing) == 1)
+    assert(id(b[-1]) in b.missing)
+    b[-1][1] = '1'
+    b[-1][-1] = 1.
+    assert(len(b.missing) == 0)
+    b[-2][1] = None
+    assert(len(b.missing) == 1)
+    assert(id(b[-2]) in b.missing)
+
     # Attempt to index an empty data
     b = Data()
     try:   b[0]
@@ -348,22 +363,6 @@ def test_data():
     # Done testing
     print("passed.")
 
-    # Convert the following into test cases for "Row" object.
-    print()
-    b = a[:]
-    print(a)
-    print(type(a.types), a.types)
-    print(type(a.names), a.names)
-    print(type(a[0]))
-    print(a[0])
-    print(a['0'])
-    print(a[0][0])
-    a[-1][1] = '1'
-    print(a)
-    a[-1][-1] = 1.
-    print(a)
-    a[-2][1] = None
-    print(a)
 
 # =============================================================
 #      END OF Python 'Data' with named and typed columns     
