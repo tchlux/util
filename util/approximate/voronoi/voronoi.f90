@@ -66,7 +66,6 @@ SUBROUTINE PREDICT(POINTS, DOTS, EVAL_PT, WEIGHTS, ERROR)
   REAL(KIND=REAL64), INTENT(INOUT), DIMENSION(SIZE(POINTS,2),SIZE(POINTS,2)) :: DOTS
   REAL(KIND=REAL64), INTENT(OUT),   DIMENSION(SIZE(POINTS,2))                :: WEIGHTS
   INTEGER,           INTENT(OUT)                                             :: ERROR
-  INTEGER,           INTENT(OUT)                                             :: SKIPPED
   ! Local variables
   INTEGER :: I_CENTER, I_OTHER, IC, IO, I
   INTEGER, DIMENSION(SIZE(POINTS,2))           :: INDICES
@@ -77,9 +76,9 @@ SUBROUTINE PREDICT(POINTS, DOTS, EVAL_PT, WEIGHTS, ERROR)
   REAL(KIND=REAL64), PARAMETER :: MAX_VAL = HUGE(MAX_VAL)
   REAL(KIND=REAL64), PARAMETER :: MIN_VAL = EPSILON(MIN_VAL)
   ! Initiallly assume no points should be skipped
-  SKIP(:) = .FALSE.
+  SKIP = .FALSE.
   WEIGHTS(:) = 0.
-  ERROR = 0
+  ERROR(:) = 0
   ! Distances to all points from evaluation point.
   DO I = 1, SIZE(POINTS, 2)
      DISTANCES(I) = SUM((EVAL_PT - POINTS(:,I)) ** 2)
@@ -133,12 +132,7 @@ SUBROUTINE PREDICT(POINTS, DOTS, EVAL_PT, WEIGHTS, ERROR)
      WEIGHTS(IC) = MAX(1. - MAX_RATIO, 0.)
   END DO centers
   ! Normalize the weights to be convex.
-  WEIGHTS = WEIGHTS(:) / SUM(WEIGHTS)
-  ! Compute the number skipped..
-  SKIPPED = 0
-  DO I = 1, SIZE(POINTS, 2)
-     IF (SKIP(I)) SKIPPED = SKIPPED + 1
-  END DO
+  WEIGHTS(:) = WEIGHTS(:) / SUM(WEIGHTS)
   RETURN
   
 CONTAINS

@@ -19,7 +19,6 @@ class DuplicateInterpolationPoints(Exception): pass
 class Voronoi(WeightedApproximator):
     points = None
     dots = None
-    skipped = list()
 
     # Get fortran function for calculating mesh
     def __init__(self):
@@ -51,15 +50,14 @@ class Voronoi(WeightedApproximator):
                 start = time.time()
                 print(f" {100.*i/len(points):.2f}%", end="\r", flush=True)
             # Calculate the support at this point
-            _, support, error, skipped = self.voronoi.predict(self.points, self.dots, 
-                                                              np.asarray(pt,order='F'))
+            _, support, error = self.voronoi.predict(self.points, self.dots, 
+                                                     np.asarray(pt,order='F'))
             if (error != 0):
                 raise(DuplicateInterpolationPoints("Some fit points were duplicated."))
             supported_points = idx[support > 0]
             supported_weights = support[supported_points]
             indices.append( supported_points )
             weights.append( supported_weights )
-            self.skipped.append( skipped / self.points.shape[1] )
         return indices, weights
 
 
