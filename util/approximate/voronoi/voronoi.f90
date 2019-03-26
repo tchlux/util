@@ -110,8 +110,7 @@ SUBROUTINE PREDICT(POINTS, DOTS, EVAL_PT, WEIGHTS, ERROR)
         DIST_C_TO_PT = SUM(EVAL_PT(:) * POINTS(:,IO)) + DOTS(IC,IC) - &
              (SUM(EVAL_PT(:) * POINTS(:,IC)) + DOTS(IC,IO))
         ! Compute the projected distance (center -> other)
-        DIST_C_TO_O = DOTS(IO,IO) + DOTS(IC,IC) - &
-             (DOTS(IO,IC) + DOTS(IC,IO))
+        DIST_C_TO_O = DOTS(IO,IO) + DOTS(IC,IC) - 2*DOTS(IC,IO)
         ! If the denominator is not zero (should never happen for
         ! unique interpolation points) then...
         IF (ABS(DIST_C_TO_O) .GT. MIN_VAL) THEN
