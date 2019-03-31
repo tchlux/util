@@ -2,49 +2,6 @@ import numpy as np
 from util.approximate import WeightedApproximator
 from util.math import is_none, abs_diff
 
-# Automatically select the value for "k" for using nearest neighbor
-# based on a random sample of the points provided.
-def auto(points, values, metric=abs_diff, max_k=None, samples=100,
-         mean=True, k_step=1, display=False):
-    from util.random import random_range
-    # Make the maximum value for "k" the nearest power of 2 that
-    # contains less than or equal to half of the provided data.
-    if is_none(max_k):
-        from math import floor, log2
-        max_k = 2**floor(log2(len(points)//2))
-    # Compute up to 'max_k' nearest neighbors about selected points.
-    # Add "+1" to exclude the current active point as a neighbor.
-    model = NearestNeighbor(k=max_k+1)
-    model.fit(points)
-    # Randomly pick a set of points as the "checks".
-    indices = [i for i in random_range(len(points), count=samples)]
-    neighbors = np.array([i[1:] for (i,w) in model(points[indices])])
-    differences = np.array([[metric(values[i1], values[i2]) for i2 in neighbors[i]]
-                            for i,i1 in enumerate(indices)])
-    k_values = {}
-    # Pick the function for identifying the best selection of "k".
-    for k_pow in range(0, int(log2(max_k))+1, k_step):
-        k = 2**k_pow
-        if mean: k_values[k] = np.mean(differences[:,:k])
-        else:    k_values[k] = np.mean(np.min(differences[:,:k], axis=1))
-    if (2**k_pow != max_k):
-        k = 2**int(log2(max_k))
-        if mean: k_values[k] = np.mean(differences[:,:k])
-        else:    k_values[k] = np.mean(np.min(differences[:,:k], axis=1))
-    # Find the k with the lowest mean error.
-    best_k = min(k_values.items(), key=lambda i: i[1])[0]
-    if display:
-        name = "mean" if mean else "minimum"
-        from math import log10, ceil
-        print('-'*52)
-        print(" Estimated "+name+" error for various choices of 'k':")
-        for k in sorted(k_values):
-            extra = "  <-- chosen 'k'" if k == best_k else ""
-            print(f"  k = {k:{ceil(log10(max_k))}d} ~ {k_values[k]:.4e}"+extra)
-        print('-'*52)
-    # Return the "k" with the minimum mean difference 
-    return best_k
-
 # Construct an approximation algorithm that only returns the average
 # of the fit points.
 class Average(WeightedApproximator):
@@ -122,6 +79,49 @@ class NearestNeighbor(WeightedApproximator):
         # Return the appropriate shaped pair of points and weights
         return (pts, wts)
 
+# Automatically select the value for "k" for using nearest neighbor
+# based on a random sample of the points provided.
+def auto(points, values, metric=abs_diff, max_k=None, samples=100,
+         mean=True, k_step=1, model=NearestNeighbor, display=False):
+    from util.random import random_range
+    # Make the maximum value for "k" the nearest power of 2 that
+    # contains less than or equal to half of the provided data.
+    if is_none(max_k):
+        from math import floor, log2
+        max_k = 2**floor(log2(len(points)//2))
+    # Compute up to 'max_k' nearest neighbors about selected points.
+    # Add "+1" to exclude the current active point as a neighbor.
+    model = NearestNeighbor(k=max_k+1)
+    model.fit(points)
+    # Randomly pick a set of points as the "checks".
+    indices = [i for i in random_range(len(points), count=samples)]
+    neighbors = np.array([i[1:] for (i,w) in model(points[indices])])
+    differences = np.array([[metric(values[i1], values[i2]) for i2 in neighbors[i]]
+                            for i,i1 in enumerate(indices)])
+    k_values = {}
+    # Pick the function for identifying the best selection of "k".
+    for k_pow in range(0, int(log2(max_k))+1, k_step):
+        k = 2**k_pow
+        if mean: k_values[k] = np.mean(differences[:,:k])
+        else:    k_values[k] = np.mean(np.min(differences[:,:k], axis=1))
+    if (2**k_pow != max_k):
+        k = 2**int(log2(max_k))
+        if mean: k_values[k] = np.mean(differences[:,:k])
+        else:    k_values[k] = np.mean(np.min(differences[:,:k], axis=1))
+    # Find the k with the lowest mean error.
+    best_k = min(k_values.items(), key=lambda i: i[1])[0]
+    if display:
+        name = "mean" if mean else "minimum"
+        from math import log10, ceil
+        print('-'*52)
+        print(" Estimated "+name+" error for various choices of 'k':")
+        for k in sorted(k_values):
+            extra = "  <-- chosen 'k'" if k == best_k else ""
+            print(f"  k = {k:{ceil(log10(max_k))}d} ~ {k_values[k]:.4e}"+extra)
+        print('-'*52)
+    # Return the "k" with the minimum mean difference 
+    return best_k
+
 
 if __name__ == "__main__":
     d = 10
@@ -130,3 +130,8 @@ if __name__ == "__main__":
     values = np.random.random(size=(n,d))
     k = auto(points, values, display=True)
 
+    from util.approximate import condition
+    m = condition(NearestNeighbor, method="MPCA", display=True)()
+    from util.approximate.testing import test_plot
+    p,x,y = test_plot(m, N=30, fun=lambda x: x[0]**3, plot_points=4000)
+    p.show()

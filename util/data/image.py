@@ -14,6 +14,7 @@ DIRECTORY = os.path.abspath(".")
 TEMP_IMG = "temp.png"
 def matrix_to_img(matrix, file_name=TEMP_IMG, directory=DIRECTORY,
                   pos_color=WHITE, mid_color=BLACK, neg_color=RED, show=False):
+    from PIL import Image
     if len(matrix.shape) == 2:
         matrix = np.asarray(matrix, dtype="float64")
         img = np.zeros(matrix.shape + (3,), dtype=np.uint8)

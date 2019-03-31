@@ -52,7 +52,9 @@ class Voronoi(WeightedApproximator):
             # Calculate the support at this point
             _, support, error = self.voronoi.predict(self.points, self.dots, 
                                                      np.asarray(pt,order='F'))
-            if (error != 0):
+            if (error == 1):
+                raise(OverflowError("The scale of the data caused a squared float to overflow, consider normalizing data."))
+            elif (error == 2):
                 raise(DuplicateInterpolationPoints("Some fit points were duplicated."))
             supported_points = idx[support > 0]
             supported_weights = support[supported_points]

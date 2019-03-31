@@ -83,6 +83,11 @@ SUBROUTINE PREDICT(POINTS, DOTS, EVAL_PT, WEIGHTS, ERROR)
   DO I = 1, SIZE(POINTS, 2)
      DISTANCES(I) = SUM((EVAL_PT - POINTS(:,I)) ** 2)
   END DO
+  ! Check for overflow encountered in the squared distance computation.
+  IF (MAXVAL(DISTANCES(:)) .GT. MAX_VAL) THEN
+     ERROR = 1
+     RETURN
+  END IF
   ! Get the sorted list of points (by distance to evaluation point)
   CALL QSORTC(DISTANCES, INDICES)
   ! Identification of weights
@@ -98,13 +103,28 @@ SUBROUTINE PREDICT(POINTS, DOTS, EVAL_PT, WEIGHTS, ERROR)
         ! Check to see if the dot products have been computed (cache them).
         IF (DOTS(IC,IC) .EQ. MAX_VAL) THEN
            DOTS(IC,IC) = SUM(POINTS(:,IC)**2)
+           ! Check for overflow encountered in the squared length computation.
+           IF (DOTS(IC,IC) .GT. MAX_VAL) THEN
+              ERROR = 1
+              RETURN
+           END IF
         END IF
         IF (DOTS(IO,IO) .EQ. MAX_VAL) THEN
            DOTS(IO,IO) = SUM(POINTS(:,IO)**2)
+           ! Check for overflow encountered in the squared length computation.
+           IF (DOTS(IO,IO) .GT. MAX_VAL) THEN
+              ERROR = 1
+              RETURN
+           END IF
         END IF
         IF (DOTS(IC,IO) .EQ. MAX_VAL) THEN
            DOTS(IC, IO) = SUM(POINTS(:,IC) * POINTS(:,IO))
            DOTS(IO, IC) = DOTS(IC, IO)
+           ! Check for overflow encountered in the dot product.
+           IF (DOTS(IO,IC) .GT. MAX_VAL) THEN
+              ERROR = 1
+              RETURN
+           END IF
         END IF
         ! Compute the projected distance (center -> interpolation point)
         DIST_C_TO_PT = SUM(EVAL_PT(:) * POINTS(:,IO)) + DOTS(IC,IC) - &
@@ -115,16 +135,15 @@ SUBROUTINE PREDICT(POINTS, DOTS, EVAL_PT, WEIGHTS, ERROR)
         ! unique interpolation points) then...
         IF (ABS(DIST_C_TO_O) .GT. MIN_VAL) THEN
            RATIO = DIST_C_TO_PT / DIST_C_TO_O
-           IF (RATIO .GT. MAX_RATIO) THEN; MAX_RATIO = RATIO
-           ELSE IF (RATIO .LT. 0.) THEN;   SKIP(IO) = .TRUE.
-           ELSE IF (RATIO .GE. 1.) THEN
-              SKIP(IC) = .TRUE.
+           IF      (RATIO .GT. MAX_RATIO) THEN; MAX_RATIO = RATIO
+           ELSE IF (RATIO .LT. 0.)        THEN; SKIP(IO) = .TRUE.
+           ELSE IF (RATIO .GE. 1.)        THEN
               WEIGHTS(IC) = 0.
               CYCLE centers
            END IF
         ELSE
-           ! Duplicated center points, error! Return!
-           ERROR = 1
+           ! Duplicated center points, error! Return.
+           ERROR = 2
            RETURN
         END IF
      END DO others
@@ -344,7 +363,7 @@ CONTAINS
     !
     ! This subroutine sorts a subarray of A (between positions ISTART
     ! and ISTOP) keeping a record of the original position (array IDX).
-
+    ! 
     ! On input:
     !
     ! A(:) contains a subpart to be sorted.

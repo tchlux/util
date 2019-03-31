@@ -7,12 +7,13 @@ from util.stats import *
 # Generate vector between scaled by metric difference. Give the metric
 # the indices of "vectors" in the provided matrix.
 def gen_random_metric_diff(matrix, index_metric, power=2, count=None):
-    # Iterate over random pairs.
+    # Iterate over random pairs, skip those with no difference.
     for (p1, p2) in pairs(len(matrix), count):
+        metric_diff = index_metric(p1, p2)
+        if (metric_diff <= 0): continue
         vec = matrix[p1] - matrix[p2]
-        length = np.sqrt(np.sum(vec**2))
-        if length > 0: vec /= length**power
-        yield vec * index_metric(p1, p2)
+        length = np.linalg.norm(vec)**power
+        if length > 0: yield metric_diff * vec / length
 
 # Given a set of row-vectors, compute a convex weighting that is
 # proportional to the inverse total variation of metric distance
@@ -70,6 +71,8 @@ def mpca(points, values, metric=abs_diff, num_components=None,
     if display: print(" normalizing components by metric slope..", end="\r", flush=True)
     weights = normalize_error(np.matmul(points, components.T), values, metric, display)
     if display: print("                                               ", end="\r", flush=True)
+    # Make sure the first component starts with a positive value (consistency).
+    if (components[0,0] < 0): components *= -1
     # Return the principle components of the metric slope vectors.
     return components, weights
 
