@@ -1,5 +1,5 @@
 # Makes available all custom algorithms that I have worked with
-import os
+import os, time
 import numpy as np
 import fmodpy
 from util.approximate import Approximator
@@ -40,10 +40,15 @@ class LSHEP(Approximator):
                        self.x, self.f[i], self.a[i], self.rw[i], **kwargs)
 
     # Use fortran code to evaluate the computed boxes
-    def _predict(self, x):
+    def _predict(self, x, display_wait_sec=.5):
         # Calculate all of the response values
         response = []
-        for x_pt in x:
+        start = time.time()
+        for i,x_pt in enumerate(x):
+            # Update user if time has elapsed
+            if ((time.time() - start) > display_wait_sec):
+                start = time.time()
+                print(f" {100.*i/len(x):.2f}%", end="\r", flush=True)
             row = []
             for (f, a, rw) in zip(self.f, self.a, self.rw):
                 x_pt = np.array(np.reshape(x_pt,(self.x.shape[0],)), order="F")

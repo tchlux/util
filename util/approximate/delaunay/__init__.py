@@ -106,10 +106,13 @@ class qHullDelaunay(WeightedApproximator):
 # Wrapper class for using the Delaunay fortran code
 class Delaunay(WeightedApproximator):
     os.environ["OMP_NESTED"] = "TRUE"
-    from util.approximate.delaunay import delsparse
     def __init__(self, parallel=False, pmode=None):
         # Get the source fortran code module
         path_to_src = os.path.join(CWD,"delsparse.f90")
+        self.delsparse = fmodpy.fimport(path_to_src, output_directory=CWD,
+                                        f_compiler_options=["-fPIC", "-O3","-fopenmp"],
+                                        module_link_args=["-lgfortran","-fopenmp"],
+                                        autocompile_extra_files=True, verbose=True)
         # Set up the algorithm for parallel or serial evaluation.
         self.parallel = parallel
         self.delaunayp = self.delsparse.delaunaysparsep
@@ -172,19 +175,16 @@ class Delaunay(WeightedApproximator):
 
 # Wrapper class for using the Delaunay fortran code
 class DelaunayP1(Delaunay):
-    from util.approximate.delaunay import delsparse
     def __init__(self, parallel=True, pmode=1):
         return super().__init__(parallel=parallel, pmode=pmode)
 
 # Wrapper class for using the Delaunay fortran code
 class DelaunayP2(Delaunay):
-    from util.approximate.delaunay import delsparse
     def __init__(self, parallel=True, pmode=2):
         return super().__init__(parallel=parallel, pmode=pmode)
 
 # Wrapper class for using the Delaunay fortran code
 class DelaunayP3(Delaunay):
-    from util.approximate.delaunay import delsparse
     def __init__(self, parallel=True, pmode=3):
         return super().__init__(parallel=parallel, pmode=pmode)
 

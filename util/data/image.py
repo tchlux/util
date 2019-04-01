@@ -39,3 +39,46 @@ def matrix_to_img(matrix, file_name=TEMP_IMG, directory=DIRECTORY,
     img.save(file_name)
     if show: os.system(f"open {file_name}")
 # ===============================================================
+
+
+# Function for displaying an image directly from a vector.
+# 
+#    vec -- A numpy ndarray containing image data of any numeric type.
+#  shape -- A tuple representing the shape of the image. Assumed square.
+#   gray -- True if color image should be converted to grayscale.
+#   clip -- True if values out of range should be clipped, otherwise rescaled.
+# fliplr -- True if the image vector should be flipped left-right.
+# flipud -- True if the image vector should be flipped up-down.
+#   name -- The file name to save the temporary file as.
+# 
+def show_img(vec, shape=None, gray=False, clip=True, rotate=False,
+             fliplr=False, flipud=False, name=TEMP_IMG):
+    from PIL import Image
+    vec = vec.copy()
+    # Try and intelligently infer the shape. Assume square.
+    if type(shape) == type(None):
+        if (vec.size % 3) == 0:
+            shape = (-1, int(round((vec.size//3)**(1/2))), 3)
+        else: shape = (-1, int(round((vec.size//3)**(1/2))))
+    # Make sure the image is ranged [0,255] everywhere.
+    if clip:
+        vec[vec < 0] = 0
+        vec[vec > 255] = 255
+    else:
+        vec -= np.min(vec)
+        vec /= np.max(vec)
+        vec *= 255
+    # Make sure the shape of the image is correct.
+    vec = vec.reshape(shape)
+    # Flip the image over the x and y axis if desired.
+    if flipud: vec = np.flipud(vec)
+    if fliplr: vec = np.fliplr(vec)
+    # Make the image grayscale if that's desired.
+    if gray: vec = np.mean(vec, axis=-1)
+    # Make the type of the image compatible with PIL.
+    vec = np.array(vec, dtype='uint8')
+    # Produce an image.
+    img = Image.fromarray(vec)
+    if rotate: img = img.rotate(rotate)
+    img.save(name)
+    os.system(f"open {name}")

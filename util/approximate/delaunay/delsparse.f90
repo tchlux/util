@@ -1,68 +1,3 @@
-MODULE REAL_PRECISION  ! HOMPACK90 module for 64-bit arithmetic.
-INTEGER, PARAMETER:: R8=SELECTED_REAL_KIND(13)
-END MODULE REAL_PRECISION
-
-MODULE DELSPARSE_MOD
-! This module contains the REAL_PRECISION R8 data type for 64-bit arithmetic
-! and interface blocks for the DELAUNAYSPARSES and DELAUNAYSPARSEP 
-! subroutines for computing the Delaunay simplices containing interpolation
-! points Q in R^D given data points PTS.
-USE REAL_PRECISION
-PUBLIC
-
-INTERFACE
-   ! Interface for serial subroutine DELAUNAYSPARSES.
-   SUBROUTINE DELAUNAYSPARSES( D, N, PTS, M, Q, SIMPS, WEIGHTS, IERR,     &
-                               INTERP_IN, INTERP_OUT, EPS, EXTRAP, RNORM, &
-                               IBUDGET, CHAIN                             )
-      USE REAL_PRECISION, ONLY : R8
-      INTEGER, INTENT(IN) :: D, N
-      REAL(KIND=R8), INTENT(INOUT) :: PTS(:,:)
-      INTEGER, INTENT(IN) :: M
-      REAL(KIND=R8), INTENT(INOUT) :: Q(:,:)
-      INTEGER, INTENT(OUT) :: SIMPS(:,:)
-      REAL(KIND=R8), INTENT(OUT) :: WEIGHTS(:,:)
-      INTEGER, INTENT(OUT) :: IERR(:)
-      REAL(KIND=R8), INTENT(IN), OPTIONAL:: INTERP_IN(:,:)
-      REAL(KIND=R8), INTENT(OUT), OPTIONAL :: INTERP_OUT(:,:)
-      REAL(KIND=R8), INTENT(IN), OPTIONAL:: EPS, EXTRAP 
-      REAL(KIND=R8), INTENT(OUT), OPTIONAL :: RNORM(:)
-      INTEGER, INTENT(IN), OPTIONAL :: IBUDGET
-      LOGICAL, INTENT(IN), OPTIONAL :: CHAIN
-   END SUBROUTINE DELAUNAYSPARSES
-
-   ! Interface for parallel subroutine DELAUNAYSPARSEP.
-   SUBROUTINE DELAUNAYSPARSEP( D, N, PTS, M, Q, SIMPS, WEIGHTS, IERR,     &
-                               INTERP_IN, INTERP_OUT, EPS, EXTRAP, RNORM, &
-                               IBUDGET, CHAIN, PMODE           )
-      USE REAL_PRECISION, ONLY : R8
-      INTEGER, INTENT(IN) :: D, N
-      REAL(KIND=R8), INTENT(INOUT) :: PTS(:,:)
-      INTEGER, INTENT(IN) :: M
-      REAL(KIND=R8), INTENT(INOUT) :: Q(:,:)
-      INTEGER, INTENT(OUT) :: SIMPS(:,:)
-      REAL(KIND=R8), INTENT(OUT) :: WEIGHTS(:,:)
-      INTEGER, INTENT(OUT) :: IERR(:)
-      REAL(KIND=R8), INTENT(IN), OPTIONAL:: INTERP_IN(:,:)
-      REAL(KIND=R8), INTENT(OUT), OPTIONAL :: INTERP_OUT(:,:)
-      REAL(KIND=R8), INTENT(IN), OPTIONAL:: EPS, EXTRAP 
-      REAL(KIND=R8), INTENT(OUT), OPTIONAL :: RNORM(:)
-      INTEGER, INTENT(IN), OPTIONAL :: IBUDGET
-      LOGICAL, INTENT(IN), OPTIONAL :: CHAIN
-      INTEGER, INTENT(IN), OPTIONAL :: PMODE
-   END SUBROUTINE DELAUNAYSPARSEP
-
-   ! Interface for SLATEC subroutine DWNNLS.
-   SUBROUTINE DWNNLS( W, MDW, ME, MA, N, L, PRGOPT, X, RNORM,  &
-                               MODE, IWORK, WORK )
-      USE REAL_PRECISION, ONLY : R8
-      INTEGER :: IWORK(*), L, MA, MDW, ME, MODE, N
-      REAL(KIND=R8) :: PRGOPT(*), RNORM, W(MDW,*), WORK(*), X(*)
-   END SUBROUTINE DWNNLS
-
-END INTERFACE
-
-END MODULE DELSPARSE_MOD
 
 SUBROUTINE DELAUNAYSPARSES( D, N, PTS, M, Q, SIMPS, WEIGHTS, IERR, &
   INTERP_IN, INTERP_OUT, EPS, EXTRAP, RNORM, IBUDGET, CHAIN )
@@ -255,28 +190,28 @@ SUBROUTINE DELAUNAYSPARSES( D, N, PTS, M, Q, SIMPS, WEIGHTS, IERR, &
 ! Primary Author: Tyler H. Chang
 ! Last Update: February, 2019
 ! 
-USE REAL_PRECISION, ONLY : R8
+USE ISO_FORTRAN_ENV, ONLY : REAL64
 IMPLICIT NONE
 
 ! Input arguments.
 INTEGER, INTENT(IN) :: D, N
-REAL(KIND=R8), INTENT(INOUT) :: PTS(:,:) ! Rescaled on output.
+REAL(KIND=REAL64), INTENT(INOUT) :: PTS(:,:) ! Rescaled on output.
 INTEGER, INTENT(IN) :: M
-REAL(KIND=R8), INTENT(INOUT) :: Q(:,:) ! Rescaled on output.
+REAL(KIND=REAL64), INTENT(INOUT) :: Q(:,:) ! Rescaled on output.
 ! Output arguments.
 INTEGER, INTENT(OUT) :: SIMPS(:,:)
-REAL(KIND=R8), INTENT(OUT) :: WEIGHTS(:,:)
+REAL(KIND=REAL64), INTENT(OUT) :: WEIGHTS(:,:)
 INTEGER, INTENT(OUT) :: IERR(:)
 ! Optional arguments.
-REAL(KIND=R8), INTENT(IN), OPTIONAL:: INTERP_IN(:,:)
-REAL(KIND=R8), INTENT(OUT), OPTIONAL :: INTERP_OUT(:,:)
-REAL(KIND=R8), INTENT(IN), OPTIONAL:: EPS, EXTRAP 
-REAL(KIND=R8), INTENT(OUT), OPTIONAL :: RNORM(:)
+REAL(KIND=REAL64), INTENT(IN), OPTIONAL:: INTERP_IN(:,:)
+REAL(KIND=REAL64), INTENT(OUT), OPTIONAL :: INTERP_OUT(:,:)
+REAL(KIND=REAL64), INTENT(IN), OPTIONAL:: EPS, EXTRAP 
+REAL(KIND=REAL64), INTENT(OUT), OPTIONAL :: RNORM(:)
 INTEGER, INTENT(IN), OPTIONAL :: IBUDGET
 LOGICAL, INTENT(IN), OPTIONAL :: CHAIN 
 
 ! Local copies of optional input arguments.
-REAL(KIND=R8) :: EPSL, EXTRAPL
+REAL(KIND=REAL64) :: EPSL, EXTRAPL
 INTEGER :: IBUDGETL
 LOGICAL :: CHAINL
 
@@ -286,35 +221,35 @@ INTEGER :: ITMP, JTMP ! Temporary variables for swapping, looping, etc.
 INTEGER :: IEXTRAPS ! Extrapolation budget.
 INTEGER :: LWORK ! Size of the work array.
 INTEGER :: MI ! Index of current interpolation point.
-REAL(KIND=R8) :: CURRRAD ! Radius of the current circumsphere.
-REAL(KIND=R8) :: MINRAD ! Minimum circumsphere radius observed.
-REAL(KIND=R8) :: PTS_SCALE ! Data scaling factor.
-REAL(KIND=R8) :: PTS_DIAM ! Scaled diameter of data set.
-REAL(KIND=R8) :: RNORML ! Euclidean norm of the projection residual.
-REAL(KIND=R8) :: SIDE1, SIDE2 ! Signs (+/-1) denoting sides of a facet.
+REAL(KIND=REAL64) :: CURRRAD ! Radius of the current circumsphere.
+REAL(KIND=REAL64) :: MINRAD ! Minimum circumsphere radius observed.
+REAL(KIND=REAL64) :: PTS_SCALE ! Data scaling factor.
+REAL(KIND=REAL64) :: PTS_DIAM ! Scaled diameter of data set.
+REAL(KIND=REAL64) :: RNORML ! Euclidean norm of the projection residual.
+REAL(KIND=REAL64) :: SIDE1, SIDE2 ! Signs (+/-1) denoting sides of a facet.
 
 ! Local arrays, requiring O(d^2) additional memory.
 INTEGER :: IPIV(D) ! Pivot indices.
 INTEGER :: SEED(D+1) ! Copy of the SEED simplex. Only used if CHAIN = .TRUE.
-REAL(KIND=R8) :: AT(D,D) ! The transpose of A, the linear coefficient matrix.
-REAL(KIND=R8) :: B(D) ! The RHS of a linear system. 
-REAL(KIND=R8) :: CENTER(D) ! The circumcenter of a simplex. 
-REAL(KIND=R8) :: LQ(D,D) ! Holds LU or QR factorization of AT.
-REAL(KIND=R8) :: PLANE(D+1) ! The hyperplane containing a facet.
-REAL(KIND=R8) :: PRGOPT_DWNNLS(1) ! Options array for DWNNLS.
-REAL(KIND=R8) :: PROJ(D) ! The projection of the current iterate.
-REAL(KIND=R8) :: TAU(D) ! Householder reflector constants.
+REAL(KIND=REAL64) :: AT(D,D) ! The transpose of A, the linear coefficient matrix.
+REAL(KIND=REAL64) :: B(D) ! The RHS of a linear system. 
+REAL(KIND=REAL64) :: CENTER(D) ! The circumcenter of a simplex. 
+REAL(KIND=REAL64) :: LQ(D,D) ! Holds LU or QR factorization of AT.
+REAL(KIND=REAL64) :: PLANE(D+1) ! The hyperplane containing a facet.
+REAL(KIND=REAL64) :: PRGOPT_DWNNLS(1) ! Options array for DWNNLS.
+REAL(KIND=REAL64) :: PROJ(D) ! The projection of the current iterate.
+REAL(KIND=REAL64) :: TAU(D) ! Householder reflector constants.
 
 ! Extrapolation work arrays are only allocated if DWNNLS is called.
 INTEGER, ALLOCATABLE :: IWORK_DWNNLS(:) ! Only for DWNNLS.
-REAL(KIND=R8), ALLOCATABLE :: W_DWNNLS(:,:) ! Only for DWNNLS.
-REAL(KIND=R8), ALLOCATABLE :: WORK(:) ! Allocated with size LWORK.
-REAL(KIND=R8), ALLOCATABLE :: WORK_DWNNLS(:) ! Only for DWNNLS.
-REAL(KIND=R8), ALLOCATABLE :: X_DWNNLS(:) ! Only for DWNNLS.
+REAL(KIND=REAL64), ALLOCATABLE :: W_DWNNLS(:,:) ! Only for DWNNLS.
+REAL(KIND=REAL64), ALLOCATABLE :: WORK(:) ! Allocated with size LWORK.
+REAL(KIND=REAL64), ALLOCATABLE :: WORK_DWNNLS(:) ! Only for DWNNLS.
+REAL(KIND=REAL64), ALLOCATABLE :: X_DWNNLS(:) ! Only for DWNNLS.
 
 ! External functions and subroutines.
-REAL(KIND=R8), EXTERNAL :: DDOT  ! Inner product (BLAS).
-REAL(KIND=R8), EXTERNAL :: DNRM2 ! Euclidean norm (BLAS).
+REAL(KIND=REAL64), EXTERNAL :: DDOT  ! Inner product (BLAS).
+REAL(KIND=REAL64), EXTERNAL :: DNRM2 ! Euclidean norm (BLAS).
 EXTERNAL :: DGEMV  ! General matrix vector multiply (BLAS)
 EXTERNAL :: DGEQP3 ! Perform a QR factorization with column pivoting (LAPACK).
 EXTERNAL :: DGETRF ! Perform a LU factorization with partial pivoting (LAPACK).
@@ -360,9 +295,9 @@ IF (PRESENT(INTERP_IN)) THEN ! Sizes must agree.
       IERR(:) = 24; RETURN; END IF
    IF (SIZE(INTERP_OUT,2) .NE. M) THEN
       IERR(:) = 25; RETURN; END IF
-   INTERP_OUT(:,:) = 0.0_R8 ! Initialize output to zeros.
+   INTERP_OUT(:,:) = 0.0_REAL64 ! Initialize output to zeros.
 END IF
-EPSL = SQRT(EPSILON(0.0_R8)) ! Get the machine unit roundoff constant.
+EPSL = SQRT(EPSILON(0.0_REAL64)) ! Get the machine unit roundoff constant.
 IF (PRESENT(EPS)) THEN
    IF (EPSL < EPS) THEN ! If the given precision is too small, ignore it.
       EPSL = EPS
@@ -380,12 +315,12 @@ IF (PRESENT(EXTRAP)) THEN
    IF (EXTRAPL < 0) THEN ! Check that the extrapolation distance is legal.
       IERR(:) = 27; RETURN; END IF
 ELSE
-   EXTRAPL = 0.1_R8 ! Default extrapolation distance (for normalized points).
+   EXTRAPL = 0.1_REAL64 ! Default extrapolation distance (for normalized points).
 END IF
 IF (PRESENT(RNORM)) THEN
    IF (SIZE(RNORM,1) .NE. M) THEN ! The length of the array must match.
       IERR(:) = 28; RETURN; END IF
-   RNORM(:) = 0.0_R8 ! Initialize output to zeros.
+   RNORM(:) = 0.0_REAL64 ! Initialize output to zeros.
 END IF
 IF (PRESENT(CHAIN)) THEN
    CHAINL = CHAIN ! Turn chaining on, if necessarry.
@@ -418,7 +353,7 @@ OUTER : DO MI = 1, M
 
    ! Initialize the projection and reset the residual.
    PROJ(:) = Q(:,MI)
-   RNORML = 0.0_R8
+   RNORML = 0.0_REAL64
 
    ! Check if extrapolation is enabled.
    IF (EXTRAPL < EPSL) THEN
@@ -439,7 +374,7 @@ OUTER : DO MI = 1, M
       ! Rebuild the linear system.
       DO J=1,D
          AT(:,J) = PTS(:,SIMPS(J+1,MI)) - PTS(:,SIMPS(1,MI))
-         B(J) = DDOT(D, AT(:,J), 1, AT(:,J), 1) / 2.0_R8 
+         B(J) = DDOT(D, AT(:,J), 1, AT(:,J), 1) / 2.0_REAL64 
       END DO
    END IF
 
@@ -468,7 +403,7 @@ OUTER : DO MI = 1, M
       ELSE
          DO J=1,D
             AT(:,J) = PTS(:,SIMPS(J+1,MI)) - PTS(:,SIMPS(1,MI))
-            B(J) = DDOT(D, AT(:,J), 1, AT(:,J), 1) / 2.0_R8 
+            B(J) = DDOT(D, AT(:,J), 1, AT(:,J), 1) / 2.0_REAL64 
          END DO
       END IF
 
@@ -494,14 +429,14 @@ OUTER : DO MI = 1, M
             ! Swap the weights to match the simplex indices, and zero the
             ! most negative weight.
             WEIGHTS(JTMP,MI) = WEIGHTS(D+1,MI)
-            WEIGHTS(D+1,MI) = 0.0_R8
+            WEIGHTS(D+1,MI) = 0.0_REAL64
             ! Loop through all the remaining facets from which Q(:,MI) is
             ! visible, and attempt to flip across each one.
             DO WHILE (SIMPS(D+1,MI) .EQ. 0)
                ! Restore the previous simplex and linear system.
                SIMPS(D+1,MI) = ITMP
                AT(:,D) = PTS(:,ITMP) - PTS(:,SIMPS(1,MI))
-               B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_R8
+               B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_REAL64
                ! Find the next most negative weight.
                JTMP = MINLOC(WEIGHTS(1:D+1,MI), DIM=1)
                ! Check if WEIGHTS(JTMP,MI) .GE. 0.
@@ -512,11 +447,11 @@ OUTER : DO MI = 1, M
                   
                   ! Since at least one projection has already been done,
                   ! the work arrays have already been allocated.
-                  PRGOPT_DWNNLS(1) = 1.0_R8
+                  PRGOPT_DWNNLS(1) = 1.0_REAL64
                   IWORK_DWNNLS(1) = 6*D + 6
                   IWORK_DWNNLS(2) = 2*D + 2
                   ! Set equality constraint.
-                  W_DWNNLS(1,1:D+2) = 1.0_R8
+                  W_DWNNLS(1,1:D+2) = 1.0_REAL64
                   ! Populate LS coefficient matrix and RHS.
                   FORALL (I=1:D+1) W_DWNNLS(2:D+1,I) = PTS(:,SIMPS(I,MI))
                   W_DWNNLS(2:D+1,D+2) = PROJ(:)
@@ -537,7 +472,7 @@ OUTER : DO MI = 1, M
                SIMPS(JTMP,MI) = SIMPS(D+1,MI)
                ! Swap the weights to match, and zero the most negative weight.
                WEIGHTS(JTMP,MI) = WEIGHTS(D+1,MI)
-               WEIGHTS(D+1,MI) = 0.0_R8
+               WEIGHTS(D+1,MI) = 0.0_REAL64
                ! If the least weighted vertex (JTMP) is not the first vertex,
                ! then just drop row (JTMP-1) from the linear system
                ! (corresponding to the JTMP-1st column of A^T).
@@ -547,7 +482,7 @@ OUTER : DO MI = 1, M
                ELSE
                   DO J=1,D
                      AT(:,J) = PTS(:,SIMPS(J+1,MI)) - PTS(:,SIMPS(1,MI))
-                     B(J) = DDOT(D, AT(:,J), 1, AT(:,J), 1) / 2.0_R8 
+                     B(J) = DDOT(D, AT(:,J), 1, AT(:,J), 1) / 2.0_REAL64 
                   END DO
                END IF
                ! Compute another simplex (try to flip again).
@@ -575,7 +510,7 @@ OUTER : DO MI = 1, M
          ! projected value.
          SIMPS(D+1,MI) = ITMP
          AT(:,D) = PTS(:,ITMP) - PTS(:,SIMPS(1,MI))
-         B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_R8
+         B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_REAL64
          IEXTRAPS = IEXTRAPS - 1 ! Decrement the budget.
       END IF
 
@@ -648,14 +583,14 @@ SUBROUTINE MAKEFIRSTSIMP()
 
 ! Find the first point, i.e., the closest point to Q(:,MI).
 SIMPS(:,MI) = 0
-MINRAD = HUGE(0.0_R8)
+MINRAD = HUGE(0.0_REAL64)
 DO I = 1, N
    ! Check the distance to Q(:,MI)
    CURRRAD = DNRM2(D, PTS(:,I) - PROJ(:), 1)
    IF (CURRRAD < MINRAD) THEN; MINRAD = CURRRAD; SIMPS(1,MI) = I; END IF
 END DO
 ! Find the second point, i.e., the closest point to PTS(:,SIMPS(1,MI)).
-MINRAD = HUGE(0.0_R8)
+MINRAD = HUGE(0.0_REAL64)
 DO I = 1, N
    ! Skip repeated vertices.
    IF (I .EQ. SIMPS(1,MI)) CYCLE
@@ -665,17 +600,17 @@ DO I = 1, N
 END DO
 ! Set up the first row of the system A X = B.
 AT(:,1) = PTS(:,SIMPS(2,MI)) - PTS(:,SIMPS(1,MI))
-B(1) = DDOT(D, AT(:,1), 1, AT(:,1), 1) / 2.0_R8
+B(1) = DDOT(D, AT(:,1), 1, AT(:,1), 1) / 2.0_REAL64
 ! Loop to collect the remaining D-1 vertices for the first simplex.
 DO I = 2, D
-   MINRAD = HUGE(0.0_R8) ! Re-initialize the radius for each iteration.
+   MINRAD = HUGE(0.0_REAL64) ! Re-initialize the radius for each iteration.
    ! Check each point P* in PTS.
    DO J = 1, N
       ! Check that this point is not already in the simplex.
       IF (ANY(SIMPS(:,MI) .EQ. J)) CYCLE
       ! Add P* to linear system, and compute the minimum norm solution.
       AT(:,I) = PTS(:,J) - PTS(:,SIMPS(1,MI))
-      B(I) = DDOT(D, AT(:,I), 1, AT(:,I), 1) / 2.0_R8
+      B(I) = DDOT(D, AT(:,I), 1, AT(:,I), 1) / 2.0_REAL64
       LQ(:,1:I) = AT(:,1:I)
       ! Compute A^T P = Q R.
       CALL DGEQP3(D, I, LQ, D, IPIV, TAU, WORK, LWORK, IERR(MI))
@@ -687,8 +622,8 @@ DO I = 2, D
       ! Set CENTER = P^T B.
       FORALL (ITMP = 1:I) CENTER(ITMP) = B(IPIV(ITMP))
       ! Get the radius using R^T Q^T X = P^T B.
-      CALL DTRSM('L', 'U', 'T', 'N', I, 1, 1.0_R8, LQ, D, CENTER, D)
-      CENTER(I+1:D) = 0.0_R8
+      CALL DTRSM('L', 'U', 'T', 'N', I, 1, 1.0_REAL64, LQ, D, CENTER, D)
+      CENTER(I+1:D) = 0.0_REAL64
       CALL DORMQR('L', 'N', D, 1, I, LQ, D, TAU, CENTER, D, WORK, LWORK, &
          IERR(MI))
       IF(IERR(MI) < 0) THEN ! LAPACK illegal input error.
@@ -703,7 +638,7 @@ DO I = 2, D
    IF (SIMPS(I+1,MI) .EQ. 0) THEN; IERR(MI) = 31; RETURN; END IF
    ! If all operations were successful, add the best P* to the linear system.
    AT(:,I) = PTS(:,SIMPS(I+1,MI)) - PTS(:,SIMPS(1,MI))
-   B(I) = DDOT(D, AT(:,I), 1, AT(:,I), 1) / 2.0_R8 
+   B(I) = DDOT(D, AT(:,I), 1, AT(:,I), 1) / 2.0_REAL64 
 END DO
 IERR(MI) = 0 ! Set error flag to 'success' for a normal return.
 RETURN
@@ -752,11 +687,11 @@ CALL MAKEPLANE()
 IF(IERR(MI) .NE. 0) RETURN ! Check for errors.
 ! Compute the sign for the side of PLANE containing Q(:,MI).
 SIDE1 =  DDOT(D,PLANE(1:D),1,PROJ(:),1) - PLANE(D+1)
-SIDE1 = SIGN(1.0_R8,SIDE1)
+SIDE1 = SIGN(1.0_REAL64,SIDE1)
 ! Initialize the center, radius, and simplex.
 SIMPS(D+1,MI) = 0
-CENTER(:) = 0.0_R8
-MINRAD = HUGE(0.0_R8)
+CENTER(:) = 0.0_REAL64
+MINRAD = HUGE(0.0_REAL64)
 ! Loop through all points P* in PTS.
 DO I = 1, N
    ! Check that P* is inside the current ball.
@@ -766,7 +701,7 @@ DO I = 1, N
    IF (SIDE1*SIDE2 < EPSL .OR. ANY(SIMPS(:,MI) .EQ. I)) CYCLE ! If not, skip.
    ! Add P* to the linear system, and solve to get shifted CENTER.
    AT(:,D) = PTS(:,I) - PTS(:,SIMPS(1,MI))
-   B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_R8
+   B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_REAL64
    LQ = AT
    CENTER = B
    ! Compute A^T = LU
@@ -791,7 +726,7 @@ IERR(MI) = 0 ! Reset the error flag to 'success' code.
 IF(SIMPS(D+1,MI) .EQ. 0) RETURN
 ! Add new point to the linear system.
 AT(:,D) = PTS(:,SIMPS(D+1,MI)) - PTS(:,SIMPS(1,MI))
-B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_R8
+B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_REAL64
 RETURN
 END SUBROUTINE MAKESIMPLEX
 
@@ -819,8 +754,8 @@ IF (D > 1) THEN ! Check that D-1 > 0, otherwise the plane is trivial.
       IERR(MI) = 80; RETURN
    END IF
    ! The nullspace is given by the last column of Q.
-   PLANE(1:D-1) = 0.0_R8
-   PLANE(D) = 1.0_R8
+   PLANE(1:D-1) = 0.0_REAL64
+   PLANE(D) = 1.0_REAL64
    CALL DORMQR('L', 'N', D, 1, D-1, LQ, D, TAU, PLANE, D, WORK, &
     LWORK, IERR(MI))
    IF(IERR(MI) < 0) THEN ! LAPACK illegal input error.
@@ -829,7 +764,7 @@ IF (D > 1) THEN ! Check that D-1 > 0, otherwise the plane is trivial.
    ! Calculate the constant \alpha defining the plane.
    PLANE(D+1) = DDOT(D,PLANE(1:D),1,PTS(:,SIMPS(1,MI)),1)
 ELSE ! Special case where D=1.
-   PLANE(1) = 1.0_R8
+   PLANE(1) = 1.0_REAL64
    PLANE(2) = PTS(1,SIMPS(1,MI))
 END IF
 RETURN
@@ -871,7 +806,7 @@ IF (IERR(MI) < 0) THEN ! LAPACK illegal input.
    IERR(MI) = 82; RETURN
 END IF
 WEIGHTS(2:D+1,MI) = WORK(1:D)
-WEIGHTS(1,MI) = 1.0_R8 - SUM(WEIGHTS(2:D+1,MI))
+WEIGHTS(1,MI) = 1.0_REAL64 - SUM(WEIGHTS(2:D+1,MI))
 ! Check if the weights for Q(:,MI) are nonnegative.
 IF (ALL(WEIGHTS(:,MI) .GE. -EPSL)) TF = .TRUE.
 
@@ -884,7 +819,7 @@ DO I = MI+1, M
    CALL DGETRS('N', D, 1, LQ, D, IPIV, WORK(2:D+1), D, ITMP)
    IF (ITMP < 0) CYCLE ! Illegal input error that should never occurr.
    ! Check if the weights define a convex combination.
-   WORK(1) = 1.0_R8 - SUM(WORK(2:D+1))
+   WORK(1) = 1.0_REAL64 - SUM(WORK(2:D+1))
    IF (ALL(WORK(1:D+1) .GE. -EPSL)) THEN
       ! Copy the simplex indices and weights then flag as complete.
       SIMPS(:,I) = SIMPS(:,MI)
@@ -921,10 +856,10 @@ IF (.NOT. ALLOCATED(X_DWNNLS)) THEN
 END IF
 
 ! Initialize work array and settings values.
-PRGOPT_DWNNLS(1) = 1.0_R8
+PRGOPT_DWNNLS(1) = 1.0_REAL64
 IWORK_DWNNLS(1) = D+1+5*N
 IWORK_DWNNLS(2) = D+1+N
-W_DWNNLS(1, :) = 1.0_R8          ! Set convexity (equality) constraint.
+W_DWNNLS(1, :) = 1.0_REAL64          ! Set convexity (equality) constraint.
 W_DWNNLS(2:D+1,1:N) = PTS(:,:)   ! Copy data points.
 W_DWNNLS(2:D+1,N+1) = PROJ(:)    ! Copy extrapolation point.
 ! Compute the solution to the inequality constrained least squares problem to
@@ -937,10 +872,10 @@ ELSE IF (IERR(MI) .EQ. 2) THEN ! Illegal input detected.
    IERR(MI) = 72; RETURN
 END IF
 ! Zero all weights that are approximately zero and renormalize the sum.
-WHERE (X_DWNNLS < EPSL) X_DWNNLS = 0.0_R8
+WHERE (X_DWNNLS < EPSL) X_DWNNLS = 0.0_REAL64
 X_DWNNLS(:) = X_DWNNLS(:) / SUM(X_DWNNLS)
 ! Compute the actual projection via matrix vector multiplication.
-CALL DGEMV('N', D, N, 1.0_R8, PTS, D, X_DWNNLS, 1, 0.0_R8, PROJ, 1)
+CALL DGEMV('N', D, N, 1.0_REAL64, PTS, D, X_DWNNLS, 1, 0.0_REAL64, PROJ, 1)
 RNORML = DNRM2(D, PROJ(:) - Q(:,MI), 1)
 RETURN
 END SUBROUTINE PROJECT
@@ -964,19 +899,19 @@ SUBROUTINE RESCALE(MINDIST, DIAMETER, SCALE)
 !    barycenter of data points)/SCALE.
 
 ! Output arguments.
-REAL(KIND=R8), INTENT(OUT) :: MINDIST, DIAMETER, SCALE
+REAL(KIND=REAL64), INTENT(OUT) :: MINDIST, DIAMETER, SCALE
 
 ! Local variables.
-REAL(KIND=R8) :: PTS_CENTER(D) ! The center of the data points PTS.
-REAL(KIND=R8) :: DISTANCE ! The current distance.
+REAL(KIND=REAL64) :: PTS_CENTER(D) ! The center of the data points PTS.
+REAL(KIND=REAL64) :: DISTANCE ! The current distance.
 
 ! Initialize local values.
-MINDIST = HUGE(0.0_R8)
-DIAMETER = 0.0_R8
-SCALE = 0.0_R8
+MINDIST = HUGE(0.0_REAL64)
+DIAMETER = 0.0_REAL64
+SCALE = 0.0_REAL64
 
 ! Compute barycenter of all data points.
-PTS_CENTER(:) = SUM(PTS(:,:), DIM=2)/REAL(N, KIND=R8)
+PTS_CENTER(:) = SUM(PTS(:,:), DIM=2)/REAL(N, KIND=REAL64)
 ! Compute the minimum and maximum distances.
 DO I = 1, N ! Cycle through all pairs of points.
    DO J = I + 1, N
@@ -1216,28 +1151,28 @@ SUBROUTINE DELAUNAYSPARSEP( D, N, PTS, M, Q, SIMPS, WEIGHTS, IERR, &
 ! Primary Author: Tyler H. Chang
 ! Last Update: February, 2019
 ! 
-USE REAL_PRECISION, ONLY : R8
+USE ISO_FORTRAN_ENV, ONLY : REAL64
 IMPLICIT NONE
 
 ! Input arguments.
 INTEGER, INTENT(IN) :: D, N
-REAL(KIND=R8), INTENT(INOUT) :: PTS(:,:) ! Rescaled on output.
+REAL(KIND=REAL64), INTENT(INOUT) :: PTS(:,:) ! Rescaled on output.
 INTEGER, INTENT(IN) :: M
-REAL(KIND=R8), INTENT(INOUT) :: Q(:,:) ! Rescaled on output.
+REAL(KIND=REAL64), INTENT(INOUT) :: Q(:,:) ! Rescaled on output.
 ! Output arguments.
 INTEGER, INTENT(OUT) :: SIMPS(:,:)
-REAL(KIND=R8), INTENT(OUT) :: WEIGHTS(:,:)
+REAL(KIND=REAL64), INTENT(OUT) :: WEIGHTS(:,:)
 INTEGER, INTENT(OUT) :: IERR(:)
 ! Optional arguments.
-REAL(KIND=R8), INTENT(IN), OPTIONAL:: INTERP_IN(:,:)
-REAL(KIND=R8), INTENT(OUT), OPTIONAL :: INTERP_OUT(:,:)
-REAL(KIND=R8), INTENT(IN), OPTIONAL:: EPS, EXTRAP 
-REAL(KIND=R8), INTENT(OUT), OPTIONAL :: RNORM(:)
+REAL(KIND=REAL64), INTENT(IN), OPTIONAL:: INTERP_IN(:,:)
+REAL(KIND=REAL64), INTENT(OUT), OPTIONAL :: INTERP_OUT(:,:)
+REAL(KIND=REAL64), INTENT(IN), OPTIONAL:: EPS, EXTRAP 
+REAL(KIND=REAL64), INTENT(OUT), OPTIONAL :: RNORM(:)
 INTEGER, INTENT(IN), OPTIONAL :: IBUDGET, PMODE
 LOGICAL, INTENT(IN), OPTIONAL :: CHAIN 
 
 ! Local copies of optional input arguments.
-REAL(KIND=R8) :: EPSL, EXTRAPL
+REAL(KIND=REAL64) :: EPSL, EXTRAPL
 INTEGER :: IBUDGETL
 LOGICAL :: CHAINL, PLVL1, PLVL2
 
@@ -1250,36 +1185,36 @@ INTEGER :: ITMP, JTMP ! Temporary variables for swapping, looping, etc.
 INTEGER :: LWORK ! Size of the work array.
 INTEGER :: MI ! Index of current interpolation point.
 INTEGER :: VERTEX_PRIV ! Private copy of next vertex to add.
-REAL(KIND=R8) :: CURRRAD ! Radius of the current circumsphere.
-REAL(KIND=R8) :: MINRAD ! Minimum circumsphere radius observed.
-REAL(KIND=R8) :: MINRAD_PRIV ! Private copy of MINRAD.
-REAL(KIND=R8) :: PTS_SCALE ! Data scaling factor.
-REAL(KIND=R8) :: PTS_DIAM ! Scaled diameter of data set.
-REAL(KIND=R8) :: RNORML ! Euclidean norm of the projection residual.
-REAL(KIND=R8) :: SIDE1, SIDE2 ! Signs (+/-1) denoting sides of a facet.
+REAL(KIND=REAL64) :: CURRRAD ! Radius of the current circumsphere.
+REAL(KIND=REAL64) :: MINRAD ! Minimum circumsphere radius observed.
+REAL(KIND=REAL64) :: MINRAD_PRIV ! Private copy of MINRAD.
+REAL(KIND=REAL64) :: PTS_SCALE ! Data scaling factor.
+REAL(KIND=REAL64) :: PTS_DIAM ! Scaled diameter of data set.
+REAL(KIND=REAL64) :: RNORML ! Euclidean norm of the projection residual.
+REAL(KIND=REAL64) :: SIDE1, SIDE2 ! Signs (+/-1) denoting sides of a facet.
 
 ! Local arrays, requiring O(d^2) additional memory.
 INTEGER :: IPIV(D) ! Pivot indices.
 INTEGER :: SEED(D+1) ! Copy of the SEED simplex. Only used if CHAIN = .TRUE.
-REAL(KIND=R8) :: AT(D,D) ! The transpose of A, the linear coefficient matrix.
-REAL(KIND=R8) :: B(D) ! The RHS of a linear system. 
-REAL(KIND=R8) :: CENTER(D) ! The circumcenter of a simplex. 
-REAL(KIND=R8) :: LQ(D,D) ! Holds LU or QR factorization of AT.
-REAL(KIND=R8) :: PLANE(D+1) ! The hyperplane containing a facet.
-REAL(KIND=R8) :: PRGOPT_DWNNLS(1) ! Options array for DWNNLS.
-REAL(KIND=R8) :: PROJ(D) ! The projection of the current iterate.
-REAL(KIND=R8) :: TAU(D) ! Householder reflector constants.
+REAL(KIND=REAL64) :: AT(D,D) ! The transpose of A, the linear coefficient matrix.
+REAL(KIND=REAL64) :: B(D) ! The RHS of a linear system. 
+REAL(KIND=REAL64) :: CENTER(D) ! The circumcenter of a simplex. 
+REAL(KIND=REAL64) :: LQ(D,D) ! Holds LU or QR factorization of AT.
+REAL(KIND=REAL64) :: PLANE(D+1) ! The hyperplane containing a facet.
+REAL(KIND=REAL64) :: PRGOPT_DWNNLS(1) ! Options array for DWNNLS.
+REAL(KIND=REAL64) :: PROJ(D) ! The projection of the current iterate.
+REAL(KIND=REAL64) :: TAU(D) ! Householder reflector constants.
 
 ! Extrapolation work arrays are only allocated if DWNNLS is called.
 INTEGER, ALLOCATABLE :: IWORK_DWNNLS(:) ! Only for DWNNLS.
-REAL(KIND=R8), ALLOCATABLE :: W_DWNNLS(:,:) ! Only for DWNNLS.
-REAL(KIND=R8), ALLOCATABLE :: WORK(:) ! Allocated with size LWORK.
-REAL(KIND=R8), ALLOCATABLE :: WORK_DWNNLS(:) ! Only for DWNNLS.
-REAL(KIND=R8), ALLOCATABLE :: X_DWNNLS(:) ! Only for DWNNLS.
+REAL(KIND=REAL64), ALLOCATABLE :: W_DWNNLS(:,:) ! Only for DWNNLS.
+REAL(KIND=REAL64), ALLOCATABLE :: WORK(:) ! Allocated with size LWORK.
+REAL(KIND=REAL64), ALLOCATABLE :: WORK_DWNNLS(:) ! Only for DWNNLS.
+REAL(KIND=REAL64), ALLOCATABLE :: X_DWNNLS(:) ! Only for DWNNLS.
 
 ! External functions and subroutines.
-REAL(KIND=R8), EXTERNAL :: DDOT  ! Inner product (BLAS).
-REAL(KIND=R8), EXTERNAL :: DNRM2 ! Euclidean norm (BLAS).
+REAL(KIND=REAL64), EXTERNAL :: DDOT  ! Inner product (BLAS).
+REAL(KIND=REAL64), EXTERNAL :: DNRM2 ! Euclidean norm (BLAS).
 EXTERNAL :: DGEMV  ! General matrix vector multiply (BLAS)
 EXTERNAL :: DGEQP3 ! Perform a QR factorization with column pivoting (LAPACK).
 EXTERNAL :: DGETRF ! Perform a LU factorization with partial pivoting (LAPACK).
@@ -1325,9 +1260,9 @@ IF (PRESENT(INTERP_IN)) THEN ! Sizes must agree.
       IERR(:) = 24; RETURN; END IF
    IF (SIZE(INTERP_OUT,2) .NE. M) THEN
       IERR(:) = 25; RETURN; END IF
-   INTERP_OUT(:,:) = 0.0_R8 ! Initialize output to zeros.
+   INTERP_OUT(:,:) = 0.0_REAL64 ! Initialize output to zeros.
 END IF
-EPSL = SQRT(EPSILON(0.0_R8)) ! Get the machine unit roundoff constant.
+EPSL = SQRT(EPSILON(0.0_REAL64)) ! Get the machine unit roundoff constant.
 IF (PRESENT(EPS)) THEN
    IF (EPSL < EPS) THEN ! If the given precision is too small, ignore it.
       EPSL = EPS
@@ -1345,12 +1280,12 @@ IF (PRESENT(EXTRAP)) THEN
    IF (EXTRAPL < 0) THEN ! Check that the extrapolation distance is legal.
       IERR(:) = 27; RETURN; END IF
 ELSE
-   EXTRAPL = 0.1_R8 ! Default extrapolation distance (for normalized points).
+   EXTRAPL = 0.1_REAL64 ! Default extrapolation distance (for normalized points).
 END IF
 IF (PRESENT(RNORM)) THEN
    IF (SIZE(RNORM,1) .NE. M) THEN ! The length of the array must match.
       IERR(:) = 28; RETURN; END IF
-   RNORM(:) = 0.0_R8 ! Initialize output to zeros.
+   RNORM(:) = 0.0_REAL64 ! Initialize output to zeros.
 END IF
 IF (PRESENT(CHAIN)) THEN
    CHAINL = CHAIN ! Turn chaining on, if necessarry.
@@ -1393,7 +1328,7 @@ IF (I .NE. 0) THEN ! Check for memory allocation errors.
    IERR(:) = 50; RETURN; END IF
 
 ! Initialize PRGOPT_DWNNLS in case of extrapolation.
-PRGOPT_DWNNLS(1) = 1.0_R8
+PRGOPT_DWNNLS(1) = 1.0_REAL64
 
 ! Initialize all error codes to "TBD" values.
 IERR(:) = 40
@@ -1432,7 +1367,7 @@ OUTER : DO MI = 1, M
 
    ! Initialize the projection and reset the residual.
    PROJ(:) = Q(:,MI)
-   RNORML = 0.0_R8
+   RNORML = 0.0_REAL64
 
    ! Check if extrapolation is enabled.
    IF (EXTRAPL < EPSL) THEN
@@ -1477,8 +1412,8 @@ OUTER : DO MI = 1, M
 
 ! Initialize simplex and shared variables.
 SIMPS(:,MI) = 0
-MINRAD_PRIV = HUGE(0.0_R8)
-MINRAD = HUGE(0.0_R8)
+MINRAD_PRIV = HUGE(0.0_REAL64)
+MINRAD = HUGE(0.0_REAL64)
 
 ! Below is a Level 2 parallel region over N points in PTS to find the
 ! first and second vertices SIMPS(1,MI) and SIMPS(2,MI).
@@ -1513,10 +1448,10 @@ IF (MINRAD_PRIV < MINRAD) THEN
 END IF
 !$OMP END CRITICAL(REDUC_1)
 ! Find the second point, i.e., the closest point to PTS(:,SIMPS(1,MI)).
-MINRAD_PRIV = HUGE(0.0_R8)
+MINRAD_PRIV = HUGE(0.0_REAL64)
 !$OMP BARRIER
 !$OMP SINGLE
-MINRAD = HUGE(0.0_R8)
+MINRAD = HUGE(0.0_REAL64)
 !$OMP END SINGLE
 !$OMP DO SCHEDULE(STATIC)
 DO I = 1, N
@@ -1539,13 +1474,13 @@ END IF
 
 ! Set up the first row of the system A X = B.
 AT(:,1) = PTS(:,SIMPS(2,MI)) - PTS(:,SIMPS(1,MI))
-B(1) = DDOT(D, AT(:,1), 1, AT(:,1), 1) / 2.0_R8
+B(1) = DDOT(D, AT(:,1), 1, AT(:,1), 1) / 2.0_REAL64
 
 ! Loop to collect the remaining D-1 vertices for the first simplex.
 DO I = 2, D
    ! Re-initialize the radius for each iteration.
-   MINRAD = HUGE(0.0_R8)
-   MINRAD_PRIV = HUGE(0.0_R8)
+   MINRAD = HUGE(0.0_REAL64)
+   MINRAD_PRIV = HUGE(0.0_REAL64)
    VERTEX_PRIV = 0
 
    ! This is another Level 2 parallel block over N points in PTS.
@@ -1579,7 +1514,7 @@ DO I = 2, D
       ! Add P* to linear system, and compute the minimum norm solution.
       LQ(:,1:I-1) = AT(:,1:I-1)
       LQ(:,I) = PTS(:,J) - PTS(:,SIMPS(1,MI))
-      B(I) = DDOT(D, LQ(:,I), 1, LQ(:,I), 1) / 2.0_R8
+      B(I) = DDOT(D, LQ(:,I), 1, LQ(:,I), 1) / 2.0_REAL64
       ! Compute A^T P = Q R.
       CALL DGEQP3(D, I, LQ, D, IPIV, TAU, WORK, LWORK, IERR_PRIV)
       IF(IERR_PRIV < 0) THEN ! LAPACK illegal input error.
@@ -1592,8 +1527,8 @@ DO I = 2, D
       ! Set CENTER = P^T B.
       FORALL (ITMP = 1:I) CENTER(ITMP) = B(IPIV(ITMP))
       ! Get the radius using R^T Q^T X = P^T B.
-      CALL DTRSM('L', 'U', 'T', 'N', I, 1, 1.0_R8, LQ, D, CENTER, D)
-      CENTER(I+1:D) = 0.0_R8
+      CALL DTRSM('L', 'U', 'T', 'N', I, 1, 1.0_REAL64, LQ, D, CENTER, D)
+      CENTER(I+1:D) = 0.0_REAL64
       CALL DORMQR('L', 'N', D, 1, I, LQ, D, TAU, CENTER, D, WORK, LWORK, &
          IERR_PRIV)
       IF(IERR_PRIV < 0) THEN ! LAPACK illegal input error.
@@ -1634,7 +1569,7 @@ DO I = 2, D
    END IF
    ! If all operations were successful, add the best P* to the linear system.
    AT(:,I) = PTS(:,SIMPS(I+1,MI)) - PTS(:,SIMPS(1,MI))
-   B(I) = DDOT(D, AT(:,I), 1, AT(:,I), 1) / 2.0_R8 
+   B(I) = DDOT(D, AT(:,I), 1, AT(:,I), 1) / 2.0_REAL64 
 END DO
 ! RETURN
 ! END SUBROUTINE MAKEFIRSTSIMP
@@ -1649,7 +1584,7 @@ END DO
       ! Rebuild the linear system.
       DO J=1,D
          AT(:,J) = PTS(:,SIMPS(J+1,MI)) - PTS(:,SIMPS(1,MI))
-         B(J) = DDOT(D, AT(:,J), 1, AT(:,J), 1) / 2.0_R8 
+         B(J) = DDOT(D, AT(:,J), 1, AT(:,J), 1) / 2.0_REAL64 
       END DO
    END IF
 
@@ -1711,7 +1646,7 @@ IF (IERR_PRIV < 0) THEN ! LAPACK illegal input.
    CYCLE OUTER
 END IF
 WEIGHTS(2:D+1,MI) = WORK(1:D)
-WEIGHTS(1,MI) = 1.0_R8 - SUM(WEIGHTS(2:D+1,MI))
+WEIGHTS(1,MI) = 1.0_REAL64 - SUM(WEIGHTS(2:D+1,MI))
 ! Check if the weights for Q(:,MI) are nonnegative.
 IF (ALL(WEIGHTS(:,MI) .GE. -EPSL)) PTINSIMP = .TRUE.
 
@@ -1730,7 +1665,7 @@ IF (PLVL1) THEN
       CALL DGETRS('N', D, 1, LQ, D, IPIV, PLANE(2:D+1), D, ITMP)
       IF (ITMP < 0) CYCLE ! Illegal input error that should never occurr.
       ! Check if the weights define a convex combination.
-      PLANE(1) = 1.0_R8 - SUM(PLANE(2:D+1))
+      PLANE(1) = 1.0_REAL64 - SUM(PLANE(2:D+1))
       IF (ALL(PLANE(1:D+1) .GE. -EPSL)) THEN
          !$OMP CRITICAL(CHECK_IERR)
          IF(IERR(I) .EQ. 40) THEN
@@ -1767,7 +1702,7 @@ ELSE
       CALL DGETRS('N', D, 1, LQ, D, IPIV, PLANE(2:D+1), D, ITMP)
       IF (ITMP < 0) CYCLE ! Illegal input error that should never occurr.
       ! Check if the weights define a convex combination.
-      PLANE(1) = 1.0_R8 - SUM(PLANE(2:D+1))
+      PLANE(1) = 1.0_REAL64 - SUM(PLANE(2:D+1))
       IF (ALL(PLANE(1:D+1) .GE. -EPSL)) THEN
          ! Copy the simplex indices and weights then flag as complete.
          SIMPS(:,I) = SIMPS(:,MI)
@@ -1802,7 +1737,7 @@ END IF
       ELSE
          DO J=1,D
             AT(:,J) = PTS(:,SIMPS(J+1,MI)) - PTS(:,SIMPS(1,MI))
-            B(J) = DDOT(D, AT(:,J), 1, AT(:,J), 1) / 2.0_R8 
+            B(J) = DDOT(D, AT(:,J), 1, AT(:,J), 1) / 2.0_REAL64 
          END DO
       END IF
 
@@ -1875,8 +1810,8 @@ IF (D > 1) THEN ! Check that D-1 > 0, otherwise the plane is trivial.
       CYCLE OUTER
    END IF
    ! The nullspace is given by the last column of Q.
-   PLANE(1:D-1) = 0.0_R8
-   PLANE(D) = 1.0_R8
+   PLANE(1:D-1) = 0.0_REAL64
+   PLANE(D) = 1.0_REAL64
    CALL DORMQR('L', 'N', D, 1, D-1, LQ, D, TAU, PLANE, D, WORK, &
     LWORK, IERR_PRIV)
    IF(IERR_PRIV < 0) THEN ! LAPACK illegal input error.
@@ -1889,18 +1824,18 @@ IF (D > 1) THEN ! Check that D-1 > 0, otherwise the plane is trivial.
    ! Calculate the constant \alpha defining the plane.
    PLANE(D+1) = DDOT(D,PLANE(1:D),1,PTS(:,SIMPS(1,MI)),1)
 ELSE ! Special case where D=1.
-   PLANE(1) = 1.0_R8
+   PLANE(1) = 1.0_REAL64
    PLANE(2) = PTS(1,SIMPS(1,MI))
 END IF
 ! Compute the sign for the side of PLANE containing Q(:,MI).
 SIDE1 =  DDOT(D,PLANE(1:D),1,PROJ(:),1) - PLANE(D+1)
-SIDE1 = SIGN(1.0_R8,SIDE1)
+SIDE1 = SIGN(1.0_REAL64,SIDE1)
 ! Initialize the center, radius, simplex, and OpenMP variabls.
 SIMPS(D+1,MI) = 0
-CENTER(:) = 0.0_R8
-TAU(:) = 0.0_R8
-MINRAD = HUGE(0.0_R8)
-MINRAD_PRIV = HUGE(0.0_R8)
+CENTER(:) = 0.0_REAL64
+TAU(:) = 0.0_REAL64
+MINRAD = HUGE(0.0_REAL64)
+MINRAD_PRIV = HUGE(0.0_REAL64)
 VERTEX_PRIV = 0
 
 ! Begin Level 2 parallel loop over N points in PTS.
@@ -1938,7 +1873,7 @@ DO I = 1, N
    LQ(:,1:D-1) = AT(:,1:D-1)
    CENTER(1:D-1) = B(1:D-1)
    LQ(:,D) = PTS(:,I) - PTS(:,SIMPS(1,MI))
-   CENTER(D) = DDOT(D, LQ(:,D), 1, LQ(:,D), 1) / 2.0_R8
+   CENTER(D) = DDOT(D, LQ(:,D), 1, LQ(:,D), 1) / 2.0_REAL64
    ! Compute A^T = LU.
    CALL DGETRF(D, D, LQ, D, IPIV, IERR_PRIV)
    IF (IERR_PRIV < 0) THEN ! LAPACK illegal input.
@@ -1985,7 +1920,7 @@ END IF
 IF(SIMPS(D+1,MI) .NE. 0) THEN
    ! Add new point to the linear system.
    AT(:,D) = PTS(:,SIMPS(D+1,MI)) - PTS(:,SIMPS(1,MI))
-   B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_R8
+   B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_REAL64
 END IF
 ! RETURN
 ! END SUBROUTINE MAKESIMPLEX
@@ -2014,7 +1949,7 @@ END IF
             ! most negative weight.
             !$OMP CRITICAL(CHECK_IERR)
             WEIGHTS(JTMP,MI) = WEIGHTS(D+1,MI)
-            WEIGHTS(D+1,MI) = 0.0_R8
+            WEIGHTS(D+1,MI) = 0.0_REAL64
             !$OMP END CRITICAL(CHECK_IERR)
             ! Loop through all the remaining facets from which Q(:,MI) is
             ! visible, and attempt to flip across each one.
@@ -2022,7 +1957,7 @@ END IF
                ! Restore the previous simplex and linear system.
                SIMPS(D+1,MI) = ITMP
                AT(:,D) = PTS(:,ITMP) - PTS(:,SIMPS(1,MI))
-               B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_R8
+               B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_REAL64
                ! Find the next most negative weight.
                JTMP = MINLOC(WEIGHTS(1:D+1,MI), DIM=1)
                ! Check if WEIGHTS(JTMP,MI) .GE. 0.
@@ -2033,11 +1968,11 @@ END IF
                   
                   ! Since at least one projection has already been done,
                   ! the work arrays have already been allocated.
-                  PRGOPT_DWNNLS(1) = 1.0_R8
+                  PRGOPT_DWNNLS(1) = 1.0_REAL64
                   IWORK_DWNNLS(1) = 6*D + 6
                   IWORK_DWNNLS(2) = 2*D + 2
                   ! Set equality constraint.
-                  W_DWNNLS(1,1:D+2) = 1.0_R8
+                  W_DWNNLS(1,1:D+2) = 1.0_REAL64
                   ! Populate LS coefficient matrix and RHS.
                   FORALL (I=1:D+1) W_DWNNLS(2:D+1,I) = PTS(:,SIMPS(I,MI))
                   W_DWNNLS(2:D+1,D+2) = PROJ(:)
@@ -2065,7 +2000,7 @@ END IF
                ! Swap the weights to match, and zero the most negative weight.
                !$OMP CRITICAL(CHECK_IERR)
                WEIGHTS(JTMP,MI) = WEIGHTS(D+1,MI)
-               WEIGHTS(D+1,MI) = 0.0_R8
+               WEIGHTS(D+1,MI) = 0.0_REAL64
                !$OMP END CRITICAL(CHECK_IERR)
                ! If the least weighted vertex (JTMP) is not the first vertex,
                ! then just drop row (JTMP-1) from the linear system
@@ -2076,7 +2011,7 @@ END IF
                ELSE
                   DO J=1,D
                      AT(:,J) = PTS(:,SIMPS(J+1,MI)) - PTS(:,SIMPS(1,MI))
-                     B(J) = DDOT(D, AT(:,J), 1, AT(:,J), 1) / 2.0_R8 
+                     B(J) = DDOT(D, AT(:,J), 1, AT(:,J), 1) / 2.0_REAL64 
                   END DO
                END IF
                ! Compute another simplex (try to flip again).
@@ -2148,8 +2083,8 @@ IF (D > 1) THEN ! Check that D-1 > 0, otherwise the plane is trivial.
       CYCLE OUTER
    END IF
    ! The nullspace is given by the last column of Q.
-   PLANE(1:D-1) = 0.0_R8
-   PLANE(D) = 1.0_R8
+   PLANE(1:D-1) = 0.0_REAL64
+   PLANE(D) = 1.0_REAL64
    CALL DORMQR('L', 'N', D, 1, D-1, LQ, D, TAU, PLANE, D, WORK, &
     LWORK, IERR_PRIV)
    IF(IERR_PRIV < 0) THEN ! LAPACK illegal input error.
@@ -2162,18 +2097,18 @@ IF (D > 1) THEN ! Check that D-1 > 0, otherwise the plane is trivial.
    ! Calculate the constant \alpha defining the plane.
    PLANE(D+1) = DDOT(D,PLANE(1:D),1,PTS(:,SIMPS(1,MI)),1)
 ELSE ! Special case where D=1.
-   PLANE(1) = 1.0_R8
+   PLANE(1) = 1.0_REAL64
    PLANE(2) = PTS(1,SIMPS(1,MI))
 END IF
 ! Compute the sign for the side of PLANE containing Q(:,MI).
 SIDE1 =  DDOT(D,PLANE(1:D),1,PROJ(:),1) - PLANE(D+1)
-SIDE1 = SIGN(1.0_R8,SIDE1)
+SIDE1 = SIGN(1.0_REAL64,SIDE1)
 ! Initialize the center, radius, simplex, and OpenMP variabls.
 SIMPS(D+1,MI) = 0
-CENTER(:) = 0.0_R8
-TAU(:) = 0.0_R8
-MINRAD = HUGE(0.0_R8)
-MINRAD_PRIV = HUGE(0.0_R8)
+CENTER(:) = 0.0_REAL64
+TAU(:) = 0.0_REAL64
+MINRAD = HUGE(0.0_REAL64)
+MINRAD_PRIV = HUGE(0.0_REAL64)
 VERTEX_PRIV = 0
 
 ! Begin Level 2 parallel loop over N points in PTS.
@@ -2211,7 +2146,7 @@ DO I = 1, N
    LQ(:,1:D-1) = AT(:,1:D-1)
    CENTER(1:D-1) = B(1:D-1)
    LQ(:,D) = PTS(:,I) - PTS(:,SIMPS(1,MI))
-   CENTER(D) = DDOT(D, LQ(:,D), 1, LQ(:,D), 1) / 2.0_R8
+   CENTER(D) = DDOT(D, LQ(:,D), 1, LQ(:,D), 1) / 2.0_REAL64
    ! Compute A^T = LU.
    CALL DGETRF(D, D, LQ, D, IPIV, IERR_PRIV)
    IF (IERR_PRIV < 0) THEN ! LAPACK illegal input.
@@ -2258,7 +2193,7 @@ END IF
 IF(SIMPS(D+1,MI) .NE. 0) THEN
    ! Add new point to the linear system.
    AT(:,D) = PTS(:,SIMPS(D+1,MI)) - PTS(:,SIMPS(1,MI))
-   B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_R8
+   B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_REAL64
 END IF
 ! RETURN
 ! END SUBROUTINE MAKESIMPLEX
@@ -2332,7 +2267,7 @@ END IF
 ! Initialize work array and settings values.
 IWORK_DWNNLS(1) = D+1+5*N
 IWORK_DWNNLS(2) = D+1+N
-W_DWNNLS(1, :) = 1.0_R8          ! Set convexity (equality) constraint.
+W_DWNNLS(1, :) = 1.0_REAL64          ! Set convexity (equality) constraint.
 W_DWNNLS(2:D+1,1:N) = PTS(:,:)   ! Copy data points.
 W_DWNNLS(2:D+1,N+1) = PROJ(:)    ! Copy extrapolation point.
 ! Compute the solution to the inequality constrained least squares problem to
@@ -2353,12 +2288,12 @@ ELSE IF (IERR(MI) .EQ. 2) THEN ! Illegal input detected.
    CYCLE OUTER
 END IF
 ! Compute the actual projection via matrix vector multiplication.
-CALL DGEMV('N', D, N, 1.0_R8, PTS, D, X_DWNNLS, 1, 0.0_R8, PROJ, 1)
+CALL DGEMV('N', D, N, 1.0_REAL64, PTS, D, X_DWNNLS, 1, 0.0_REAL64, PROJ, 1)
 ! Zero all weights that are approximately zero and renormalize the sum.
-WHERE (X_DWNNLS < EPSL) X_DWNNLS = 0.0_R8
+WHERE (X_DWNNLS < EPSL) X_DWNNLS = 0.0_REAL64
 X_DWNNLS(:) = X_DWNNLS(:) / SUM(X_DWNNLS)
 ! Compute the actual projection via matrix vector multiplication.
-CALL DGEMV('N', D, N, 1.0_R8, PTS, D, X_DWNNLS, 1, 0.0_R8, PROJ, 1)
+CALL DGEMV('N', D, N, 1.0_REAL64, PTS, D, X_DWNNLS, 1, 0.0_REAL64, PROJ, 1)
 RNORML = DNRM2(D, PROJ(:) - Q(:,MI), 1)
 ! RETURN
 ! END SUBROUTINE PROJECT
@@ -2382,7 +2317,7 @@ RNORML = DNRM2(D, PROJ(:) - Q(:,MI), 1)
          ! projected value.
          SIMPS(D+1,MI) = ITMP
          AT(:,D) = PTS(:,ITMP) - PTS(:,SIMPS(1,MI))
-         B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_R8
+         B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_REAL64
          IEXTRAPS = IEXTRAPS - 1 ! Decrement the budget.
       END IF
 
@@ -2468,19 +2403,19 @@ SUBROUTINE RESCALE(MINDIST, DIAMETER, SCALE)
 !    barycenter of data points)/SCALE.
 
 ! Output arguments.
-REAL(KIND=R8), INTENT(OUT) :: MINDIST, DIAMETER, SCALE
+REAL(KIND=REAL64), INTENT(OUT) :: MINDIST, DIAMETER, SCALE
 
 ! Local variables.
-REAL(KIND=R8) :: PTS_CENTER(D) ! The center of the data points PTS.
-REAL(KIND=R8) :: DISTANCE ! The current distance.
+REAL(KIND=REAL64) :: PTS_CENTER(D) ! The center of the data points PTS.
+REAL(KIND=REAL64) :: DISTANCE ! The current distance.
 
 ! Initialize local values.
-MINDIST = HUGE(0.0_R8)
-DIAMETER = 0.0_R8
-SCALE = 0.0_R8
+MINDIST = HUGE(0.0_REAL64)
+DIAMETER = 0.0_REAL64
+SCALE = 0.0_REAL64
 
 ! Compute barycenter of all data points.
-PTS_CENTER(:) = SUM(PTS(:,:), DIM=2)/REAL(N, KIND=R8)
+PTS_CENTER(:) = SUM(PTS(:,:), DIM=2)/REAL(N, KIND=REAL64)
 ! Compute the minimum and maximum distances.
 !$OMP PARALLEL DO &
 !$OMP& PRIVATE(I, DISTANCE),    &
