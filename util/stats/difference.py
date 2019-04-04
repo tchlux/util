@@ -81,7 +81,7 @@ def categorical_diff(pdf_1, pdf_2):
 #                             and conditional distributions for categories.
 #    category vs. category -- "method" total difference between full distribution
 #                             of other sequence given value of one sequence.
-def effect(seq_1, seq_2, method="mean"):
+def effect(seq_1, seq_2, method="mean", use_ks=False):
     from util.system import hash, sorted_unique
     from util.math import is_numeric
     # Check for equally lengthed sequences.
@@ -110,7 +110,14 @@ def effect(seq_1, seq_2, method="mean"):
         for cat in sorted_unique(cats):
             main_nums = [n for (n,c) in zip(nums,cats) if c != cat]
             sub_nums = [n for (n,c) in zip(nums,cats) if c == cat]
-            dist_diff = epdf_diff(main_nums, sub_nums)
+            if (not use_ks): dist_diff = epdf_diff(main_nums, sub_nums)
+            else:
+                # Use the KS-statistic to test the likelihood that the two
+                # sets come from different underlying distributions.
+                from util.stats import cdf_fit, ks_diff, ks_p_value
+                dist_diff = 1.0 - ks_p_value(
+                    ks_diff(cdf_fit(main_nums), cdf_fit(sub_nums)),
+                    len(main_nums), len(sub_nums))
             try:              diffs[cat]       = dist_diff
             except TypeError: diffs[hash(cat)] = dist_diff
         if   (method == "max"):  return max(diffs.values())
@@ -138,7 +145,9 @@ def effect(seq_1, seq_2, method="mean"):
         for cat in unique_2:
             main_seq = categorical_pdf([c1 for (c1,c2) in zip(seq_1,seq_2) if c2 != cat])
             sub_seq = categorical_pdf([c1 for (c1,c2) in zip(seq_1,seq_2) if c2 == cat])
-            dist_diff = categorical_diff( main_seq, sub_seq )
+            if (len(main_seq) > 0) and (len(sub_seq) > 0):
+                dist_diff = categorical_diff( main_seq, sub_seq )
+            else: dist_diff = 0.
             try:              diffs[(None,cat)]       = dist_diff
             except TypeError: diffs[(None,hash(cat))] = dist_diff
         # Return the desired measure of difference between the two.

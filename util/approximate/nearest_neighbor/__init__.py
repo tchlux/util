@@ -1,6 +1,7 @@
 import numpy as np
 from util.approximate import WeightedApproximator
 from util.math import is_none, abs_diff
+from sklearn.neighbors import KDTree
 
 # Construct an approximation algorithm that only returns the average
 # of the fit points.
@@ -26,10 +27,11 @@ class NearestNeighbor(WeightedApproximator):
         self.auto_kwargs = auto_kwargs
 
     # Use fortran code to compute the boxes for the given data
-    def _fit(self, control_points, k=None, **kwargs):
-        if not is_none(k): self.num_neighbors = k
+    def _fit(self, control_points, k=None, display=True, **kwargs):
+        if (not is_none(k)): self.num_neighbors = k
         # Process and store local information
         self.points = control_points.copy()
+        self.tree = KDTree(self.points)
         # Automatically select the value for "k" if appropriate and
         # the response values are available for the points.
         if is_none(self.num_neighbors):
@@ -39,16 +41,18 @@ class NearestNeighbor(WeightedApproximator):
                 if "mean" not in self.auto_kwargs:
                     self.auto_kwargs["mean"] = not self.classifier
                 # Begin the estimation of best value for 'k'.
-                print("Nearest neighbor, estimating best value for 'k'..", end="\r", flush=True)
+                end = ("\n" if display else "\r")
+                print("Nearest neighbor, estimating best value for 'k'..", end=end, flush=True)
                 self.num_neighbors = auto(self.points, self.y, **self.auto_kwargs)
-                print("                                                 ", end="\r", flush=True)
+                print(f"  chose k = {self.num_neighbors}", end=end, flush=True)
+                print("                                                 ", end=end, flush=True)
             else:
                 self.num_neighbors = 1
 
     # Function that returns the indices of points and the weights that
     # should be used to make associated predictions for each point in
     # "points".
-    def _predict(self, points, display=True):
+    def _predict(self, points, max_size=2**20, display=True):
         if display: import time
         # Body
         pts = []
@@ -56,15 +60,15 @@ class NearestNeighbor(WeightedApproximator):
         if display:
             update = end = ""
             start = time.time()
+        # Cycle through points and make prediction.
         for i,pt in enumerate(points):
             if display and (time.time() - start > 1):
                 update = "\b"*len(end)
                 end = f" nearest neighbor predicting {i+1} of {len(points)}.."
                 print(update, end=end, flush=True)
                 start = time.time()
-            distances = np.sum((self.points - pt)**2, axis=1)
-            closest = np.argsort(distances)[:self.num_neighbors]
-            distances = distances[closest]
+            closest = self.tree.query(pt[None,:], k=self.num_neighbors,
+                                      return_distance=False)[0]
             # Use another weighted approximator to handle final prediction.
             model = self.method()
             model.fit(self.points[closest])
@@ -124,11 +128,13 @@ def auto(points, values, metric=abs_diff, max_k=None, samples=100,
 
 
 if __name__ == "__main__":
-    d = 10
-    n = 511
-    points = np.random.random(size=(n,d))
-    values = np.random.random(size=(n,d))
-    k = auto(points, values, display=True)
+    TEST_AUTO = False
+    if TEST_AUTO:
+        d = 10
+        n = 511
+        points = np.random.random(size=(n,d))
+        values = np.random.random(size=(n,d))
+        k = auto(points, values, display=True)
 
     from util.approximate import condition
     m = condition(NearestNeighbor, method="MPCA", display=True)()

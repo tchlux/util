@@ -1238,7 +1238,7 @@ class Data(list):
     # 
     # Print out the sorted table of pairwise effects between columns,
     # showing the highest effects first, the smallest last.
-    def effect(self, compare_with=None, method="mean", display=True):
+    def effect(self, compare_with=None, method="mean", display=True, **kwargs):
         from itertools import combinations
         from util.stats import effect
         if (type(compare_with) == type(None)): compare_with = set(self.names)
@@ -1248,10 +1248,10 @@ class Data(list):
         effs = []
         for (col_1, col_2) in combinations(self.names, 2):
             if (col_1 in compare_with):
-                eff = effect(list(self[col_1]), list(self[col_2]), method=method)
+                eff = effect(list(self[col_1]), list(self[col_2]), method=method, **kwargs)
                 effs.append( (col_1, col_2, eff) )
             elif (col_2 in compare_with):
-                eff = effect(list(self[col_1]), list(self[col_2]), method=method)
+                eff = effect(list(self[col_1]), list(self[col_2]), method=method, **kwargs)
                 effs.append( (col_2, col_1, eff) )
         # Convert an effect to a sortable number (lowest most important).
         def to_num(eff): 
@@ -1278,7 +1278,7 @@ class Data(list):
         for (col_1, col_2, eff) in effs:
             eff = to_str(eff)
             rows += [f"{col_1:{max_len_1}s}  |  {col_2:{max_len_2}s}  |  {eff}"]
-        row_len = max(map(len, rows))
+        row_len = max(len(header), max(map(len, rows)))
         rows = ["", '-'*row_len, header, '-'*row_len] + rows + ['-'*row_len, ""]
         for row in rows: print(row)
         # Return the sorted effect triple list [(col 1, col 2, effect)].

@@ -10,7 +10,7 @@ from util.approximate.wrappers import unique, condition
 
 # Weighted approximators (define predictions as convex weighted sums).
 from util.approximate.nearest_neighbor import NearestNeighbor
-from util.approximate.delaunay import Delaunay
+from util.approximate.delaunay import Delaunay, qHullDelaunay
 from util.approximate.voronoi import Voronoi
 from util.approximate.box_mesh import BoxMesh
 from util.approximate.modified_shepard import ShepMod
