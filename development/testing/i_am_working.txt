@@ -1,0 +1,10 @@
+This process has started!
+Getting authorization..
+Getting sender at port 10000..
+Getting listener at port 10001..
+accepting connection..
+Receiving  globals..
+Receiving function..
+Receiving 'args' and 'kwargs'..
+Running the function..
+done

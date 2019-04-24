@@ -1,15 +1,21 @@
-from util.data.exceptions import BadValue
+from util.data.exceptions import BadValue, ImproperUsage
 
 # This class is a protected type of list where the contents are
 # supposed to be of a specific type. It enforces that assignment and
 # append operations do not violate the type specifiation of the object.
-class Descriptor(list):
+class Descriptor:
     # Initialize this descriptor, make sure all elements of 'values'
     # have the same type if provided.
-    def __init__(self, values, t=type(None)):
+    def __init__(self, data=None, t=type(None), indices=None):
+        # Store the provided data (or make a new set)
+        if (type(data) == type(None)): data = []
+        self.data = data
+        # Store the provided indices (or make a new list of them)
+        if (type(indices) == type(None)): indices = list(range(len(data)))
+        self.indices = indices
+        # Initialize the type.
         self.type = t
-        super().__init__(values)
-        for value in values:
+        for value in self.data:
             if (self.type == type(None)): self.type = type(value)
             if (self.type != type(value)):
                 raise(BadValue(f"Only type '{self.type}' objects can be added to this descriptor."))
@@ -19,15 +25,40 @@ class Descriptor(list):
         if (self.type == type(None)): self.type = type(value)
         if (self.type != type(value)):
             raise(BadValue(f"Only type '{self.type}' objects can be added to this descriptor."))
-        return super().append(value)
+        return self.data.append(value)
 
     # Check for type in the "setitem" operation.
     def __setitem__(self, index, value):
         if (self.type == type(None)): self.type = type(value)
         if (self.type != type(value)):
             raise(BadValue(f"Only type '{self.type}' objects can be added to this descriptor."))
-        return super().__setitem__(index, value)
+        self.data[self.indices[index]] = value
 
+    # When "getitem" is called, make a "view" over this Descriptor.
+    def __getitem__(self, index):
+        # If this is a slice, then return a 
+        if (type(index) == slice):
+            return type(self)(data=self.data, t=self.type, indices=self.indices[index])
+        # Use the standard getitem operator.
+        return self.data[self.indices[index]]
+
+    # Define a "len" operator.
+    def __len__(self): return len(self.data)
+
+    # Define an "insert" function.
+    def insert(self, idx, value):
+        if (self.type == type(None)): self.type = type(value)
+        if (self.type != type(value)):
+            raise(BadValue(f"Only type '{self.type}' objects can be added to this descriptor."))
+        if (tuple(set(self.indices)) != tuple(range(len(self.data)))):
+            raise(ImproperUsage("Not allowed to insert into a Descriptor view."))
+        # Add the additional index.
+        self.indices.append(len(self.data))
+        # Add the new "value" at a desired "index".
+        return self.data.insert(self.indices[idx], value)
+
+    # Identify the index (column number) of a value.
+    def index(self, value): return self.indices.index(self.data.index(value))
 
 # Local mutable Column class (for column item assignment,
 # retrieval, and iteration over a column in a data object).
@@ -89,51 +120,82 @@ class Column:
 
     #     Operators
     # -----------------
-    # Define the "in" method to return True for contained values.
-    def __in__(self, value): return any(v == value for v in self)
-    # Inequality operator
-    def __ne__(self, group):
-        return self.__eq__(group, equality=False)
-    # Iterate over the indices that exist in a set of values
-    def __eq__(self, group, equality=True):
+    # Generic boolean operator function.
+    def _gen_operator(self, other, op_name):
+        # First check for length.
+        if hasattr(other, "__len__"):
+            # If it is not a singleton, raise an error.
+            if (type(other) != self.data.types[self.column]):
+                # If the length doesn't match, check if it is a singleton.
+                if (len(other) != len(self)):
+                    raise(self.data.BadValue(f"Length '{len(other)}' does not have the same number of elements as this Column, {len(self)}."))
+                # Return pairwise comparison for equal-length objects.
+                for (v1, v2) in zip(self, other):
+                    if (type(v1) == type(None)) or (type(v2) == type(None)): yield None
+                    else:                                                    yield getattr(v1, op_name)(v2)
+            else:
+                # Otherwise return singleton comparison.
+                for v in self:
+                    if (type(v) == type(None)): yield None
+                    else:                       yield getattr(v, op_name)(other)
+        # Without a length, it must be a singleton comparison.
+        else:
+            for v in self:
+                if (type(v) == type(None)): yield None
+                else:                       yield getattr(v, op_name)(other)
+
+    # Custom equality operator.
+    def _custom_equality(self, other, equality=True):
         # Try to convert given group to an iterable type for comparison.
-        if ((type(group) == self.data.types[self.column]) or (type(group) == type(None))):
+        if ((type(other) == self.data.types[self.column]) or (type(other) == type(None))):
             # Return indices where single value equals column values.
             for i,v in enumerate(self):
-                if (equality and (v == group)):       yield i
-                elif (not equality) and (v != group): yield i
-        elif (type(group) == type(self)):
+                if (equality and (v == other)):       yield i
+                elif (not equality) and (v != other): yield i
+        elif (type(other) == type(self)):
             # Return indices where the two columns are equal (or not).
-            for i,(v1, v2) in enumerate(zip(self, group)):
+            for i,(v1, v2) in enumerate(zip(self, other)):
                 if (equality and (v1 == v2)):       yield i
                 elif (not equality) and (v1 != v2): yield i
-        elif (type(group) in {set, list}):
+        elif (type(other) == set):
             # Iterate over rows, generating indices that match the equality.
             for i,v in enumerate(self):
-                if (equality and (v in group)):             yield i
-                elif ((not equality) and (v not in group)): yield i
+                if (equality and (v in other)):             yield i
+                elif ((not equality) and (v not in other)): yield i
         else:
-            raise(self.data.BadData(f"There is no defined equality operator for the provided type {type(group)}, when it does not match expected type {self.data.types[self.column]}."))
-    # Iterate over the indices based on a comparison operator
-    def __lt__(self, val):
-        # Iterate over values in this column
-        for i,v in enumerate(self):
-            if (v < val): yield i
-    # Iterate over the indices based on a comparison operator
-    def __gt__(self, val):
-        # Iterate over values in this column
-        for i,v in enumerate(self):
-            if (v > val): yield i
-    # Iterate over the indices based on a comparison operator
-    def __le__(self, val):
-        # Iterate over values in this column
-        for i,v in enumerate(self):
-            if (v <= val): yield i
-    # Iterate over the indices based on a comparison operator
-    def __ge__(self, val):
-        # Iterate over values in this column
-        for i,v in enumerate(self):
-            if (v >= val): yield i
+            raise(self.data.BadData(f"There is no defined equality operator for the provided type {type(other)}, when it does not match expected type {self.data.types[self.column]}."))
+
+    # Define the custom inequality operator using custom equality.
+    def _custom_inequality(self, other): return self._custom_equality(other, equality=False)
+
+    # Define the "in" method to return True for contained values.
+    def __in__(self, value): return any(v == value for v in self)
+    # Equality operator.
+    def __eq__(self, other): return self._custom_equality(other)
+    # Inequality operator.
+    def __ne__(self, other): return self._custom_inequality(other)
+    # Less than operator.
+    def __lt__(self, other): return self._gen_operator(other, "__lt__")
+    # Greater than operator.
+    def __gt__(self, other): return self._gen_operator(other, "__gt__")
+    # Less than equal operator.
+    def __le__(self, other): return self._gen_operator(other, "__le__")
+    # Greater than equal operator.
+    def __ge__(self, other): return self._gen_operator(other, "__ge__")
+    # Addition operator.
+    def __add__(self, other): return self._gen_operator(other, "__add__")
+    # Subtraction operator.
+    def __sub__(self, other): return self._gen_operator(other, "__sub__")
+    # Right-side addition operator.
+    def __radd__(self, other): return self._gen_operator(other, "__radd__")
+    # Right-side subtraction operator.
+    def __rsub__(self, other): return self._gen_operator(other, "__rsub__")
+    # Multiplication operator.
+    def __mul__(self, other): return self._gen_operator(other, "__mul__")
+    # True division operator ( a / b ).
+    def __truediv__(self, other): return self._gen_operator(other, "__truediv__")
+    # Floor division operator ( a // b ).
+    def __floordiv__(self, other): return self._gen_operator(other, "__truediv__")
 
 
 # Local class for iterating over 'rows' of this data object,
@@ -142,21 +204,29 @@ class Row:
     def __init__(self, data, values):
         self.data = data
         self.values = values
+
     # Convert an acceptable index into a list of numbers.
     def _index_to_nums(self, index):
+        # Declare the indices of this row based on its parent data object.
+        if (type(self.data.col_indices) != type(None)): indices = self.data.col_indices
+        else:                                           indices = list(range(len(self.values)))
         # Return integer indices.
-        if   type(index) == int:   nums = [index]
+        if   type(index) == int:   nums = [indices[index]]
         # Return slice indices.
-        elif type(index) == slice: nums = range(len(self.values))[index]
+        elif type(index) == slice: nums = [indices[i] for i in range(len(self.values))[index]]
         # Return string indices (based on parent data).
         elif type(index) == str:   nums = [self.data.names.index(index)]
         # Convert an iterable into a list of numeric indices.
         elif hasattr(index, "__iter__"):
             nums = []
-            for v in index:
-                if   type(v) == int: nums.append(v)
-                elif type(v) == str: nums.append(self.data.names.index(v))
+            for i,v in enumerate(index):
+                if   type(v) == int:  nums.append(indices[v])
+                elif type(v) == str:  nums.append(self.data.names.index(v))
+                elif (type(v) == bool) and v: nums.append(indices[i])
                 else: raise(self.data.BadIndex(f"Index '{index}' not understood by {type(self)} object."))
+            # Make sure that boolean indices are full length.
+            if (type(v) == bool) and (i != len(self)-1):
+                raise(self.data.BadValue(f"Length '{i+1}' boolean index does not have the same number of elements as this Row, {len(self)}."))
         else: raise(self.data.BadIndex(f"Index '{index}' not understood by {type(self)} object."))
         return nums
     # Get an item from this row.
@@ -182,62 +252,84 @@ class Row:
         if (id(self) in self.data.missing) and (None not in self):
             self.data.missing.remove(id(self))
     # Define a "length" for this row.
-    def __len__(self): return len(self.values)
-    def __str__(self): return str(self.values)
+    def __len__(self): return min(len(self.data.names), len(self.values))
+    def __str__(self):
+        # Declare the indices of this row based on its parent data object.
+        if (type(self.data.col_indices) != type(None)): indices = self.data.col_indices
+        else:                                           indices = list(range(len(self.values)))
+        return str([self.values[i] for i in indices])
     # Define a "insert" function.
     def insert(self, i, value):
+        # Declare the indices of this row based on its parent data object.
+        if (type(self.data.col_indices) != type(None)): indices = self.data.col_indices
+        else:                                           indices = list(range(len(self.values)))
+        if (tuple(set(indices)) != tuple(range(len(self.values)))):
+            raise(self.data.ImproperUsage(f"This row is only a view and does not support insertion."))
         if (len(self) != len(self.data.names)-1):
             raise(self.data.ImproperUsage(f"Invalid insertion operation on {type(self)}."))
+        # Return the insertion of the new value.
         return self.values.insert(i, value)
     # Define a "pop" function.
     def pop(self, i):
+        # Declare the indices of this row based on its parent data object.
+        if (type(self.data.col_indices) != type(None)): indices = self.data.col_indices
+        else:                                           indices = list(range(len(self.values)))
+        if (tuple(set(indices)) != tuple(range(self.values))):
+            raise(self.data.ImproperUsage(f"This row is only a view and does not support 'pop'."))
         if (len(self) != len(self.data.names)+1):
             raise(self.data.ImproperUsage(f"Invalid pop operation on {type(self)}."))
         return self.values.pop(i)
 
-    # #    Operators
-    # # ---------------
-    # # Define the "in" method to return True for contained values.
-    # def __in__(self, value): return any(v == value for v in self.values)
-    # # Inequality operator
-    # def __ne__(self, group):
-    #     return self.__eq__(group, equality=False)
-    # # Iterate over the indices that exist in a set of values
-    # def __eq__(self, group, equality=True):
-    #     # Try to convert given group to an iterable type for comparison.
-    #     if (not hasattr(group, "__len__")):
-    #         raise(self.data.ImproperUsage(f"Type '{type(group)}' cannot be compared with Row."))
-    #     elif (len(group) != len(self.values)):
-    #         raise(self.data.BadValue(f"Length '{len(group)}' does not have the same number of elements as this Row."))
-    #     elif (type(group) == type(self)):
-    #         # Return indices where the two columns are equal (or not).
-    #         for i,(v1, v2) in enumerate(zip(self, group)):
-    #             if (equality and (v1 == v2)):       yield i
-    #             elif (not equality) and (v1 != v2): yield i
-    #     elif (type(group) in {set, list}):
-    #         # Iterate over rows, generating indices that match the equality.
-    #         for i,v in enumerate(self):
-    #             if (equality and (v in group)):             yield i
-    #             elif ((not equality) and (v not in group)): yield i
-    #     else:
-    #         raise(self.data.BadData(f"There is no defined equality operator for the provided type {type(group)}, when it does not match expected type {self.data.types[self.column]}."))
-    # # Iterate over the indices based on a comparison operator
-    # def __lt__(self, val):
-    #     # Iterate over values in this column
-    #     for i,v in enumerate(self):
-    #         if (v < val): yield i
-    # # Iterate over the indices based on a comparison operator
-    # def __gt__(self, val):
-    #     # Iterate over values in this column
-    #     for i,v in enumerate(self):
-    #         if (v > val): yield i
-    # # Iterate over the indices based on a comparison operator
-    # def __le__(self, val):
-    #     # Iterate over values in this column
-    #     for i,v in enumerate(self):
-    #         if (v <= val): yield i
-    # # Iterate over the indices based on a comparison operator
-    # def __ge__(self, val):
-    #     # Iterate over values in this column
-    #     for i,v in enumerate(self):
-    #         if (v >= val): yield i
+    #    Operators
+    # ---------------
+
+    # Generic boolean operator function.
+    def _gen_operator(self, other, op_name):
+        # First check for length.
+        if hasattr(other, "__len__"):
+            # If the length doesn't match, check if it is a singleton.
+            if (len(other) != len(self)):
+                # If it is not a singleton, raise an error.
+                if (type(other) != self.data.types[self.column]):
+                    raise(self.data.BadValue(f"Length '{len(other)}' does not have the same number of elements as this Row, {len(self)}."))
+                # Otherwise return singleton comparison.
+                for v in self:
+                    if (type(v) == type(None)): yield None
+                    else:                       yield getattr(v, op_name)(other)
+            # Return pairwise comparison for equal-length objects.
+            else:
+                for (v1, v2) in zip(self, other):
+                    if (type(v1) == type(None)) or (type(v2) == type(None)): yield None
+                    else:                                                    yield getattr(v1, op_name)(v2)
+        # Without a length, it must be a singleton comparison.
+        else:
+            for v in self:
+                if (type(v) == type(None)): yield None
+                else:                       yield getattr(v, op_name)(other)
+
+    # Inequality operator.
+    def __ne__(self, other): return self._gen_operator(other, "__ne__")
+    # Equality operator.
+    def __eq__(self, other): return self._gen_operator(other, "__eq__")
+    # Less than operator.
+    def __lt__(self, other): return self._gen_operator(other, "__lt__")
+    # Greater than operator.
+    def __gt__(self, other): return self._gen_operator(other, "__gt__")
+    # Less than equal operator.
+    def __le__(self, other): return self._gen_operator(other, "__le__")
+    # Greater than equal operator.
+    def __ge__(self, other): return self._gen_operator(other, "__ge__")
+    # Addition operator.
+    def __add__(self, other): return self._gen_operator(other, "__add__")
+    # Subtraction operator.
+    def __sub__(self, other): return self._gen_operator(other, "__sub__")
+    # Right-side addition operator.
+    def __radd__(self, other): return self._gen_operator(other, "__radd__")
+    # Right-side subtraction operator.
+    def __rsub__(self, other): return self._gen_operator(other, "__rsub__")
+    # Multiplication operator.
+    def __mul__(self, other): return self._gen_operator(other, "__mul__")
+    # True division operator ( a / b ).
+    def __truediv__(self, other): return self._gen_operator(other, "__truediv__")
+    # Floor division operator ( a // b ).
+    def __floordiv__(self, other): return self._gen_operator(other, "__truediv__")

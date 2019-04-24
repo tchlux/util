@@ -12,6 +12,14 @@
 # 
 #  type_check     -- Enforce input types for function.
 # 
+#  capture        -- Capture all standard error and standard output
+#                    from most recent function call and store it in
+#                    function attributes ".stdout" and ".stderr".
+# 
+#  background     -- Provides a decorator-like interface that runs a
+#                    command in the background. Blocking wait for
+#                    results is not performed until an attribute is
+#                    accessed.
 
 # ==================================================================
 #                         SameAs Decorator
@@ -413,135 +421,270 @@ def type_check(*types, **types_by_name):
 
 
 # ==================================================================
-#                   Code for testing decorators
+#                         Capture Decorator
 # 
-def testing_and_verification():
-    import os
-    temp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "testing_decorators")
-    def test_cache():
-        # Documentation for "simple_add"
-        @cache(max_files=10, cache_dir=temp_dir)
-        def simple_add(a, b):
-            return a.union(b)
-        # Run the function many times (with a non-hashable object) to
-        # demonstrate that it all works
-        for i in range(10):
-            print(simple_add({1,2},{i}))
+# Decorator that captures all of the called functions output to
+# standard error and standard output. They are stored in attributes of
+# the function named "stderr" and "stdout" respectively.
+# 
+# USAGE: 
+# 
+#   @capture
+#   def <function_to_decorate>(...):
+#      ...
+# 
+#   OR
+# 
+#   <function> = capture(<function_to_decorate>)
+#   
+# Define the capture function.
+def capture(func):
+    import tempfile, sys
+    import multiprocessing.connection
+    try:    import dill as pickle
+    except: import pickle
 
-    def test_stability_lock():
-        @stability_lock(max_tests=5, test_dir=temp_dir)
-        def func(a, b):
-            # c = 10
-            return a + b
+    # Get a "run" command and make it execute non-blocking.
+    from util.system import run
+    run = background(run)
+    # Custom exception.
+    class FailedConnection(Exception): pass
+    # Get the capture worker program template from file.
+    from util.decorators import CAPTURE_WORKER
+    with open(CAPTURE_WORKER, "r") as f: capture_worker_program = f.read()
 
-        max_val = 20
-        for i in range(1,max_val+1):
-            a = list(range(1,i))
-            b = list(range(i+1,max_val+1))
-            func(a,b)
+    # Retrieve the first available port in a range by tring to establish
+    # listeners on different ports.
+    def get_port(key, start_port=10000, attempts=1000):
+        import socket
+        import multiprocessing.connection        
+        # Loop through potential ports.
+        for i in range(start_port, start_port+attempts):
+            try:
+                port = i
+                listener = multiprocessing.connection.Listener(
+                    ('localhost', port), authkey=key)
+                break
+            # If the port is unavailable, keep trying.
+            except Exception as ex:
+                # 48 -- Port already in use.
+                if ex.errno not in {48,}: raise(ex)
+        else:
+            raise(FailedConnection("Could not establish a listener."))
+        # Free the memory (and the port since we know it's available).
+        del(listener)
+        return port
 
-    def test_timeout():
-        # This is a testing function for the timeout decorator. These
-        # comments will still be included in the documentation for the function.
-        @timeout(2,"Failed...")
-        def sample_func(sec):
-            import time
-            print(" Going to sleep for '%.1f' seconds."%(sec), end="\r")
-            time.sleep(sec)
-            print(" Finished sleeping!", end="\r")
-        print("@timeout short wait passed:",sample_func(1.5) == None)
-        print("@timeout long wait passed: ",sample_func(2.5) == "Failed...")
-        # Re-run with the alternative style of decoration.
-        def sample_func(sec):
-            import time
-            print(" Going to sleep for '%.1f' seconds."%(sec), end="\r")
-            time.sleep(sec)
-            print(" Finished sleeping!", end="\r")
-        sample_func = timeout(2,"Failed...")(sample_func)
-        print("@timeout short wait passed:",sample_func(1.5) == None)
-        print("@timeout long wait passed: ",sample_func(2.5) == "Failed...")
-        print()
-
-    # This is a testing function for the type_check decorator.
-    def test_type_check():
-        class TestCaseFailed(Exception): pass
-
-        @type_check(int, {int,float}, [float, int], lambda arg: hasattr(arg, "__call__"))
-        def func(arg_int, arg_int_or_float, arg_list_float_int, arg_callable):
-            print("Passed", type(arg_int), type(arg_int_or_float), 
-                  type(arg_list_float_int), arg_callable)
-
-        func(1, 1, [.0,1], lambda: None)
-        func(0, 1.0, [.0,1], lambda: None)
-        class test:
-            def __call__(): pass
-        func(1, 1, [.0,1], test)
-
-        # Test case 0
-        try:
-            func()
-            raise(TestCaseFailed())        
-        except Exception as exc:
-            if ("WrongNumberOfArguments" in str(type(exc))):
-                print("Passed correct exception for wrong number of arguments.")
-            else:
-                raise(TestCaseFailed("An unexpected exception was raised for wrong number of arguments.\n\n"+str(type(exc))))
-        # Test case 1
-        try:
-            func(1.0, 0, [.0, 1], 0)
-            raise(TestCaseFailed())
-        except Exception as exc:
-            if ("WrongType" in str(type(exc))):
-                print("Passed correct exception for wrong argument type.")
-            else:
-                raise(TestCaseFailed("An unexpected exception was raised for wrong argument type.\n\n"+str(type(exc))))
-        # Test case 2
-        try:
-            func(0, 0, [.0, 1], 0)
-            raise(TestCaseFailed())
-        except Exception as exc:
-            if ("WrongType_FailedCheck" in str(type(exc))):
-                print("Passed correct exception for wrong keyword argument type.")
-            else:
-                raise(TestCaseFailed("An unexpected exception was raised for wrong keyword argument type.\n\n"+str(type(exc))))
-        # Test case 3
-        try:
-            func(0, 0, 0, 0)
-            raise(TestCaseFailed())
-        except Exception as exc:
-            if ("WrongType" in str(type(exc))):
-                print("Passed correct exception for wrong type for list argument.")
-            else:
-                raise(TestCaseFailed("An unexpected exception was raised for wrong type for list argument.\n\n"+str(type(exc))))
-        # Test case 4
-        try:
-            func(0, 0, [0,0], 0)
-            raise(TestCaseFailed())
-        except Exception as exc:
-            if ("WrongType_NotListed" in str(type(exc))):
-                print("Passed correct exception for wrong listed argument type.")
-            else:
-                raise(TestCaseFailed("An unexpected exception was raised for wrong listed argument type.\n\n"+str(type(exc))))
-        # Test case 5
-        try:
-            func = type_check((int, float), float)(func)
-            raise(TestCaseFailed())
-        except Exception as exc:
-            if ("WrongUsageOfTypeCheck" in str(type(exc))):
-                print("Passed correct exception for improper developer usage.")
-            else:
-                raise(TestCaseFailed("An unexpected exception was raised for improper developer usage.\n\n"+str(type(exc))))
+    stdout = []
+    stderr = []
+    # Create a function that runs in a sub-process and captures all output.
+    def captured_func(*args, **kwargs):
+        # Generat an authorization key
+        authorization_str = 'jaaodfivjnlaeoi183hn08402jlkad'
+        authorization = bytes(authorization_str, "ascii")
+        # Get the ports for listening and sending.
+        port_in = get_port(authorization)
+        listener = multiprocessing.connection.Listener(('localhost', port_in), authkey=authorization)
+        port_out = get_port(authorization)
+        # Start child process (it should create a listener on other port) then
+        # a client that needs this listener to accept it.
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as prog_file:
+            temp_file_name = prog_file.name
+            prog_file.write(capture_worker_program.format(
+                authorization=authorization_str,
+                port_in=port_out, port_out=port_in))
+            # "run" the program, non-blocking in the background.
+            command_output = run([sys.executable, temp_file_name])
+        # Accept the connection that was requested by client.
+        listener = listener.accept()
+        # Request a connection to the other process.
+        sender = multiprocessing.connection.Client(('localhost', port_out), authkey=authorization)
+        # Send the "globals", the "func", and the "args, kwargs" pair for "func".
+        sender.send_bytes(pickle.dumps(globals()))
+        sender.send_bytes(pickle.dumps(func))
+        sender.send_bytes(pickle.dumps((args, kwargs)))
+        output = pickle.loads(listener.recv_bytes())
+        # Clear the global variables used to store "stdout" and "stderr".
+        stdout.clear()
+        stderr.clear()
+        # Retrieve the result from the "run" process executed in the background.
+        code, stdout_lines, stderr_lines = command_output.result
+        # Terminate any lingering processes.
+        run.terminate()
+        # Update the contents of stdout and stderr.
+        for l in stdout_lines: stdout.append(l)
+        for l in stderr_lines: stderr.append(l)
+        # Return the output to the caller.
+        return output
+    # Add attributes to the function that hold stdout and stderr.
+    setattr(captured_func, "stdout", stdout)
+    setattr(captured_func, "stderr", stderr)
+    # Return the captured function.
+    return captured_func
 
 
-    test_cache()
-    test_stability_lock()
-    test_timeout()
-    test_type_check()
+# ==================================================================
+#                      Background Decorator
+# 
+# This class provides a decorator-like interface that runs a command
+# in the background. This uses a separate process so any global
+# variable changes made by the funtion will not be propagated back to
+# the parent process!
+# 
+# Once the output wants to be retrieved, use the ".result" attribute.
+# 
+# USAGE: 
+# 
+#   @background
+#   def <function_to_decorate>(...):
+#      ...
+# 
+#   OR
+# 
+#   <function> = background(<function_to_decorate>)
+#   
+# Results from the function when called will be returned in a
+# 'Results' object that behaves (to a reasonable extent) like the
+# actual underlying return value. If the user wants actual results
+# then that must be retrieved with '<function output>.result'.
+# 
+# First define a "result" data-descriptor for returned results from
+# the 'background' decorator. This will allow for many basic operators
+# to be used on the result as if it is literally the result.
+# 
+class Result:
+    # Initialize with a record of the parent and job number.
+    def __init__(self, parent, job_num):
+        super().__setattr__("_parent", parent)
+        super().__setattr__("_job_num", job_num)
+        super().__setattr__("_retrieved", False)
+        super().__setattr__("_result", None)
+    # Overwrite all attribute access to return the "result" attributes.
+    def __getattr__(self, attr_name=""):
+        return getattr(self.result, attr_name)
+    # Make the retrieval of "result" blocking.
+    @property
+    def result(self):
+        retrieved = super().__getattribute__('_retrieved')
+        if (not retrieved):
+            parent  = super().__getattribute__('_parent')
+            job_num = super().__getattribute__('_job_num')
+            result = parent.retrieve(job_num)
+            super().__setattr__("_result", result)
+            super().__setattr__("_retrieved", True)
+        return super().__getattribute__('_result')
+# Modify the "Result" class to behave like the "value" it contains.
+_ = {"__init__", "__getattr__", "__getattribute__", "__class__",
+     "__new__", "__dict__", "_retrieved", "_result", "_parent",
+     "_job_num", "result"}
+_ = [n for n in dir(Result) if (n not in _)]
+# Create a method generating function.
+def method_gen(name):
+    def method(*args, **kwargs):
+        self = args[0]
+        return self.__getattr__(name)(*args[1:], **kwargs)
+    return method
+# Cycle through and overwrite all the standard methods.
+for _ in _: setattr(Result, _, method_gen(_))
+del(_)
+# 
+# 
+# Beginning of actual 'Background' deocrator class definition.
+class background:                              
+    _job_count = 0
+    _res_count = 0
+    _completed = None
+    _results = None
+    _jobs = None
 
-    # Remove the testing directory.
-    import shutil
-    shutil.rmtree(temp_dir)
+    # Define a function for running a job.
+    def _run_job(q, job_num, func, args, kwargs):
+        q.put( (job_num, background.loads(func)(*args, **kwargs)) )
 
+    # Define custom exceptions.
+    class NotCalled(Exception): pass
+    class UsageError(Exception): pass
 
-if __name__ == "__main__":
-    testing_and_verification()
+    # Import methods to dump and load functions to pass between processes.
+    from dill import dumps, loads
+
+    # Define a property (with no setter) for looking at the function.
+    @property
+    def func(self): return background.loads(self._func)
+    @property
+    def completed(self): return len(self._completed)
+    @property
+    def running(self): return len(self._jobs)
+    @property
+    def pending(self): return len(self._results)
+
+    # Define this so that it behaves like a decorator.
+    def __init__(self, func):
+        from multiprocessing import get_context
+        # Initialize storage for all of the details about this function.
+        self._completed = []
+        self._jobs = {}
+        self._results = {}
+        # Store the function in a serialized format.
+        self._func = background.dumps(func)
+        # Create multiprocessing context (not to muddle with others)
+        self._ctx = get_context() # "fork" on Linux, "spawn" on Windows.
+        # Create a queue for receiving function output.
+        self._queue = self._ctx.Queue(1)
+        # Register this background function for "cleanup" on python exit.
+        import atexit
+        atexit.register(self.terminate)
+
+    # This is the method that's supposed to "call" the decorated function.
+    def __call__(self, *args, **kwargs):
+        # Serialize all the arguments to pass them to the subprocess.
+        arguments = (self._queue, self._job_count, self._func, args, kwargs)
+        self._jobs[self._job_count] = self._ctx.Process(
+            target=background._run_job, args=arguments)
+        # Start the job in the background.
+        self._jobs[self._job_count].start()
+        # Increment the job counter.
+        self._job_count += 1
+        # Return a Result object.
+        return Result(self, self._job_count-1)
+
+    # Print out information about this background function.
+    def __str__(self):
+        try:    name = "'" + self.func.__name__ + "'"
+        except: name = ""
+        string = f"Background function {name}\n"
+        string += f"  completed jobs:  {self.completed}\n"
+        string += f"  running jobs:    {self.running}\n"
+        string += f"  pending results: {self.pending}\n"
+        string += f" Get background function description with 'help(<this>.func)'.\n"
+        string += f" All results are wrapped 'Result' instances that can be\n"
+        string += f"  unpacked by accessing '<output>.result'."
+        return string
+
+    # If del is called, clean up all processes and terminate.
+    def terminate(self):
+        names = list(self._jobs.keys())
+        for n in names: self._jobs.pop(n).terminate()
+
+    # Define a "get" so that once the value is retrieved the process
+    # is waited on for results.
+    def retrieve(self, job):
+        if (self._job_count == 0): raise(background.NotCalled(
+                "This function has not been called yet."))
+        if (job in self._completed): raise(background.UsageError(
+                f"The job {job} has already been retrieved and deleted from this background instance."))
+        # Continue getting jobs until the desired one is retrieved.
+        while (job not in self._results):
+            job_num, result = self._queue.get()
+            self._results[job_num] = result
+            # If an exception was encountered, terminate and raise.
+            if isinstance(result, Exception):
+                self.terminate()
+                raise(value)
+            # Join the job (end process) since it must be done.
+            self._jobs.pop(job_num).join()
+        # Increase the counter (the next result has been found and returned).
+        self._completed.append(job)
+        # Return the next result to the caller.
+        return self._results.pop(job)
+

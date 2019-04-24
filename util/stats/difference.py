@@ -81,6 +81,19 @@ def categorical_diff(pdf_1, pdf_2):
 #                             and conditional distributions for categories.
 #    category vs. category -- "method" total difference between full distribution
 #                             of other sequence given value of one sequence.
+# 
+# INPUTS:
+# 
+#   seq_1  -- An iterable of objects with a "__len__" property.
+#   seq_2  -- An iterable of objects with a "__len__" property.
+#   method -- Either "max", "min", "mean" or None. Determines how the
+#             "effect" is computed for cat-num and cat-cat computations,
+#             since each will yield multiple difference values.
+#             (method==None) returns the full set of differences.
+#   use_ks -- True or False, when measuring cat-num effect, if True, 
+#             use the KS test p-value between conditional distributions
+#             to compute effect, if Falsd use the e-pdf L1 difference.
+# 
 def effect(seq_1, seq_2, method="mean", use_ks=False):
     from util.system import hash, sorted_unique
     from util.math import is_numeric
@@ -110,7 +123,10 @@ def effect(seq_1, seq_2, method="mean", use_ks=False):
         for cat in sorted_unique(cats):
             main_nums = [n for (n,c) in zip(nums,cats) if c != cat]
             sub_nums = [n for (n,c) in zip(nums,cats) if c == cat]
-            if (not use_ks): dist_diff = epdf_diff(main_nums, sub_nums)
+            if (len(main_nums) == 0) or (len(sub_nums) == 0):
+                dist_diff = 0.0
+            elif (not use_ks):
+                dist_diff = epdf_diff(main_nums, sub_nums)
             else:
                 # Use the KS-statistic to test the likelihood that the two
                 # sets come from different underlying distributions.

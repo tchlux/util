@@ -34,10 +34,8 @@ class JobIterator:
         self.job_queue = job_queue
     def __iter__(self): return self
     def __next__(self):
-        try:
-            value = self.job_queue.get(timeout=JOB_GET_TIMEOUT)
-        except Empty:
-            raise(StopIteration)
+        try:          value = self.job_queue.get(timeout=JOB_GET_TIMEOUT)
+        except Empty: raise(StopIteration)
         return value
 
 # Given an iterable object and a queue, place jobs into the queue.
@@ -58,7 +56,7 @@ def producer(jobs_iter, job_queue):
 #   redirect     -- Boolean, True if log files should be created per
 #                   process, otherwise all print goes to standard out.
 def consumer(func, iterable, return_queue, redirect):
-    # Retreive the function (because it's been dilled for transfer)
+    # Retrieve the function (because it's been dilled for transfer)
     func = loads(func)
     if redirect:
         # Set the output file for this process so that all print statments
@@ -105,12 +103,14 @@ def consumer(func, iterable, return_queue, redirect):
 #                process, otherwise all print goes to standard out.
 # 
 # RETURNS:
-#   An output generator, just like the builtin "map" function, but out-of-order.
+#   An output generator, just like the builtin "map" function.
 # 
 # WARNINGS:
 #   If iteration is not completed, then waiting idle processes will
 #   still be alive. Call "parallel.killall()" to terminate lingering
 #   map processes when iteration is prematurely terminated.
+# 
+#   The mapped function will not have access to global variables.
 def map(func, iterable, max_waiting_jobs=1, max_waiting_returns=1,
         order=True, save_logs=False, redirect=True):
     # Create multiprocessing context (not to muddle with others)
@@ -186,51 +186,3 @@ def clear_logs():
         if (f_name[:8] == "Process-") and (f_name[-4:] == ".log"):
             f_name = os.path.join(LOG_DIRECTORY, f_name)
             os.remove(f_name)
-
-# Development testing code.
-if __name__ == "__main__":
-    print()
-    print("Max processes:", MAX_PROCS)
-    print()
-    import time, random
-    # A slow function
-    def slow_func(value):
-        import time, random
-        time.sleep(random.random()*.1 + .5)
-        return str(value)
-    print()
-    # Generate a normal "map" and a parallel "map"
-    start = time.time()
-    s_gen = builtin_map(slow_func, [i for i in range(10)])
-    print("Standard map construction time:", time.time() - start)
-    start = time.time()
-    p_gen = map(slow_func, [i for i in range(10)], order=True)
-    print("Parllel map construction time: ", time.time() - start)
-
-    start = time.time()
-    print()
-    for value in s_gen:
-        print(value, end=" ", flush=True)
-        if value >= "5": break
-    print()
-    print("Standard map time:", time.time() - start)
-
-    start = time.time()
-    print()
-    for value in p_gen:
-        print(value, end=" ", flush=True)
-        if value >= "5": break
-    print()
-    print("Ordered Parallel map time:", time.time() - start)
-
-    p_gen = map(slow_func, [i for i in range(10)], order=False)
-    start = time.time()
-    print()
-    for value in p_gen:
-        print(value, end=" ", flush=True)
-        if value >= "5": break
-    print()
-    print("Unordered Parallel map time:", time.time() - start)
-
-    killall()
-    clear_logs()

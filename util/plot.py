@@ -439,6 +439,10 @@ class Plot:
     #                         list, tuple, or numpy array meant to be
     #                         converted into the standard rgba string.
     def color(self, number=None, brightness=1.0, alpha=None, color=None):
+        # If the user only passed a color, swap for convenience.
+        if (type(number) == tuple):
+            number, color = None, number
+        # Otherwise assume a number was sent.
         if type(color) == type(None):
             if (number == None): number = self.color_num
             if (number < len(self.palatte)):
@@ -571,7 +575,7 @@ class Plot:
             response = list(func(np.vstack(x_vals).T))
         else:
             # Otherwise evaluate the function one point at a time
-            response = [func(x) for x in np.vstack(x_vals).T]
+            response = [func(x[0] if len(x) == 1 else x) for x in np.vstack(x_vals).T]
         try:
             # Make sure all "None" values are in brackets
             while None in response: response[response.index(None)] = [None]
@@ -791,7 +795,7 @@ class Plot:
     #  ... <any additional plotly data-dictionary args> ...
     def add(self, name, x_values=None, y_values=None, z_values=None,
             mode=None, plot_type=None, group=None,
-            show_in_legend=True, shade=True, use_gradient=False,
+            show_in_legend=True, shade=False, use_gradient=False,
             palatte=DEFAULT_GRADIENT, text=None, color=None,
             opacity=1.0, line_color=None, line_width=None, fill=None,
             fill_color=None, fill_opacity=0.6, symbol='circle',

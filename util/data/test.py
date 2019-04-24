@@ -7,6 +7,7 @@ def test_data():
 
     print("Testing Data...", end=" ")
 
+    # ----------------------------------------------------------------
     a = Data()
 
     # Verify append
@@ -17,24 +18,37 @@ def test_data():
     # Verify add column (with edge case, none type)
     a.add_column([None,None,None])
     assert(a.types[-1] == type(None))
+
     # Reassign the missing value column to floats, verify type update
     a[a.names[-1]] = [1.2, 3.0, 2.4]
     assert(a.types[-1] == float)
     # WARNING: Need to check doing (<int>, <str>) assignment
 
+    # Verify automatic type generation AND automatic type-casting
+    a.append([1,2,3])
+    assert(tuple(a[-1]) == tuple([1,"2",3.0]))
+    assert(tuple(map(type,a[-1])) == (int, str, float))
+
+    # Verify caching of missing values
+    a.append([-1,None,None])
+    print(len(a.missing))
+    assert(len(a.missing) == 1)
+
+    #  Done modifying "a", rest of tests leave it constant.
+    # ----------------------------------------------------------------
     # Verify in-place addition
-    b = a[:]
-    c = a[1:]
+    b = a[:-2].copy()
+    c = a[1:-2]
     b += c
     assert(tuple(b["0"]) == tuple([1,2,3,2,3]))
 
     # Verify slicing-based singleton value assignment
-    b = a[:]
+    b = a[:-2].copy()
     b[:,0] = 1
     assert(tuple(b["0"]) == tuple([1,1,1]))
 
     # Verify slicing-based multiple value assignment
-    b = a[:]
+    b = a[:-2].copy()
     b[:,0] = [3,1,4]
     assert(tuple(b["0"]) == tuple([3,1,4]))
 
@@ -42,16 +56,37 @@ def test_data():
     assert(a[0,1] == "a")
 
     # Verify double indexing with slices
-    assert(tuple(a[::-1,1]["1"]) == tuple(["c","b","a"]))
+    assert(tuple(a[::-1,1]["1"])[2:] == tuple(["c","b","a"]))
 
     # Verify standard index access
     assert(tuple(a[0]) == tuple([1,"a",1.2]))
 
     # Verify column-access and automatic column naming
-    assert(tuple(a["0"]) == tuple([1,2,3]))
+    assert(tuple(a["0"])[:-2] == tuple([1,2,3]))
 
     # Verify slicing by index
     assert(tuple(a[:1][0]) == tuple(a[0]))
+
+    # ----------------------------------------------------------------
+    print()
+    print(a)
+    print()
+    for row in a["0","2"]:
+        print(row)
+    print()
+    # The problem is as follows:
+    #   I am returning the same row object regardless of view
+    #   That row object thinks it is a child of full data
+    #   If I create a new row object, I mess up "self.missing" track
+    #   Need to think more.
+    # 
+    #   "missing" needs to track "{row : {cols}}" and update accordingly,
+    #    then "view" can properly update its own record of "missing"
+    #    and update its parent "data" when missing is changed.
+    #   When a row is inserted, all must be updated.
+    #   When columns are reordered, all must be updated.
+    #   Access "row" should return new object based on current parent.
+    # ----------------------------------------------------------------
 
     # Verify slicing by names
     assert(tuple(a["0","2"][0]) == tuple([1,1.2]))
@@ -74,15 +109,6 @@ def test_data():
     for i in range(len(b)):
         for n in b.names:
             assert(a[i,n] == b[i,n])
-
-    # Verify automatic type generation AND automatic type-casting
-    a.append([1,2,3])
-    assert(tuple(a[-1]) == tuple([1,"2",3.0]))
-    assert(tuple(map(type,a[-1])) == (int, str, float))
-
-    # Verify caching of missing values
-    a.append([-1,None,None])
-    assert(len(a.missing) == 1)
 
     # Verify the ability to construct real-valued arrays (and go back)
     numeric = a.to_matrix()
@@ -172,6 +198,25 @@ def test_data():
         for j,name in enumerate(a.names):
             assert(a[i,j] == a[i,name])
 
+    # Verify that the "in" operator works on rows.
+    assert(1 in a[0])
+    assert('a' in a[0])
+    assert(1.2 in a[0])
+
+    # Verify that "equality" works for rows.
+    assert(a[0] == [1,'a',1.2])
+    assert(not all(a[0] != a[0][:]))
+
+    # Verify that "addition" with sequences works correctly (left and right).
+    b = a[:]
+    b[:,1] = map(lambda v: (ord(v[0]) if v[0] != None else None), b[:,1])
+    assert(sum(b[0] + [-1,-97,-1.2]) == 0)
+    assert(sum([-1,-97,-1.2] + b[0]) == 0)
+    assert(tuple(a[0] + a[0]) == (2,'aa',2.4))
+    # Verify that "subtraction" with sequences works correctly (left and right).
+    assert(sum(b[0] - [1,97,1.2]) == 0)
+    assert(sum([1,97,1.2] - b[0]) == 0)
+
     # WARNING: Not individually verifying *all* comparison operators.
 
     # Verify generator-based index assignment.
@@ -260,11 +305,6 @@ def test_data():
 
     # Try providing a generator that does not give strictly integers
     try:   a[(v for v in ('a',1,'b'))]
-    except Data.BadIndex: pass
-    else: assert(False)
-
-    # Try accessing by row-index and having duplicate entries.
-    try:   a[[0,0]]
     except Data.BadIndex: pass
     else: assert(False)
 

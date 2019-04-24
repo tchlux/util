@@ -4,11 +4,6 @@ from util.data.categories import regular_simplex
 from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES
 
 
-# TODO:  Check for error in "collect" when column names are
-#        duplicated. Raise errror for duplicate column names?
-# TODO:  Add itemwise equality operator to "Row" class.
-# TODO:  Add addition, subtraction, multiplication, and division
-#        operators to column / row objects.
 # TODO:  Make saving to CSV files automatically put quotes around
 #        strings that have the separator character in them.
 # TODO:  Make printout shorter for data with lots of columns.
@@ -32,8 +27,13 @@ from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES
 # TODO:  Write "collect" that does the combined operations of 
 #        "unique().collect()" in a more memory efficient manner (by
 #        cannabalizing the existing Data object).
-# TODO:  Write "unroll" that does the opposite operation of "collect",
+# TODO:  Write "expand" that does the opposite operation of "collect",
 #        expanding a data set out according to list columns.
+# TODO:  Check for error in "collect" when column names are
+#        duplicated. Raise errror for duplicate column names?
+# TODO:  Speed up the read of a file. Put the read operation into the
+#        background? Store everything as a string until the type is
+#        determined, then update the types at the end.
 # TODO:  Rewrite "predict" to work given a data object. This will
 #        break up the data into collections of unique missing values.
 #        Then for each collection, build a model over the appropriate
@@ -65,12 +65,16 @@ from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES
 # ======================================================
 
 # Define a python data matrix structure (named and typed columns)
-class Data(list):
+class Data:
+    # Holder for data.
+    data = None
+    missing = None
+    # Boolean for declaring if this is a "view" or actual data.
+    row_indices = None
+    col_indices = None
     # Default values for 'self.names' and 'self.types'
     _names = None
     _types = None
-    # Default values for "numeric" representation of self.
-    numeric = None
     # Default maximum printed rows of this data.
     max_display = 10
     # Default maximum string length of printed column values.
@@ -104,13 +108,14 @@ class Data(list):
                 (type(self.types) == type(None)))
     # Declare the "start" property / function to re-initialized when called.
     @property
-    def shape(self): return (len(self), len(self.names))
+    def shape(self):
+        if (type(self.col_indices) != type(None)): return (len(self), len(self.col_indices))
+        else:                                      return (len(self), len(self.names))
 
     #      Overwritten list Methods     
     # ==================================
 
-    def __init__(self, data=None, names=None, types=None):
-        super().__init__()
+    def __init__(self, data=None, names=None, types=None, rows=None, cols=None):
         # Verify the length of the types and names
         if ((type(types) != type(None)) and
             (type(names) != type(None)) and
@@ -120,40 +125,59 @@ class Data(list):
         if (type(names) != type(None)):
             if any(type(n) != str for n in names):
                 raise(self.BadSpecifiedName(f"An entry of provided names was not of {str} class."))
-            self.names = names[:]
+            self.names = list(names)
         # Store the types if provided
         if (type(types) != type(None)):
             if any(type(t) != type for t in types):
                 raise(self.BadSpecifiedType(f"An entry of provided types was not of {type(type)} class."))
-            self.types = types[:]
+            self.types = list(types)
             # Construct default names for each column if names were not provided.
             if (type(self.names) == type(None)):
                 self.names = [str(i) for i in range(len(types))]
+        # Initialize the contents of this Data to be an empty list.
+        self.data = []
         self.missing = set()
-        # If data was provided, put it into this data
-        if type(data) != type(None):
-            for row in data:
-                self.append(row)
+        # If this is a "view" object, store a pointer.
+        if (type(rows) != type(None)) or (type(cols) != type(None)):
+            self.data = data
+            self.row_indices = rows
+            self.col_indices = cols
+        # Otherwise, build this data as a deep copy of provided data.
+        elif type(data) != type(None):
+            for row in data: self.append(row)
+    # Overwrite the "len" operator.
+    def __len__(self):
+        if (type(self.row_indices) != type(None)): return len(self.row_indices)
+        else:                                      return len(self.data)
 
     # Overwrite the standard "[]" get operator to accept strings as well.
     def __getitem__(self, index):
+        # Identify whether or not this is a data view.
+        view = ((type(self.row_indices) != type(None)) or (type(self.col_indices) != type(None)))
         # Special case for being empty.
         if ((type(self.names) == type(None)) or 
             (type(self.types) == type(None))):
             raise(self.Empty("Cannot get item from empty data."))
         if ((type(index) == tuple) and (len(index) == 2) and 
             (all(type(i) == int for i in index))):
+            if view: index = (self.row_indices[index[0]], self.col_indices[index[1]])
             # This index is accessing a (row,col) entry
-            return super().__getitem__(index[0])[index[1]]
+            return self.data[index[0]][index[1]]
         elif ((type(index) == tuple) and (len(index) == 2) and 
               (type(index[0]) == int and type(index[1]) == str)):
             if (index[1] not in self.names):
                 raise(self.BadIndex(f"Column index {index[1]} is not a recognized column name."))
+            # Update the index based on the subset of "row" and "column"
+            # indices that are stored in this data (if it is a view).
+            if view: index = (row_indices[index[0]], index[1])
             # This index is accessing a (row,col) entry
-            return super().__getitem__(index[0])[self.names.index(index[1])]
+            return self.data[index[0]][self.names.index(index[1])]
         elif (type(index) == int):
-            # This index is accessing a Data row
-            return super().__getitem__(index)
+            # Update the index based on the subset of "row"
+            # indices that are stored in this data (if it is a view).
+            if (type(self.row_indices) != type(None)): index = self.row_indices[index]
+            # Return a view of a row.
+            return self.data[index]
         elif (type(index) == str):
             # This index is accessing a column
             if (index not in self.names):
@@ -164,13 +188,13 @@ class Data(list):
         else:
             # This index is retrieving a sliced subset of self.
             rows, cols = self._index_to_rows_cols(index)
-            names = [self.names[col] for col in cols]
-            types = [self.types[col] for col in cols]
-            new_data = Data(names=names, types=types)
-            for row in rows:
-                if type(row) != int:
-                    raise(self.BadIndex(f"The provided row index of type {type(row)}, {row}, is not understood."))
-                new_data.append( [self[row,col] for col in cols] )
+            # If they are extracting the full data then assume a copy is desired.
+            if ((len(set(rows)), len(set(cols))) == self.shape): return self.copy()
+            # Otherwise make an alias data set (a data "view") and return it.
+            names = Data.Descriptor(self.names, self.names.type, cols)
+            types = Data.Descriptor(self.types, self.types.type, cols)
+            new_data = Data(data=self.data, names=names, types=types,
+                            rows=rows, cols=cols)
             return new_data
 
     # Overwrite the standard "[]" get operator to accept strings as well.
@@ -179,10 +203,16 @@ class Data(list):
         if ((type(self.names) == type(None)) or 
             (type(self.types) == type(None))):
             raise(self.Empty("Cannot set item for empty data."))
-        self.numeric = None # Reset the numeric representation (if it existed)
         # Special case assignment of new column (*RETURN* to exit function).
         if ((type(index) == str) and (index not in self.names)):
+            # Check to see if this is a data view object.
+            if ((type(self.row_indices) != type(None)) or
+                (type(self.col_indices) != type(None))):
+                raise(self.ImproperUsage("This is a data alias and does not support assignment."))
+            # Otherwise perform the normal column addition.
             return self.add_column(value, name=index)
+        # Identify whether or not this is a data view.
+        view = ((type(self.row_indices) != type(None)) or (type(self.col_indices) != type(None)))
         # Get the list of rows and list of columns being assigned.
         rows, cols = self._index_to_rows_cols(index)
         # Assume if it has an iterator that is not a singleton.
@@ -200,8 +230,9 @@ class Data(list):
             any(self.types[c] != GENERATOR_TYPE for c in cols)): singleton = False
         # Assume singleton status is correct.
         if (not singleton): value_iter = value.__iter__()
-        # Reset type entirely if the new data assigns to the full column.
-        if (len(rows) == len(self)):
+        # Reset type entirely if the new data assigns to the full column,
+        # only if this data views the entire column.
+        if (len(rows) == len(self.data)):
             for col in cols: self.types[col] = type(None)
         # Iterate over rows and perform assignment.
         for step, row in enumerate(rows):
@@ -223,7 +254,7 @@ class Data(list):
                 elif (type(value) != self.types[col]):
                     raise(self.BadAssignment(f"Provided value {value} of type {type(value)} does not match expected type {self.types[col]}."))
                 # Make the assignment
-                super().__getitem__(row)[col] = value
+                self.data[row][col] = value
                 # Remove entry from missing if appropriate.
                 if (type(value) != type(None)):
                     if (id(self[row]) in self.missing):
@@ -244,21 +275,25 @@ class Data(list):
             return "This Data has no contents.\n"
         # Custom short string for a 'data' type object.
         if short: return f"Data ({len(self.names)} x {len(self)}) -- {self.names}"
+        # Identify whether or not this is a data view.
+        view = ((type(self.row_indices) != type(None)) or (type(self.col_indices) != type(None)))
         # Make a pretty table formatted output
+        num_rows, num_cols = self.shape
         rows = []
-        rows += [ self.names ]
+        rows += [ list(self.names) ]
         rows += [ list(map(lambda t: str(t)[8:-2],self.types)) ]
         for i,row in enumerate(self):
+            if view: row = [row[col] for col in self.col_indices]
             rows += [ row ]
             if i >= self.max_display: break
         rows = [list(map(self._val_to_str,r)) for r in rows]
         lens = [max(len(r[c]) for r in rows)
-                for c in range(len(self.names))]
+                for c in range(num_cols)]
         rows = [[v + " "*(lens[i]-len(v)) for i,v in enumerate(row)]
                 for row in rows]
         rows = [" " + (" | ".join(row)) + "\n" for row in rows]
         string = "\n" + "="*len(rows[0]) + "\n"
-        string += f"Size: ({len(self)} x {len(self.names)})\n\n"
+        string += f"Size: ({num_rows} x {num_cols})\n\n"
         string += rows[0]
         string += rows[1]
         string += "-"*len(rows[0]) + "\n"
@@ -288,7 +323,10 @@ class Data(list):
     # Define a convenience funciton for concatenating another
     # similarly typed and named data to self.
     def __iadd__(self, data):
-        self.numeric = None # Reset the numeric representation (if it existed)
+        # Check to see if this is a data view object.
+        if ((type(self.row_indices) != type(None)) or
+            (type(self.col_indices) != type(None))):
+            raise(self.ImproperUsage("This is a data alias and does not support assignment."))
         # Check for improper usage
         if type(data) != Data:
             raise(self.Unsupported(f"In-place addition only supports type {Data}, but {type(data)} was given."))
@@ -320,22 +358,20 @@ class Data(list):
         self += data
         return self
 
-
     # Redefined append operator that 
     def append(self, element):
-        self.numeric = None # Reset the numeric representation (if it existed)
+        # Check to see if this is a data view object.
+        if ((type(self.row_indices) != type(None)) or
+            (type(self.col_indices) != type(None))):
+            raise(self.ImproperUsage("This is a data alias and does not support assignment."))
         # Convert the element into a python list
-        try:    element = Data.Row(self, list(element))
-        except: raise(self.BadValue(f"Invalid appended element, failed conversion to type {Data.Row}."))
+        try:    element = element
+        except: raise(self.BadValue(f"Invalid appended element, failed conversion to list."))
         missing_values = False
         # Check length in case names already exist
         if (type(self.names) != type(None)):
             if (len(element) != len(self.names)):
                 raise(self.BadElement(f"Only elements of length {len(self.names)} can be added to this data."))
-        # Check length in case types already exist
-        if (type(self.types) != type(None)):
-            if len(element) != len(self.types):
-                raise(self.BadElement(f"Only elements of length {len(self.types)} can be added to this data."))                
             # Try type casing the new element
             for i, (val, typ) in enumerate(zip(element, self.types)):
                 # Record 'None' types as missing entries
@@ -362,21 +398,33 @@ class Data(list):
             # Construct default names for each column
             self.names = [str(i) for i in range(len(element))]
         # Call the standard append operator, adding the element to self
-        super().append(element)
+        self.data.append(Data.Row(self, element))
         # Add to the list of missing values if necessary
-        if (missing_values): self.missing.add(id(self[-1]))
+        if (missing_values):
+            self.missing.add(id(self.data[-1]))
 
 
     # Make sure the copy of this data is a deep copy.
-    def copy(self): return self[:]
+    def copy(self):
+        # Identify whether or not this is a data view.
+        view = ((type(self.row_indices) != type(None)) or (type(self.col_indices) != type(None)))
+        # Construct a new data set that is a copy of the data in this object.
+        if view: rows, cols = self.row_indices, self.col_indices
+        else:    rows, cols = map(list,map(range,self.shape))
+        data = [[self.data[row][col] for col in cols] for row in rows]
+        # Return a new data object.
+        return type(self)(data=data, names=list(self.names), types=list(self.types))
 
     # Overwrite the 'pop' method to track missing values.
     def pop(self, index=-1):
+        # Identify whether or not this is a data view.
+        view = ((type(self.row_indices) != type(None)) or (type(self.col_indices) != type(None)))
+        if view: raise(self.ImproperUsage("Cannot 'pop' from a data view. Copy this object to remove items."))
         # Popping of a column
         if type(index) == int:
             if (id(self[index]) in self.missing):
                 self.missing.remove( id(self[index]) )
-            return super().pop(index)
+            return self.data.pop(index)
         # Popping of a column
         elif (type(index) == str):
             if index not in self.names:
@@ -397,9 +445,13 @@ class Data(list):
 
     # Overwrite the 'remove' method to track missing values.
     def remove(self, index):
-        if (id(index) in self.missing):
-            self.missing.remove( id(index) )
-        return super().remove( index )
+        # Identify whether or not this is a data view.
+        view = ((type(self.row_indices) != type(None)) or (type(self.col_indices) != type(None)))
+        if view: raise(self.ImproperUsage("Cannot 'remove' from a data view. Copy this object to remove items."))
+        # See if this row is in the "missing" set.
+        if (id(self[index]) in self.missing):
+            self.missing.remove( id(self[index]) )
+        return self.data.remove( index )
 
     # ========================
     #      Custom Methods     
@@ -429,34 +481,84 @@ class Data(list):
         if (type(index) == int):
             rows = [index]
             cols = list(range(len(self.names)))
+        # Case for column index access.
         elif (type(index) == str):
             rows = list(range(len(self)))
             if index not in self.names:
                 raise(self.UnknownName(f"This data does not have a column named '{index}'."))
             cols = [self.names.index(index)]
-        elif ((type(index) == tuple) and (len(index) == 2) and 
-              (all(type(i) == int for i in index))):
-            # This index is accessing a (row, col) entry.
-            rows = [index[0]]
-            cols = [index[1]]
-        elif ( (type(index) == tuple) and (len(index) == 2) and
-               ((type(index[0]) == int) and (type(index[1]) == str)) ):
-            # This index is accessing a (row, col) entry with a named column.
-            rows = [index[0]]
-            cols = [self.names.index(index[1])]
+        # Case for slice-index access.
         elif (type(index) == slice):
             # Construct a new "data" with just the specified rows (deep copy)
             rows = list(range(len(self))[index])
             cols = list(range(len(self.names)))
-        elif (hasattr(index, "__iter__")):
-            index = tuple(index)
-            # Special case for when a list of ints is used to access rows
+        # Case for tuple-string index access where thera are two selected columns.
+        elif ((type(index) == tuple) and (len(index) == 2) and
+              (type(index[0]) == str) and (type(index[1]) == str)):
+            rows = list(range(len(self)))
+            cols = []
+            for i in index:
+                if i not in self.names:
+                    raise(self.UnknownName(f"This data does not have a column named '{i}'."))
+                cols.append( self.names.index(i) )
+        # Case where (row indices, col indices) were provided.
+        elif ((type(index) == tuple) and (len(index) == 2)):
+            if all(type(i) == int for i in index):
+                # This index is accessing a (row, col) entry.
+                rows = [index[0]]
+                cols = [index[1]]
+            elif ((type(index[0]) == int) and (type(index[1]) == str)):
+                # This index is accessing a (row, col) entry with a named column.
+                rows = [index[0]]
+                cols = [self.names.index(index[1])]
+            else:
+                rows, cols = index
+
+                # Handling the "rows"
+                if (type(rows) == int):     rows = [rows]
+                elif (type(rows) == slice): rows = range(len(self))[rows]
+                elif hasattr(rows, "__iter__"):
+                    rows = list(rows)
+                    if   all(type(i)==int for i in rows):  pass
+                    elif all(type(i)==bool for i in rows):
+                        rows = [i for (i,b) in enumerate(rows) if b]
+                    else:
+                        type_printout = sorted(map(str,set(map(type,rows))))
+                        raise(self.BadIndex(f"The provided row index, {index}, is not understood.\n It has types {type_printout}."))
+                else:
+                    type_printout = sorted(map(str,set(map(type,rows))))
+                    raise(self.BadIndex(f"The provided row index, {index}, is not understood.\n It is typed {type_printout}."))
+
+                # Handling the "columns"
+                if (type(cols) == int):     cols = [cols]
+                elif (type(cols) == slice): cols = range(len(self))[cols]
+                elif hasattr(cols, "__iter__"):
+                    col_ids = list(cols)
+                    cols = []
+                    for i,v in enumerate(col_ids):
+                        if (type(v) not in {str,int,bool}):
+                            raise(self.BadIndex(f"The provided column index of type {type(v)}, {v}, is not understood."))
+                        elif (type(v) == str):
+                            if (v not in self.names):
+                                raise(self.UnknownName(f"This data does not have a column named '{v}'."))
+                            i = self.names.index(v)
+                        # If it is an int, use that as the index.
+                        elif (type(v) == int): i = v
+                        # If it is a boolean and it is False, skip this index.
+                        elif (type(v) == bool) and (not v): continue
+                        # Append the column index
+                        cols.append( i )
+                else:
+                    type_printout = sorted(map(str,set(map(type,cols))))
+                    raise(self.BadIndex(f"The provided column index, {index}, is not understood.\n It has types {type_printout}."))
+        # Iterable index access.
+        elif hasattr(index, "__iter__"):
+            index = list(index)
+            # Case for iterable access of rows.
             if all(type(i)==int for i in index):
-                rows = index
+                rows = list(index)
                 cols = list(range(len(self.names)))
-                if (len(set(rows)) != len(rows)):
-                    raise(self.BadIndex("Provided sequence of row indices contained duplicate entries."))
-            # Special case for when a list of strings is used to access columns
+            # Case for iterable access of columns.
             elif all(type(i)==str for i in index):
                 rows = list(range(len(self)))
                 cols = []
@@ -464,42 +566,19 @@ class Data(list):
                     if i not in self.names:
                         raise(self.UnknownName(f"This data does not have a column named '{i}'."))
                     cols.append( self.names.index(i) )
+            # Case for boolean-index access to rows.
+            elif all(type(i)==bool for i in index):
+                rows = [i for (i,b) in enumerate(index) if b]
+                cols = list(range(len(self.names)))
+            # Undefined behavior for this index.
             else:
-                # Otherwise this should be a two-index for [row,col] access.
-                if (len(index) != 2):
-                    raise(self.BadIndex(f"The provided index, {index}, is not understood.\n It is typed {tuple(type(i) for i in index)}."))
-                # Create row index
-                if type(index[0]) == int:
-                    rows = [index[0]]
-                elif type(index[0]) == slice:
-                    rows = list(range(len(self))[index[0]])
-                elif hasattr(index[0], "__iter__"):
-                    rows = list(index[0])
-                else:
-                    raise(self.BadIndex(f"The provided index, {index}, is not understood.\n It is typed {tuple(type(i) for i in index)}."))
-                # Create column index
-                if type(index[1]) == int:
-                    cols = [index[1]]
-                elif type(index[1]) == str:
-                    if (index[1] not in self.names):
-                        raise(self.UnknownName(f"This data does not have a column named '{index[1]}'."))
-                    cols = [self.names.index(index[1])]
-                elif hasattr(index[1], "__iter__"):
-                    cols = []
-                    for i in index[1]:
-                        if (type(i) not in {str,int}):
-                            raise(self.BadIndex(f"The provided column index of type {type(i)}, {i}, is not understood."))
-                        elif (type(i) == str):
-                            if (i not in self.names):
-                                raise(self.UnknownName(f"This data does not have a column named '{i}'."))
-                            i = self.names.index(i)
-                        cols.append( i )
-                elif type(index[1]) == slice:
-                    cols = list(range(len(self.names))[index[1]])
-                else:
-                    raise(self.BadIndex(f"The provided index, {index}, is not understood.\n It is typed {tuple(type(i) for i in index)}."))
+                type_printout = sorted(map(str,set(map(type,index))))
+                raise(self.BadIndex(f"The provided index, {index}, is not understood.\n It is typed {type_printout}."))
+        # Undefined behavior for this index.
         else:
-            raise(self.BadIndex(f"The provided index, {index}, is not understood.\n It is typed {tuple(type(i) for i in index)}."))
+            type_printout = sorted(map(str,set(map(type,index))))
+            raise(self.BadIndex(f"The provided index, {index}, is not understood.\n It is typed {type_printout}."))
+        # Return the final list of integer-valued rows and columns.
         return rows, cols
 
     # =======================================
@@ -560,7 +639,6 @@ class Data(list):
         if create and not os.path.exists(output_folder): os.makedirs(output_folder)
         # Check for compression
         if "." not in path: path += ".pkl"
-        self.numeric = None
         compressed = path[-path[::-1].index("."):] == "gz"
         file_opener = open
         if compressed:
@@ -605,7 +683,6 @@ class Data(list):
         for n in names:
             if (n not in my_names):
                 raise(self.BadSpecifiedName(f"No column named '{n}' exists in this data."))
-        self.numeric = None # Reset the numeric representation (if it existed)
         # Construct the full reordering of every row of data.
         order = [self.names.index(n) for n in names]
         taken = set(order)
@@ -624,7 +701,6 @@ class Data(list):
         if ((type(self.names) == type(None)) or 
             (type(self.types) == type(None))):
             raise(self.Empty("Cannot retype empty data."))
-        self.numeric = None # Reset the numeric representation (if it existed)
         # Handle a single column or type being provided.
         if (type(columns) == str): columns = [columns]
         if (type(types) == type): types = [types] * len(columns)
@@ -651,18 +727,17 @@ class Data(list):
 
     # Given a new column, add it to this Data.
     def add_column(self, column, name=None, idx=None):
-        self.numeric = None # Reset the numeric representation (if it existed)
         # Set the default index to add a column to be the end.
         if (idx == None): idx = len(self.names)
         # Verify the name
         if (type(name) == type(None)):
             num = 0
             while (str(num) in self.names): num += 1
-            self.names.insert(idx, str(num))
+            name = str(num)
         elif (type(name) != str):
             raise(self.BadSpecifiedName(f"Only string names are allowed. Received name '{name}' with type {type(name)}."))
-        else:
-            self.names.insert(idx, name)
+        # Set the name
+        self.names.insert(idx, name)
         # Verify the column type dynamically. Add new values to all rows.
         new_type = type(None);
         for i,val in enumerate(column):
@@ -676,10 +751,8 @@ class Data(list):
                 raise(self.BadData(f"Provided column has at least {i+1} elements, more than the length of this data ({len(self)})."))
             # Append the value to this row..
             self[i].insert(idx, val)
-            if (type(val) == type(None)):
-                # Only add to missing values entry if it's not already there
-                if (id(self[i]) not in self.missing):
-                    self.missing.add(id(self[i]))
+            if (type(val) == type(None)): # Only add to missing values entry if it's not already there
+                self.missing.add(id(self.data[i]))
             elif (new_type == type(None)):
                 # Capture the new type (type must be right)
                 new_type = type(val)
@@ -1022,9 +1095,7 @@ class Data(list):
     # Use a prediction model to fill missing values in a provided row.
     def fill(self, row, model=None, weights=None, bias={}):
         import numpy as np
-        # Get the numeric representation of self.
-        if type(self.numeric) == type(None):
-            self.numeric = self.to_matrix()
+        numeric = self.to_matrix()
         # Pick the filling model based on data size.
         if (type(model) == type(None)):
             # Use Voronoi if there are fewer than 10000 points.
@@ -1034,29 +1105,29 @@ class Data(list):
             # Otherwise use nearest neighbor (can't get points + weights from NN)
             else:
                 from util.approximate import unique, condition
-                samples = min(self.numeric.data.shape[0], 10000)
-                dim = min(self.numeric.data.shape[1], 1000)
+                samples = min(numeric.data.shape[0], 10000)
+                dim = min(numeric.data.shape[1], 1000)
                 # Use nearest neighbor (can't get points + weights from NN)
                 from util.approximate import NearestNeighbor
                 model = condition(unique(NearestNeighbor), dim=dim, samples=samples)()
         # Set the weights accordingly
         if (type(weights) == type(None)):
-            weights = np.ones(self.numeric.data.shape[1])
+            weights = np.ones(numeric.data.shape[1])
         elif (len(weights) != len(self.names)):
             raise(self.BadValue("Weights vector is length {len(weights)}, expected length {len(self.names)}."))
         else:
             # Convert the provided weight to the correct shape.
             col_weights, weights = weights, []
-            col_inds = list(range(len(self.numeric.names)))
+            col_inds = list(range(len(numeric.names)))
             while (len(col_inds) > 0):
-                if (col_inds[0] not in self.numeric.cats):
+                if (col_inds[0] not in numeric.cats):
                     col_inds.pop(0)
                     weights.append( col_weights.pop(0) )
                 else:
                     for i in range(1,len(col_inds)):
-                        not_categorical = (col_inds[i] not in self.numeric.cats)
+                        not_categorical = (col_inds[i] not in numeric.cats)
                         beginning_of_next = ("1" == 
-                            self.numeric.names[col_inds[i]].split('-')[-1])
+                            numeric.names[col_inds[i]].split('-')[-1])
                         if (not_categorical or beginning_of_next): break
                     else: i += 1
                     col_inds = col_inds[i:]
@@ -1067,7 +1138,7 @@ class Data(list):
         row_unknown = [i for i in range(len(row)) if (type(row[i]) == type(None))]
         if len(row_unknown) == 0: raise(self.BadValue("Provided row had no missing values."))
         # Get the numeric version of the provided row.
-        numeric_row = self.numeric.to_real(row, fill=True)
+        numeric_row = numeric.to_real(row, fill=True)
         # Identify the indices of known values and unknown values.
         known_values = np.array([i for i in range(len(numeric_row))
                                  if (type(numeric_row[i]) != type(None))])
@@ -1076,11 +1147,11 @@ class Data(list):
         # Get the part of the numeric row
         no_none_numeric_row = np.array([numeric_row[i] for i in known_values])
         # Normalize the numeric row (to debias numeric scale differences)
-        no_none_numeric_row = ((no_none_numeric_row - self.numeric.shift[known_values])
-                               / self.numeric.scale[known_values]) * weights[known_values]
+        no_none_numeric_row = ((no_none_numeric_row - numeric.shift[known_values])
+                               / numeric.scale[known_values]) * weights[known_values]
         # Get the normalized training point locations.
-        normalized_numeric_data = ((self.numeric.data - self.numeric.shift)
-                                   / self.numeric.scale) * weights
+        normalized_numeric_data = ((numeric.data - numeric.shift)
+                                   / numeric.scale) * weights
         # Fit the model and make a prediction for this row.
         if hasattr(model, "WeightedApproximator"):
             # Fit the model (just to the points)
@@ -1089,7 +1160,7 @@ class Data(list):
             # Get the source points and source weights for the prediction
             pts, wts = model.predict(np.array(no_none_numeric_row))
             # Compute the fill row by performing the weighted sum.
-            fill_row = np.sum((self.numeric.data[pts,:][:,unknown_values].T * wts), axis=1)
+            fill_row = np.sum((numeric.data[pts,:][:,unknown_values].T * wts), axis=1)
             # Convert points and weights into python list (in case they're not)
             pts = list(pts)
             wts = list(wts)
@@ -1099,19 +1170,19 @@ class Data(list):
             model.fit(normalized_numeric_data[:,known_values], 
                       normalized_numeric_data[:,unknown_values])
             del(normalized_numeric_data)
-            pts = list(range(self.numeric.data.shape[0]))
+            pts = list(range(numeric.data.shape[0]))
             wts = [1 / len(pts)] * len(pts)
             # Use the model to make a prediction.
             fill_row = model.predict(no_none_numeric_row)
             # De-normalize the predicted output.
             fill_row = ((fill_row / weights[unknown_values]) * 
-                        self.numeric.scale[unknown_values] - 
-                        self.numeric.shift[unknown_values])
+                        numeric.scale[unknown_values] - 
+                        numeric.shift[unknown_values])
         # Pad fill row with 0's so that it is the correct length for conversion.
         fill_row = [0.] * len(known_values) + list(fill_row)
         # python3 -m pytest data.py
         # Transfer the filled numeric row into the original row
-        fill_row = self.numeric.real_to(fill_row, bias=bias)
+        fill_row = numeric.real_to(fill_row, bias=bias)
         for i,val in enumerate(fill_row):
             if type(row[i]) == type(None):
                 # Set the value in the row to be the predicted fill value.
@@ -1147,34 +1218,33 @@ class Data(list):
     def predict(self, target_columns, model=None, weights=None, bias={}, k=10):
         import numpy as np
         # Get the numeric representation of self.
-        if (type(self.numeric) == type(None)):
-            self.numeric = self.to_matrix()
+        numeric = self.to_matrix()
         # Pick the filling model based on data size.
         if (type(model) == type(None)):
             from util.approximate import unique, condition
-            samples = min(self.numeric.data.shape[0], 10000)
-            dim = min(self.numeric.data.shape[1], 1000)
+            samples = min(numeric.data.shape[0], 10000)
+            dim = min(numeric.data.shape[1], 1000)
             # Use nearest neighbor (can't get points + weights from NN)
             from util.approximate import NearestNeighbor
             model = condition(unique(NearestNeighbor), dim=dim, samples=samples)()
         # Set the weights accordingly
         if (type(weights) == type(None)):
-            weights = np.ones(self.numeric.data.shape[1])
+            weights = np.ones(numeric.data.shape[1])
         elif (len(weights) != len(self.names)):
             raise(self.BadValue("Weights vector is length {len(weights)}, expected length {len(self.names)}."))
         else:
             # Convert the provided weight to the correct shape.
             col_weights, weights = weights, []
-            col_inds = list(range(len(self.numeric.names)))
+            col_inds = list(range(len(numeric.names)))
             while (len(col_inds) > 0):
-                if (col_inds[0] not in self.numeric.cats):
+                if (col_inds[0] not in numeric.cats):
                     col_inds.pop(0)
                     weights.append( col_weights.pop(0) )
                 else:
                     for i in range(1,len(col_inds)):
-                        not_categorical = (col_inds[i] not in self.numeric.cats)
+                        not_categorical = (col_inds[i] not in numeric.cats)
                         beginning_of_next = ("1" == 
-                            self.numeric.names[col_inds[i]].split('-')[-1])
+                            numeric.names[col_inds[i]].split('-')[-1])
                         if (not_categorical or beginning_of_next): break
                     else: i += 1
                     col_inds = col_inds[i:]
@@ -1186,7 +1256,7 @@ class Data(list):
         elif type(target_columns) != list: 
             raise(self.BadTarget("Target must either be a string (column name) or list of strings (column names)."))
         # Get the data all normalized (and weighted)
-        normalized_data = weights * (self.numeric.data - self.numeric.shift) / self.numeric.scale
+        normalized_data = weights * (numeric.data - numeric.shift) / numeric.scale
         print("normalized_data.shape: ",normalized_data.shape)
         # Identify those columns that are being predicted
         target_column_indices = [self.names.index(c) for c in target_columns]
@@ -1194,7 +1264,7 @@ class Data(list):
                        types=[self.types[i] for i in target_column_indices]+[int])
         # Identify the numeric ranges of those columns
         indices = set(target_column_indices)
-        sample = self.numeric.to_real([
+        sample = numeric.to_real([
             (v if i in indices else None)
             for i,v in enumerate(self[0])])
         del(indices)
@@ -1203,7 +1273,7 @@ class Data(list):
         del(sample)
         # Cycle through and make predictions.
         for i,(train_rows, test_rows) in enumerate(
-                Data.k_fold(range(self.numeric.data.shape[0]), k=k)):
+                Data.k_fold(range(numeric.data.shape[0]), k=k)):
             print(f"  Fold {i+1} of {k}.. ", end="", flush=True)
             train_data = normalized_data[train_rows]
             print(f"fitting {i+1} of {k}.. ", end="", flush=True)
@@ -1213,13 +1283,13 @@ class Data(list):
             predictions = model.predict( normalized_data[test_rows,:][:,train_cols] )
             # De-normalize predictions
             predictions = ( (predictions / weights[test_cols]) * 
-                            self.numeric.scale[test_cols] + 
-                            self.numeric.shift[test_cols] )
+                            numeric.scale[test_cols] + 
+                            numeric.shift[test_cols] )
             print(f"storing.. {i+1} of {k}", end="\r", flush=True)
             # Store the prediction results.
             for j,i in enumerate(test_rows):
-                row = list(self.numeric.data[i,train_cols]) + list(predictions[j,:])
-                row = self.numeric.real_to(row, bias=bias)
+                row = list(numeric.data[i,train_cols]) + list(predictions[j,:])
+                row = numeric.real_to(row, bias=bias)
                 results.append( [row[i] for i in target_column_indices] + [i] )
             print(" "*70,end="\r",flush=True)
         # Sort results by the original index
