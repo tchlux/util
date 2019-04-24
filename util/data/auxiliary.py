@@ -9,7 +9,7 @@ class Descriptor:
     def __init__(self, data=None, t=type(None), indices=None):
         # Store the provided data (or make a new set)
         if (type(data) == type(None)): data = []
-        self.data = data
+        self.data = list(data)
         # Store the provided indices (or make a new list of them)
         if (type(indices) == type(None)): indices = list(range(len(data)))
         self.indices = indices
@@ -45,6 +45,9 @@ class Descriptor:
     # Define a "len" operator.
     def __len__(self): return len(self.data)
 
+    # Define a "str" operator.
+    def __str__(self): return str(self.data)
+
     # Define an "insert" function.
     def insert(self, idx, value):
         if (self.type == type(None)): self.type = type(value)
@@ -59,6 +62,12 @@ class Descriptor:
 
     # Identify the index (column number) of a value.
     def index(self, value): return self.indices.index(self.data.index(value))
+
+    # Pop a value out of this descriptor.
+    def pop(self, index):
+        self.indices.pop(index)
+        return self.data.pop(index)
+        
 
 # Local mutable Column class (for column item assignment,
 # retrieval, and iteration over a column in a data object).
@@ -242,15 +251,11 @@ class Row:
         # Assign the type of the column of data if it is unassigned.
         if self.data.types[i] == type(None):
             self.data.types[i] = type(value)
-        elif type(value) == type(None):
-            self.data.missing.add(id(self))
+        elif type(value) == type(None): pass
         elif (self.data.types[i] != type(value)):
             raise(self.data.BadValue(f"Index {i} can only accept {self.data.types[i]}, received {type(value)}."))
         # Assign the value if it is allowable.
         self.values[i] = value
-        # Remove this row from the "missing" list if all values are assigned.
-        if (id(self) in self.data.missing) and (None not in self):
-            self.data.missing.remove(id(self))
     # Define a "length" for this row.
     def __len__(self): return min(len(self.data.names), len(self.values))
     def __str__(self):
@@ -266,6 +271,11 @@ class Row:
         if (tuple(set(indices)) != tuple(range(len(self.values)))):
             raise(self.data.ImproperUsage(f"This row is only a view and does not support insertion."))
         if (len(self) != len(self.data.names)-1):
+            print()
+            print("self.data.names: ",len(self.data.names))
+            print("self.data.names: ",self.data.names)
+            print("len(self):       ",len(self))
+            print("self.values:     ",self.values)
             raise(self.data.ImproperUsage(f"Invalid insertion operation on {type(self)}."))
         # Return the insertion of the new value.
         return self.values.insert(i, value)
@@ -274,9 +284,9 @@ class Row:
         # Declare the indices of this row based on its parent data object.
         if (type(self.data.col_indices) != type(None)): indices = self.data.col_indices
         else:                                           indices = list(range(len(self.values)))
-        if (tuple(set(indices)) != tuple(range(self.values))):
+        if (tuple(set(indices)) != tuple(range(len(self.values)))):
             raise(self.data.ImproperUsage(f"This row is only a view and does not support 'pop'."))
-        if (len(self) != len(self.data.names)+1):
+        if (len(self) != len(self.data.names)):
             raise(self.data.ImproperUsage(f"Invalid pop operation on {type(self)}."))
         return self.values.pop(i)
 

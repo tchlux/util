@@ -8,7 +8,6 @@ from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES
 #        strings that have the separator character in them.
 # TODO:  Make printout shorter for data with lots of columns.
 # TODO:  Add tests for empty data object.
-# TODO:  Check the __iadd__ for data object columns, breaking "missing".
 # TODO:  Update __iadd__ to behave differently when adding data:
 #        when adding data with subset of known columns, add rows and
 #        columns (for unknown) and None for missing.
@@ -18,7 +17,6 @@ from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES
 #        to determine if the target needs to be classified or interpolated.
 # TODO:  Make "to_matrix" automatically consider 'None' a unique value
 #        for categorical columns and add a dimension 'is present' otherwise.
-# TODO:  Remove the default storage of "to_matrix" output.
 # TODO:  Wrap the necessary "Numeric" attributes into the matrix,
 #        using a custom ndarray object from numpy.
 # TODO:  Make data only deep copy when "copy()" is called or "[:,:]"
@@ -68,7 +66,6 @@ from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES
 class Data:
     # Holder for data.
     data = None
-    missing = None
     # Boolean for declaring if this is a "view" or actual data.
     row_indices = None
     col_indices = None
@@ -136,7 +133,6 @@ class Data:
                 self.names = [str(i) for i in range(len(types))]
         # Initialize the contents of this Data to be an empty list.
         self.data = []
-        self.missing = set()
         # If this is a "view" object, store a pointer.
         if (type(rows) != type(None)) or (type(cols) != type(None)):
             self.data = data
@@ -169,15 +165,17 @@ class Data:
                 raise(self.BadIndex(f"Column index {index[1]} is not a recognized column name."))
             # Update the index based on the subset of "row" and "column"
             # indices that are stored in this data (if it is a view).
-            if view: index = (row_indices[index[0]], index[1])
+            if view: index = (self.row_indices[index[0]],index[1])
             # This index is accessing a (row,col) entry
             return self.data[index[0]][self.names.index(index[1])]
         elif (type(index) == int):
             # Update the index based on the subset of "row"
             # indices that are stored in this data (if it is a view).
-            if (type(self.row_indices) != type(None)): index = self.row_indices[index]
-            # Return a view of a row.
-            return self.data[index]
+            if (type(self.row_indices) != type(None)):
+                # Return a view of a row.
+                index = self.row_indices[index]
+                return Data.Row(self, self.data[index])
+            else: return self.data[index]
         elif (type(index) == str):
             # This index is accessing a column
             if (index not in self.names):
@@ -246,20 +244,13 @@ class Data:
                 # The existing column doesn't have a type, assign it.
                 if (self.types[col] == type(None)):
                     self.types[col] = type(value)
-                # Mark this row as contianing a missing value if assigned 'None'.
-                elif (type(value) == type(None)):
-                    if (id(self[row]) not in self.missing):
-                        self.missing.add(id(self[row]))
+                # Ignore missing values.
+                elif (type(value) == type(None)): pass
                 # Check against the existing column type (for verification).
                 elif (type(value) != self.types[col]):
                     raise(self.BadAssignment(f"Provided value {value} of type {type(value)} does not match expected type {self.types[col]}."))
                 # Make the assignment
                 self.data[row][col] = value
-                # Remove entry from missing if appropriate.
-                if (type(value) != type(None)):
-                    if (id(self[row]) in self.missing):
-                        if (None not in self[row]):
-                            self.missing.remove(id(self[row]))
         # Verify that the iterable has been exhausted.
         if (not singleton):
             try:
@@ -277,6 +268,7 @@ class Data:
         if short: return f"Data ({len(self.names)} x {len(self)}) -- {self.names}"
         # Identify whether or not this is a data view.
         view = ((type(self.row_indices) != type(None)) or (type(self.col_indices) != type(None)))
+
         # Make a pretty table formatted output
         num_rows, num_cols = self.shape
         rows = []
@@ -286,38 +278,55 @@ class Data:
             if view: row = [row[col] for col in self.col_indices]
             rows += [ row ]
             if i >= self.max_display: break
+        # Redefine all rows by mapping them to strings.
         rows = [list(map(self._val_to_str,r)) for r in rows]
+        # Compute length of each row.
         lens = [max(len(r[c]) for r in rows)
                 for c in range(num_cols)]
+        # Redefine all rows by adding spaces to short-columns.
         rows = [[v + " "*(lens[i]-len(v)) for i,v in enumerate(row)]
                 for row in rows]
         rows = [" " + (" | ".join(row)) + "\n" for row in rows]
-        string = "\n" + "="*len(rows[0]) + "\n"
-        string += f"Size: ({num_rows} x {num_cols})\n\n"
+        # Construct the strings for the "view" and "size" descriptions
+        view_string = "This data is a view.\n" if view else ""
+        size_string = f"Size: ({num_rows} x {num_cols})"
+        # Construct the string describing missing values.
+        missing_string = ""
+        is_none = lambda v: type(v) == type(None)
+        missing_rows = {r+1:sum(map(is_none,v)) for (r,v) in enumerate(self) if (None in v)}
+        # Print some info about missing values if they exist.
+        if len(missing_rows) > 0:
+            missing_cols = {c:sum(map(is_none,self[n])) for (c,n) in enumerate(self.names) if (None in self[n])}
+            # Get some statistics on the missing values.
+            row_indices = sorted(missing_rows)
+            col_indices = [self.names[i] for i in sorted(missing_cols)]
+            total_missing_values = sum(missing_rows.values())
+            total_values = num_rows * num_cols
+            # Print out the indices of the rows with missing values
+            # Add elipses if there are a lot of missing values.
+            print_indices = ', '.join(map(str, row_indices[:self.max_display]))
+            missing_string += f" missing {total_missing_values} of {total_values} entries,\n"
+            missing_string += f"      at rows: [{print_indices}"
+            if (len(row_indices) > self.max_display): missing_string += ", ..."
+            missing_string += "]\n"
+            # Repeat same information for columns..
+            print_indices = ', '.join(map(str, col_indices[:self.max_display]))
+            missing_string += f"   at columns: [{print_indices}"
+            if (len(col_indices) > self.max_display): missing_string += ", ..."
+            missing_string += "]\n"
+        missing_string_len = max(map(len, missing_string.split("\n")))
+        # Construct a header bar out of "=".
+        horizontal_bar = "="*max(len(rows[0]), len(size_string), missing_string_len)
+        string = "\n" + horizontal_bar + "\n"
+        string += view_string + size_string + f"\n\n"
         string += rows[0]
         string += rows[1]
         string += "-"*len(rows[0]) + "\n"
         for row in rows[2:]:                string += row
         if (len(self) > self.max_display): string += "  ...\n"
         string += "\n"
-        # Print some info about missing values if they exist.
-        if len(self.missing) > 0:
-            # Get the indices of missing elements
-            indices = []
-            for i in range(len(self)):
-                if any(v == type(None) for v in map(type,self[i])): 
-                    indices.append(i)
-                # WARNING: This ^^ is inefficient and is being done
-                #          because the "missing" id's are bugged.
-                if len(indices) > self.max_display:
-                    break
-            # Print out the indices of the rows with missing values
-            print_indices = ', '.join(map(str, indices[:self.max_display]))
-            string += f" missing values ({len(self.missing)}) at rows: \n  [{print_indices}"
-            # Add elipses if there are a lot of missing values.
-            if (len(indices) > self.max_display): string += ", ..."
-            string += "]\n"
-        string += "="*len(rows[0]) + "\n"
+        string += missing_string
+        string += horizontal_bar + "\n"
         return string
 
     # Define a convenience funciton for concatenating another
@@ -334,16 +343,14 @@ class Data:
         if data.empty: return self
         # Special case for being empty.
         elif self.empty:
-            self.names = data.names[:]
-            self.types = data.types[:]
+            self.names = data.names
+            self.types = data.types
             # Load in the data
-            for row in data:
-                self.append(row)
+            for row in data: self.append(row)
         # Add rows to this from the provided Data
         elif all(n1 == n2 for (n1,n2) in zip(self.names, data.names)):
             # Load in the data
-            for row in data:
-                self.append(row)            
+            for row in data: self.append(row)
         # Add columns to this from the provided Data
         elif len(data) == len(self):
             for col in data.names:
@@ -365,19 +372,16 @@ class Data:
             (type(self.col_indices) != type(None))):
             raise(self.ImproperUsage("This is a data alias and does not support assignment."))
         # Convert the element into a python list
-        try:    element = element
+        try:    element = list(element)
         except: raise(self.BadValue(f"Invalid appended element, failed conversion to list."))
-        missing_values = False
         # Check length in case names already exist
         if (type(self.names) != type(None)):
             if (len(element) != len(self.names)):
                 raise(self.BadElement(f"Only elements of length {len(self.names)} can be added to this data."))
             # Try type casing the new element
             for i, (val, typ) in enumerate(zip(element, self.types)):
-                # Record 'None' types as missing entries
-                if type(val) == type(None):
-                    # This is a missing value
-                    missing_values = True
+                # Ignore 'None' type values.
+                if type(val) == type(None): pass
                 elif (typ == type(None)):
                     # Update unassigned types with the new values' type
                     self.types[i] = type(val)
@@ -399,9 +403,7 @@ class Data:
             self.names = [str(i) for i in range(len(element))]
         # Call the standard append operator, adding the element to self
         self.data.append(Data.Row(self, element))
-        # Add to the list of missing values if necessary
-        if (missing_values):
-            self.missing.add(id(self.data[-1]))
+
 
 
     # Make sure the copy of this data is a deep copy.
@@ -415,42 +417,32 @@ class Data:
         # Return a new data object.
         return type(self)(data=data, names=list(self.names), types=list(self.types))
 
-    # Overwrite the 'pop' method to track missing values.
+    # Overwrite the 'pop' method.
     def pop(self, index=-1):
         # Identify whether or not this is a data view.
         view = ((type(self.row_indices) != type(None)) or (type(self.col_indices) != type(None)))
         if view: raise(self.ImproperUsage("Cannot 'pop' from a data view. Copy this object to remove items."))
-        # Popping of a column
+        # Popping of a row
         if type(index) == int:
-            if (id(self[index]) in self.missing):
-                self.missing.remove( id(self[index]) )
             return self.data.pop(index)
         # Popping of a column
         elif (type(index) == str):
             if index not in self.names:
                 raise(self.BadSpecifiedName(f"There is no column named {index} in this Data."))
             col = self.names.index(index)
+            # Pop the column from "names", from "types" and then
+            # return values from the "pop" operation.
             self.names.pop(col)
             self.types.pop(col)
-            values = []
-            for row in self:
-                values.append( row.pop(col) )
-                # Check for removal from missing values.
-                if (id(row) in self.missing):
-                    if all(type(v) != type(None) for v in row):
-                        self.missing.remove(id(row))
-            return values
+            return [row.pop(col) for row in self]
         else:
             raise(self.BadIndex(f"Index {index} of type {type(index)} is not recognized."))
 
-    # Overwrite the 'remove' method to track missing values.
+    # Overwrite the 'remove' method.
     def remove(self, index):
         # Identify whether or not this is a data view.
         view = ((type(self.row_indices) != type(None)) or (type(self.col_indices) != type(None)))
         if view: raise(self.ImproperUsage("Cannot 'remove' from a data view. Copy this object to remove items."))
-        # See if this row is in the "missing" set.
-        if (id(self[index]) in self.missing):
-            self.missing.remove( id(self[index]) )
         return self.data.remove( index )
 
     # ========================
@@ -751,11 +743,11 @@ class Data:
                 raise(self.BadData(f"Provided column has at least {i+1} elements, more than the length of this data ({len(self)})."))
             # Append the value to this row..
             self[i].insert(idx, val)
-            if (type(val) == type(None)): # Only add to missing values entry if it's not already there
-                self.missing.add(id(self.data[i]))
-            elif (new_type == type(None)):
-                # Capture the new type (type must be right)
-                new_type = type(val)
+            # Only add to missing values entry if it's not already there
+            if (type(val) == type(None)):  pass
+            # Capture the new type (type must be right)
+            elif (new_type == type(None)): new_type = type(val)
+            # Error out otherwise.
             elif (type(val) != new_type):
                 # Remove the added name.
                 self.names.pop(idx)
@@ -911,7 +903,7 @@ class Data:
         data = []
         for row in self:
             # How to handle rows with missing values? Add column for "is missing"?
-            if (id(row) in self.missing): continue
+            if (None in row): continue
             data.append( to_real(row) )
         if (len(data) == 0):
             raise(self.BadData("No rows in this data are complete, resulting matrix empty."))
@@ -971,7 +963,7 @@ class Data:
             dtypes.append(pair)
         dtypes = np.dtype(dtypes)
         # Return the numpy structured array
-        return np.array([tuple(row) for row in self if (id(row) not in self.missing)], 
+        return np.array([tuple(row) for row in self if (None not in row)], 
                         dtype=dtypes)
 
     # Collect the dictionaries of unique values (with counts) for each column.
@@ -991,11 +983,12 @@ class Data:
                     column_info.pop(n)
         return column_info
 
-    # Generate a new data with only the unique rows (by content) from this data.
+    # Generate a "view" on this data object that only has the first
+    # occurrence of its unique rows and return it.
     def unique(self, display_wait_sec=DEFAULT_DISPLAY_WAIT):
         import time
         from util.system import hash
-        unique = Data(names=self.names, types=self.types)
+        rows = []
         found = set()
         start = time.time()
         for i,row in enumerate(self):
@@ -1010,8 +1003,8 @@ class Data:
             for v in row: hashed = hash( hashed + hash(v) )
             if hashed not in found:
                 found.add(hashed)
-                unique.append(row)
-        return unique
+                rows.append(i)
+        return self[rows]
 
     # Given a Data that has at least one column with the same names as
     # a column in self, collect all those values in non-mutual names
@@ -1024,7 +1017,7 @@ class Data:
     #   rows and one column contains lists of values associated with
     #   each unique row.
     # 
-    #   densified_data = data[some_columns].unique().collect(data)
+    #   data.collect([some_columns])
     # 
     def collect(self, data, display_wait_sec=DEFAULT_DISPLAY_WAIT):
         import time
@@ -1368,7 +1361,17 @@ class Data:
         print(f"  This data has {len(self)} row{'s' if len(self) != 1 else ''}, {len(self[0])} column{'s' if len(self[0]) != 1 else ''}.")
         num_ordinal = sum(1 for t in self.types if t in {float,int})
         print(f"    {num_ordinal} column{'s are' if num_ordinal != 1 else ' is'} recognized as ordinal, {len(self[0])-num_ordinal} {'are' if (len(self[0])-num_ordinal) != 1 else 'is'} categorical.")
-        print(f"    {len(self.missing)} row{'s have' if len(self.missing) != 1 else ' has'} missing values.")
+        # Get some statistics on the missing values.
+        missing_rows = {r:sum(map(is_none,v)) for (r,v) in enumerate(self) if (None in v)}
+        if len(missing_rows) > 0:
+            missing_cols = {c:sum(map(is_none,self[n])) for (c,n) in enumerate(self.names) if (None in self[n])}
+            row_indices = sorted(missing_rows)
+            col_indices = [self.names[i] for i in sorted(missing_cols)]
+            total_missing_values = sum(missing_rows.values())
+            total_values = num_rows * num_cols
+            print(f"    {len(missing_rows)} row{'s have' if len(missing_rows) != 1 else ' has'} missing values.")
+            print(f"    {len(missing_cols)} column{'s have' if len(missing_cols) != 1 else ' has'} missing values.")
+            print(f"    in total, {total_missing_values} of all {total_values} are missing.")
         print()
         print("COLUMNS:")
         print()

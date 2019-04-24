@@ -29,10 +29,8 @@ def test_data():
     assert(tuple(a[-1]) == tuple([1,"2",3.0]))
     assert(tuple(map(type,a[-1])) == (int, str, float))
 
-    # Verify caching of missing values
+    # Add some missing values.
     a.append([-1,None,None])
-    print(len(a.missing))
-    assert(len(a.missing) == 1)
 
     #  Done modifying "a", rest of tests leave it constant.
     # ----------------------------------------------------------------
@@ -66,27 +64,6 @@ def test_data():
 
     # Verify slicing by index
     assert(tuple(a[:1][0]) == tuple(a[0]))
-
-    # ----------------------------------------------------------------
-    print()
-    print(a)
-    print()
-    for row in a["0","2"]:
-        print(row)
-    print()
-    # The problem is as follows:
-    #   I am returning the same row object regardless of view
-    #   That row object thinks it is a child of full data
-    #   If I create a new row object, I mess up "self.missing" track
-    #   Need to think more.
-    # 
-    #   "missing" needs to track "{row : {cols}}" and update accordingly,
-    #    then "view" can properly update its own record of "missing"
-    #    and update its parent "data" when missing is changed.
-    #   When a row is inserted, all must be updated.
-    #   When columns are reordered, all must be updated.
-    #   Access "row" should return new object based on current parent.
-    # ----------------------------------------------------------------
 
     # Verify slicing by names
     assert(tuple(a["0","2"][0]) == tuple([1,1.2]))
@@ -139,12 +116,6 @@ def test_data():
     new_col = list(map(str,b["0"]))
     b["0-str"] = new_col
     assert(tuple(map(str,b["0"])) == tuple(b["0-str"]))
-
-    # Verify that missing values are handled correctly by add_column
-    b = a[:]
-    b.add_column([1,2,3,4,None])
-    assert(id(b[-1]) in b.missing)
-    assert(len(b.missing) == 1)
 
     # Verify copying a data object that has a 'None' in the first row
     b = Data(names=["0","1"], types=[int,str])
@@ -249,7 +220,7 @@ def test_data():
     b = a[:]
     b += a
     cols = ['0','1']
-    b = b[cols].unique().collect(b)
+    b = b[cols].unique().copy().collect(b)
     assert(tuple(b[0,-1]) == tuple(2*[a[0,-1]]))
 
     # Test the 'fill' method.
@@ -275,17 +246,6 @@ def test_data():
     # Verify that the names and types attributes are the correct type.
     assert("Descriptor" in str(type(a.types)))
     assert("Descriptor" in str(type(a.names)))
-
-    # Test the tracking of "missing" values.
-    b = a[:]
-    assert(len(b.missing) == 1)
-    assert(id(b[-1]) in b.missing)
-    b[-1][1] = '1'
-    b[-1][-1] = 1.
-    assert(len(b.missing) == 0)
-    b[-2][1] = None
-    assert(len(b.missing) == 1)
-    assert(id(b[-2]) in b.missing)
 
     # Attempt to index an empty data
     b = Data()
