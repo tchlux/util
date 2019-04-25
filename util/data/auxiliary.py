@@ -6,67 +6,65 @@ from util.data.exceptions import BadValue, ImproperUsage
 class Descriptor:
     # Initialize this descriptor, make sure all elements of 'values'
     # have the same type if provided.
-    def __init__(self, data=None, t=type(None), indices=None):
+    def __init__(self, data, values=None, types=type(None)):
+        # Store the parent data object of this descriptor.
+        self.data = data
         # Store the provided data (or make a new set)
-        if (type(data) == type(None)): data = []
-        self.data = list(data)
-        # Store the provided indices (or make a new list of them)
-        if (type(indices) == type(None)): indices = list(range(len(data)))
-        self.indices = indices
+        if (type(values) == type(None)): values = []
+        self.values = list(values)
         # Initialize the type.
-        self.type = t
-        for value in self.data:
+        self.type = types
+        for value in self.values:
             if (self.type == type(None)): self.type = type(value)
-            if (self.type != type(value)):
+            elif (self.type != type(value)):
                 raise(BadValue(f"Only type '{self.type}' objects can be added to this descriptor."))
 
     # Check for the type of the added value.
     def append(self, value):
+        if (self.data.view): raise(ImproperUsage("Cannot modify descriptor of view."))
         if (self.type == type(None)): self.type = type(value)
         if (self.type != type(value)):
             raise(BadValue(f"Only type '{self.type}' objects can be added to this descriptor."))
-        return self.data.append(value)
+        return self.values.append(value)
 
     # Check for type in the "setitem" operation.
     def __setitem__(self, index, value):
+        if (self.data.view): raise(ImproperUsage("Cannot modify descriptor of view."))
         if (self.type == type(None)): self.type = type(value)
         if (self.type != type(value)):
             raise(BadValue(f"Only type '{self.type}' objects can be added to this descriptor."))
-        self.data[self.indices[index]] = value
+        self.values[index] = value
 
     # When "getitem" is called, make a "view" over this Descriptor.
     def __getitem__(self, index):
         # If this is a slice, then return a 
         if (type(index) == slice):
-            return type(self)(data=self.data, t=self.type, indices=self.indices[index])
+            raise(ImproperUsage("A descriptor object cannot be sliced."))
         # Use the standard getitem operator.
-        return self.data[self.indices[index]]
+        return self.values[self.data.col(index)]
 
     # Define a "len" operator.
-    def __len__(self): return len(self.data)
+    def __len__(self): return self.data.shape[1]
 
     # Define a "str" operator.
-    def __str__(self): return str(self.data)
+    def __str__(self): return str(list(self))
 
     # Define an "insert" function.
     def insert(self, idx, value):
+        if (self.data.view): raise(ImproperUsage("Cannot modify descriptor of view."))
         if (self.type == type(None)): self.type = type(value)
         if (self.type != type(value)):
             raise(BadValue(f"Only type '{self.type}' objects can be added to this descriptor."))
-        if (tuple(set(self.indices)) != tuple(range(len(self.data)))):
-            raise(ImproperUsage("Not allowed to insert into a Descriptor view."))
-        # Add the additional index.
-        self.indices.append(len(self.data))
         # Add the new "value" at a desired "index".
-        return self.data.insert(self.indices[idx], value)
+        return self.values.insert(idx, value)
 
     # Identify the index (column number) of a value.
-    def index(self, value): return self.indices.index(self.data.index(value))
+    def index(self, value): return self.values.index(value)
 
     # Pop a value out of this descriptor.
     def pop(self, index):
-        self.indices.pop(index)
-        return self.data.pop(index)
+        if (self.data.view): raise(ImproperUsage("Cannot modify descriptor of view."))
+        return self.values.pop(index)
         
 
 # Local mutable Column class (for column item assignment,
@@ -75,8 +73,7 @@ class Column:
     index = 0
     def __init__(self, data, column, indices=None):
         # Generate indices if they were not provided
-        if (type(indices) == type(None)):
-            indices = list(range(len(data)))
+        if (type(indices) == type(None)): indices = list(range(len(data)))
         # Store the parent data and the column number 
         self.data = data
         self.column = column
@@ -85,23 +82,22 @@ class Column:
     #     Indexing
     # -----------------
     def __setitem__(self, index, value):
-        index = self.indices[index]
         # Default setitem for the parent data
-        self.data[index, self.column] = value
+        self.data[self.indices[index], self.column] = value
     def __getitem__(self, index):
-        # Default getitem for the parent data
+        # Default getitem for the parent data, bypass "getitem" and
+        # retrieve value stored in internal data.
         if (type(index) == int):
-            index = self.indices[index]
-            return self.data[index, self.column]
+            return self.data.data[self.data.row(self.indices[index])][self.data.col(self.column)]
         elif (type(index) == slice):
             indices = range(len(self.indices))[index]
         elif (hasattr(index, "__iter__")):
             # Convert provided index into a list of integers.
             indices = []
-            for i in index:
-                if (type(i) != int):
-                    raise(self.data.BadIndex(f"Data column index iterable contained type {type(i)}, expected {int}."))                    
-                indices.append( self.indices[i] )
+            for i,v in index:
+                if (type(v) == bool) and v: indices.append(self.indices[i])
+                elif (type(v) == int):      indices.append(self.indices[v])
+                else: raise(self.data.BadIndex(f"Data column index iterable contained type {type(i)}, expected {int} or {bool}."))
         else:
             raise(self.data.BadIndex(f"Data column does not support indexing with type {type(index)}."))
         # Return a new column with modified indices.
@@ -124,8 +120,7 @@ class Column:
     # Get the length of this Column
     def __len__(self): return len(self.indices)
     # Use the iteration to generate a string of this column
-    def __str__(self):
-        return str(list(self))
+    def __str__(self): return str(list(self))
 
     #     Operators
     # -----------------
@@ -214,24 +209,23 @@ class Row:
         self.data = data
         self.values = values
 
-    # Convert an acceptable index into a list of numbers.
+    # Convert an index (which may be in a view) to a list of numeric
+    # indices that correctly map to the true data.
     def _index_to_nums(self, index):
-        # Declare the indices of this row based on its parent data object.
-        if (type(self.data.col_indices) != type(None)): indices = self.data.col_indices
-        else:                                           indices = list(range(len(self.values)))
         # Return integer indices.
-        if   type(index) == int:   nums = [indices[index]]
+        if   type(index) == int:   nums = [self.data.col(index)]
         # Return slice indices.
-        elif type(index) == slice: nums = [indices[i] for i in range(len(self.values))[index]]
+        elif type(index) == slice: nums = list(map(self.data.col, range(len(self))[index]))
         # Return string indices (based on parent data).
         elif type(index) == str:   nums = [self.data.names.index(index)]
         # Convert an iterable into a list of numeric indices.
         elif hasattr(index, "__iter__"):
             nums = []
+            i = v = None
             for i,v in enumerate(index):
-                if   type(v) == int:  nums.append(indices[v])
-                elif type(v) == str:  nums.append(self.data.names.index(v))
-                elif (type(v) == bool) and v: nums.append(indices[i])
+                if   type(v) == int:          nums.append(self.data.col(v))
+                elif type(v) == str:          nums.append(self.data.names.index(v))
+                elif (type(v) == bool) and v: nums.append(self.data.col(i))
                 else: raise(self.data.BadIndex(f"Index '{index}' not understood by {type(self)} object."))
             # Make sure that boolean indices are full length.
             if (type(v) == bool) and (i != len(self)-1):
@@ -249,50 +243,35 @@ class Row:
         if (len(idx) > 1): raise(self.data.BadAssignment(f"{type(self)} object can only assign one position at a time."))
         i = idx[0]
         # Assign the type of the column of data if it is unassigned.
-        if self.data.types[i] == type(None):
+        if type(value) == type(None): pass
+        elif self.data.types[i] == type(None):
             self.data.types[i] = type(value)
-        elif type(value) == type(None): pass
         elif (self.data.types[i] != type(value)):
             raise(self.data.BadValue(f"Index {i} can only accept {self.data.types[i]}, received {type(value)}."))
         # Assign the value if it is allowable.
         self.values[i] = value
     # Define a "length" for this row.
-    def __len__(self): return min(len(self.data.names), len(self.values))
-    def __str__(self):
-        # Declare the indices of this row based on its parent data object.
-        if (type(self.data.col_indices) != type(None)): indices = self.data.col_indices
-        else:                                           indices = list(range(len(self.values)))
-        return str([self.values[i] for i in indices])
+    def __len__(self): return self.data.shape[1]
+    def __str__(self): return str(list(self))
     # Define a "insert" function.
     def insert(self, i, value):
-        # Declare the indices of this row based on its parent data object.
-        if (type(self.data.col_indices) != type(None)): indices = self.data.col_indices
-        else:                                           indices = list(range(len(self.values)))
-        if (tuple(set(indices)) != tuple(range(len(self.values)))):
+        if (self.data.view):
             raise(self.data.ImproperUsage(f"This row is only a view and does not support insertion."))
-        if (len(self) != len(self.data.names)-1):
-            print()
-            print("self.data.names: ",len(self.data.names))
-            print("self.data.names: ",self.data.names)
-            print("len(self):       ",len(self))
-            print("self.values:     ",self.values)
+        if (len(self.values) != len(self) - 1):
             raise(self.data.ImproperUsage(f"Invalid insertion operation on {type(self)}."))
         # Return the insertion of the new value.
         return self.values.insert(i, value)
     # Define a "pop" function.
     def pop(self, i):
-        # Declare the indices of this row based on its parent data object.
-        if (type(self.data.col_indices) != type(None)): indices = self.data.col_indices
-        else:                                           indices = list(range(len(self.values)))
-        if (tuple(set(indices)) != tuple(range(len(self.values)))):
+        if (self.data.view):
             raise(self.data.ImproperUsage(f"This row is only a view and does not support 'pop'."))
         if (len(self) != len(self.data.names)):
             raise(self.data.ImproperUsage(f"Invalid pop operation on {type(self)}."))
+        # Return the popped value.
         return self.values.pop(i)
 
     #    Operators
     # ---------------
-
     # Generic boolean operator function.
     def _gen_operator(self, other, op_name):
         # First check for length.
