@@ -35,11 +35,11 @@ class Descriptor:
             raise(BadValue(f"Only type '{self.type}' objects can be added to this descriptor."))
         self.values[index] = value
 
-    # When "getitem" is called, make a "view" over this Descriptor.
+    # Return the appropriately mapped values through getitem.
     def __getitem__(self, index):
         # If this is a slice, then return a 
         if (type(index) == slice):
-            raise(ImproperUsage("A descriptor object cannot be sliced."))
+            return [self.values[self.data.col(i)] for i in range(self.data.shape[1])[index]]
         # Use the standard getitem operator.
         return self.values[self.data.col(index)]
 

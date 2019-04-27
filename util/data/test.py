@@ -34,11 +34,52 @@ def test_data():
 
     #  Done modifying "a", rest of tests leave it constant.
     # ----------------------------------------------------------------
-    # Verify in-place addition
+
+    # Verify the stack process.
+    b = a[:]
+    b += a
+    b.stack('2')
+    assert(tuple(b[0,-1]) == tuple(2*[a[0,-1]]))
+
+    # Testing the "unstack" operation.
+    b = a[:]
+    b += a
+    b.pop(-1)
+    b.stack('2')
+    # Convert the "stacked" column into generator ogbjects.
+    b['2'] = ((v for v in row) for row in b['2'])
+    b[-1,'2'] = None
+    # Unstack, and verify that the expected output happens.
+    b.unstack('2')
+    assert(tuple(b['1']) == ('a','a','b','b','c','c','2','2',None))
+
+    # Verify that slicing works on descirptors.
+    assert(a.names[:-1] == ['0','1'])
+
+    # Verify that slicing works on descriptors of views.
+    b = a[:,1:]
+    assert(b.names[1:] == ['2'])
+
+    # Verify in-place addition of rows (different length data with same column names)
     b = a[:-2].copy()
     c = a[1:-2]
     b += c
     assert(tuple(b["0"]) == tuple([1,2,3,2,3]))
+
+    # Verify in-place addition of new columns (same length data with new columns)
+    b = a[:,:-1].copy()
+    c = a[:,-1:].copy()
+    c["3"] = range(len(c))
+    b += c
+    assert(tuple(b[-2]) == (1,"2",3.0,3))
+    assert(tuple(b[-1]) == (-1,None,None,4))
+
+    # Verify the addition of in place addition of new columns AND rows.
+    b = a[:].copy()
+    b['3'] = range(len(b))
+    c = a[:]
+    c += b
+    assert(tuple(c['3']) == tuple([None]*len(b) + list(range(len(c)-len(b)))))
 
     # Verify slicing-based singleton value assignment
     b = a[:-2].copy()
@@ -134,6 +175,14 @@ def test_data():
     assert(tuple(a["0"]) == tuple(b["0"]))
     os.remove("a-test.csv")
 
+    # Verify the writing of a CSV with quoted content and correct read.
+    b = a[:]
+    b[-1,1] = "string with comma, we'll see"
+    b.save("a-test.csv")
+    c = Data.load("a-test.csv")
+    assert(tuple(c[-1]) == tuple(b[-1]))
+    os.remove("a-test.csv")
+
     # Verify load and save of a pkl file
     a.save("a-test.pkl")
     b = Data.load("a-test.pkl")
@@ -206,6 +255,15 @@ def test_data():
     assert(b[0,'3'] == str(b[0,'2']))
     assert(b[-1,'3'] == str(b[-1,'2']))
 
+    # Verify assignment of a non-iterable being broadcast automatically.
+    b['4'] = None
+    assert(tuple(b[-2]) == (1,'2',3.0,'3.0',None))
+
+    # Vefify addition of a column to empty data works.
+    b = Data()
+    b.add_column([1,2,3])
+    assert(tuple(b[:,0]) == (1,2,3))
+
     # Verify the generation of a random k-fold cross validation.
     b = Data()
     for i in range(37):
@@ -222,6 +280,15 @@ def test_data():
     cols = ['0','1']
     b = b[cols].unique().copy().collect(b)
     assert(tuple(b[0,-1]) == tuple(2*[a[0,-1]]))
+
+    # Verify slicing data down to one column.
+    b = a[:,-1]
+    assert(tuple(b[:,0]) == (1.2,3.0,2.4,3.0,None))
+
+    # Test slicing to access columns and rows.
+    b = a[:,:-1]
+    c = b.unique()
+    assert(len(b) == len(c))
 
     # Test the 'fill' method.
     b = a[:]
@@ -247,11 +314,8 @@ def test_data():
     assert("Descriptor" in str(type(a.types)))
     assert("Descriptor" in str(type(a.names)))
 
-    # Attempt to index an empty data
-    b = Data()
-    try:   b[0]
-    except Data.Empty: pass
-    else:  assert(False)
+    # ----------------------------------------------------------------
+    #     Testing expected exceptions.
 
     # Try assigning with a generator that is too short.
     try:   a['3'] = (i for i in range(len(a)-1))
@@ -269,51 +333,51 @@ def test_data():
     else: assert(False)
 
     # Try adding a too-short row
-    try:
-        b = a[:]
-        b.append([9,"z"])
+    b = a[:]
+    try:   b.append([9,"z"])
     except Data.BadElement: pass
-    else: assert(False)
+    else:  assert(False)
 
     # Try a too-short column
-    try:
-        b = a[:]
-        b.add_column([1])
+    b = a[:]
+    try:   b.add_column([1])
     except Data.BadData: pass
-    else: assert(False)
+    else:  assert(False)
 
     # Try a too-long column
-    try:
-        b = a[:]
-        b.add_column(map(float,range(1000)))
+    b = a[:]
+    try:   b.add_column(map(float,range(1000)))
     except Data.BadData: pass
-    else: assert(False)
+    else:  assert(False)
+
+    # Try adding an empty column
+    b = a[:]
+    try:   b.add_column([])
+    except Data.BadData: pass
+    else:  assert(False)
 
     # Try adding a name that is not a string
-    try:
-        b = a[:]
-        b.add_column([1,2,3,4,5], name=1)
+    b = a[:]
+    try:   b.add_column([1,2,3,4,5], name=1)
     except Data.BadSpecifiedName: pass
-    else: assert(False)
+    else:  assert(False)
 
     # Try adding a column with multiple types
-    try:
-        b = a[:]
-        b.add_column([1,2,3,4,5.0])
+    b = a[:]
+    try:   b.add_column([1,2,3,4,5.0])
     except Data.BadValue: pass
-    else: assert(False)
+    else:  assert(False)
 
     # Try a mismatched-type slice assignment
-    try:
-        b = a[:]
-        b[:,0] = [1.0, 1, 1, 1, 1]
+    b = a[:]
+    try:   b[:,0] = [1.0, 1, 1, 1, 1]
     except Data.BadAssignment: pass
-    else: assert(False)
+    else:  assert(False)
 
     # Try a mismatched-type column assignment operation
     try:   a["0"] = list(a["0"])[:-1] + ["0"]
     except Data.BadAssignment: pass
-    else: assert(False)
+    else:  assert(False)
 
     # Try a too-short column assignment operation
     try:   a["0"] = list(map(str,a["0"]))[:-1]
@@ -323,42 +387,81 @@ def test_data():
     # Try a too-long column assignment operation
     try:   a["0"] = list(map(str,a["0"])) + [1]
     except Data.BadAssignment: pass
-    else: assert(False)
+    else:  assert(False)
+
+    # Test for an error when an added data set has duplicate columns.
+    b = a[:]
+    c = a[:]
+    c.names[2] = '1'
+    try:    b.collect(c)
+    except: Data.BadData
+    else:   assert(False)
 
     # Try a bad combination of names and types
     try:   Data(names=["a","b","c"], types=[str, str])
     except Data.NameTypeMismatch: pass
-    else: assert(False)
+    else:  assert(False)
 
     # Try a bad value in "names"
     try:   Data(names=[1,2,3], types=["a","b","c"])
     except Data.BadSpecifiedName: pass
-    else: assert(False)
+    else:  assert(False)
 
     # Try a bad value in "types"
     try:   Data(names=["a","b","c"], types=[1,2,3])
     except Data.BadSpecifiedType: pass
-    else: assert(False)
+    else:  assert(False)
 
     # Try bad value
     try:   a.append(["a","b","c"])
     except Data.BadValue: pass
-    else: assert(False)
+    else:  assert(False)
 
     # Try bad element
     try:   a.append([1,2])
     except Data.BadElement: pass
-    else: assert(False)
+    else:  assert(False)
 
     # Try non-existing column index
     try:   a["hello"]
     except Data.UnknownName: pass
-    else: assert(False)
+    else:  assert(False)
 
-    # Try column indexing an uninitialized data
+    # Attempt to set item on an empty data
+    b = Data()
+    try:   b[0] = 1
+    except Data.Empty: pass
+    else:  assert(False)
+
+    # Try get item on an uninitialized data
     try:   Data()["a"]
     except Data.Empty: pass
-    else: assert(False)
+    else:  assert(False)
+
+    # Try retyping an uninitialized data
+    try:   Data().retype([])
+    except Data.Empty: pass
+    else:  assert(False)
+
+    # Try reordering an uninitialized data
+    try:   Data().reorder([])
+    except Data.Empty: pass
+    else:  assert(False)
+
+    # Try copying an uninitialized data
+    try:   Data().copy()
+    except Data.Empty: pass
+    else:  assert(False)
+
+    # Try popping from an uninitialized data
+    try:   Data().pop()
+    except Data.Empty: pass
+    else:  assert(False)
+
+    # Try saving an uninitialized data
+    try:   Data().save("")
+    except Data.Empty: pass
+    else:  assert(False)
 
     # Done testing
     print("passed.")
