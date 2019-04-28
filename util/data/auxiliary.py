@@ -11,7 +11,7 @@ class Descriptor:
         self.data = data
         # Store the provided data (or make a new set)
         if (type(values) == type(None)): values = []
-        self.values = list(values)
+        self.values = values
         # Initialize the type.
         self.type = types
         for value in self.values:

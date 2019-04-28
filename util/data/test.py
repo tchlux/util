@@ -35,24 +35,6 @@ def test_data():
     #  Done modifying "a", rest of tests leave it constant.
     # ----------------------------------------------------------------
 
-    # Verify the stack process.
-    b = a[:]
-    b += a
-    b.stack('2')
-    assert(tuple(b[0,-1]) == tuple(2*[a[0,-1]]))
-
-    # Testing the "unstack" operation.
-    b = a[:]
-    b += a
-    b.pop(-1)
-    b.stack('2')
-    # Convert the "stacked" column into generator ogbjects.
-    b['2'] = ((v for v in row) for row in b['2'])
-    b[-1,'2'] = None
-    # Unstack, and verify that the expected output happens.
-    b.unstack('2')
-    assert(tuple(b['1']) == ('a','a','b','b','c','c','2','2',None))
-
     # Verify that slicing works on descirptors.
     assert(a.names[:-1] == ['0','1'])
 
@@ -118,6 +100,35 @@ def test_data():
     b = a[:]
     b.retype([str,str,str])
     assert(a.types[0] != str)
+
+    # Verify that multiple transformations on data yield correct view.
+    b = a[:]
+    b += a
+    b += a
+    c = b[::2]
+    c = c[['1', '2']].unique()
+    assert(c.shape[0] == len(a))
+    assert(tuple(c.names) == tuple(b.names[1:]))
+
+    # Verify the stack process.
+    b = a[:]
+    c = a[:]
+    c['2'] += 1.0
+    b += c
+    b.stack('2')
+    assert(tuple(b[0,-1]) == (a[0,-1], a[0,-1]+1.0))
+
+    # Testing the "unstack" operation.
+    b = a[:]
+    b += a
+    b.pop(-1)
+    b.stack('2')
+    # Convert the "stacked" column into generator ogbjects.
+    b['2'] = ((v for v in row) for row in b['2'])
+    b[-1,'2'] = None
+    # Unstack, and verify that the expected output happens.
+    b.unstack('2')
+    assert(tuple(b['1']) == ('a','a','b','b','c','c','2','2',None))
 
     # Verify that reorder works.
     b = a[:]

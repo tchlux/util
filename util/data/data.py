@@ -1,9 +1,11 @@
-import os
+import os, sys
 from util.data.read import read_data
 from util.data.categories import regular_simplex
 from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES, \
     SEPARATORS, FILE_SAMPLE_SIZE, MISSING_SAMPLE_SIZE
 
+# TODO:  Make "Data.sort" sort Data if it is not a view and sort the
+#        _row_indices if it is a view.
 # TODO:  Make "to_matrix" automatically flatten elements of columns
 #        that contain iterables into their base types. If the types
 #        are numeric, use float, otherwise use string. Use "is numeric"
@@ -120,6 +122,17 @@ class Data:
         elif (self.view): return (len(self), len(self._col_indices))
         else:             return (len(self), len(self.names.values))
 
+    # Declare a "summary" property that returns the results of
+    # "summarize" as a string (instead of printing them to output).
+    @property
+    def summary(self):
+        import tempfile
+        with tempfile.TemporaryFile(mode="w+t") as f:
+            self.summarize(file=f)
+            f.seek(0)
+            output = f.read()
+        return output
+
     # Given an index, return the index in "self.data" that holds that row. 
     def row(self, idx):
         if self.view: return self._row_indices[idx]
@@ -140,6 +153,8 @@ class Data:
         else:           return len(self.data)
 
     def __init__(self, data=None, names=None, types=None, rows=None, cols=None):
+        import time
+        start = time.time()
         # Verify the length of the types and names
         if ((type(types) != type(None)) and
             (type(names) != type(None)) and
@@ -172,9 +187,12 @@ class Data:
             self._col_indices = cols
         # If provided, build this data as a deep copy of provided data.
         elif type(data) != type(None):
-            for row in data: self.append(row)
-
-
+            for i,row in enumerate(data):
+                # Update user on progress if too much time has elapsed..
+                if (time.time() - start) > self.max_wait:
+                    print(f" {100.*row/len(data):.2f}% init", end="\r", flush=True)
+                    start = time.time()
+                self.append(row)
 
     # Overwrite the standard "[]" get operator to accept strings as well.
     # Given local-specific index, convert to Data index and return value.
@@ -215,8 +233,8 @@ class Data:
             # If they are extracting the full data then assume a copy is desired.
             if ((len(set(rows)), len(set(cols))) == self.shape): return self.copy()
             # Otherwise make an alias data set (a data "view") and return it.
-            return Data(data=self.data, names=self.names,
-                        types=self.types, rows=rows, cols=cols)
+            return Data(data=self.data, names=self.names.values,
+                        types=self.types.values, rows=rows, cols=cols)
 
     # Overwrite the standard "[]" get operator to accept strings as well.
     # Given local-specific index, convert to Data index and return value.
@@ -293,14 +311,13 @@ class Data:
         # Special case for being empty.
         if (self.empty): return "This Data has no contents.\n"
         # Custom short string for a 'data' type object.
-        if short: return f"Data ({self.shape[1]} x {len(self)}) -- {self.names}"
+        if short: return f"Data ({self.shape[0]} x {self.shape[1]}) -- {self.names}"
         # Make a pretty table formatted output
         num_rows, num_cols = self.shape
         rows = []
         rows += [ list(self.names) ]
         rows += [ list(map(lambda t: str(t)[8:-2],self.types)) ]
         for i,row in enumerate(self):
-            if self.view: row = [row[col] for col in range(num_cols)]
             rows += [ row ]
             if i >= self.max_display: break
         # Redefine all rows by mapping them to strings.
@@ -459,17 +476,27 @@ class Data:
 
     # Make sure the copy of this data is a deep copy.
     def copy(self):
+        import time
+        start = time.time()
         # Special case for being empty.
         if (self.empty): raise(Data.Empty("Cannot copy empty data."))
         # Construct a new data set that is a copy of the data in this object.
         if self.view: rows, cols = self._row_indices, self._col_indices
         else:         rows, cols = map(list,map(range,self.shape))
-        data = [[self.data[row][col] for col in cols] for row in rows]
+        data = []
+        for i,row in enumerate(rows):
+            # Update user on progress if too much time has elapsed..
+            if (time.time() - start) > self.max_wait:
+                print(f" {100.*row/len(self):.2f}% copy", end="\r", flush=True)
+                start = time.time()
+            data.append( [self.data[row][col] for col in cols] )
         # Return a new data object.
-        return Data(data=data, names=self.names, types=self.types)
+        return Data(data=data, names=list(self.names), types=list(self.types))
 
     # Overwrite the 'pop' method.
     def pop(self, index=-1):
+        import time
+        start = time.time()
         # Special case for being empty.
         if (self.empty): raise(Data.Empty("Cannot pop from empty data."))
         if self.view: raise(Data.Unsupported("Cannot 'pop' from a data view. Copy this object to remove items."))
@@ -485,7 +512,14 @@ class Data:
             # return values from the "pop" operation.
             self.names.pop(col)
             self.types.pop(col)
-            return [row.pop(col) for row in self]
+            values = []
+            for i,row in enumerate(self):
+                # Update user on progress if too much time has elapsed..
+                if (time.time() - start) > self.max_wait:
+                    print(f" {100.*row/len(self):.2f}% pop", end="\r", flush=True)
+                    start = time.time()
+                values.append( row.pop(col) )
+            return values
         else:
             raise(Data.BadIndex(f"Index {index} of type {type(index)} is not recognized."))
 
@@ -667,6 +701,10 @@ class Data:
             # For big files, only read a random sample of the file by default.
             import os
             is_big = os.path.exists(path) and (os.path.getsize(path) > FILE_SAMPLE_SIZE)
+            # If the "sample" is a float, assume its a ratio of lines.
+            if ("sample" in read_data_kwargs) and (type(read_data_kwargs["sample"]) == float):
+                read_data_kwargs["sample_ratio"] = read_data_kwargs.pop("sample")
+            # By default, sample big data files.
             sample_unspecified = ("sample" not in read_data_kwargs)
             if (is_big and sample_unspecified):
                 def read_chunks(f, num_bytes=2**20):
@@ -679,7 +717,9 @@ class Data:
                     lines = sum(chunk.count("\n") for chunk in read_chunks(f))
                 # Guess at a sample number by assuming lines are equal
                 # sizes, try and grab approximately "FILE_SAMPLE_SIZE".
-                sample_size = int(lines * (FILE_SAMPLE_SIZE/os.path.getsize(path)))
+                sample_ratio = read_data_kwargs.pop("sample_ratio",
+                    FILE_SAMPLE_SIZE/os.path.getsize(path) )
+                sample_size = int(lines * sample_ratio)
                 print("WARNING: Found",lines,"lines, randomly sampling",sample_size,"from this file.")
                 print("         Use 'sample=None' if you want all lines from this file.")
                 read_data_kwargs["sample"] = sample_size
@@ -1155,40 +1195,53 @@ class Data:
                     raise(Data.BadIndex("There is no column named '{columns[i]}' in this data."))
             else:
                 raise(Data.BadIndex("The index '{columns[i]}' is not recognized. Only {int} and {str} are allowed."))
+        # Create a view of the columns that will be kept for hashing.
+        keep_columns = [i for (i,n) in enumerate(self.names) if n not in columns]
+        keep_view = self[:,keep_columns]
         # Get all columns that will be stacked and rename them.
         stacked_columns = [n for n in self.names if n in columns]
         for i in map(self.names.index, stacked_columns):
             self.names[i] += " unstacked"
         old_col_names = [n + " unstacked" for n in stacked_columns]
-        # Initialize all stacked columns to hold lists of values.
-        for n in stacked_columns: self[n] = (list() for i in range(len(self)))
         # Get the indices of the old and new columns.
-        new_col_idxs = [self.names.index(n) for n in stacked_columns]
         old_col_idxs = [self.names.index(n) for n in old_col_names]
-        # Remove all rows from this data object that are not unique by
-        # "columns" and stack the rest in the process.
+        # Track the first occurrence of each 
         lookup = {}
-        i = 0
-        while (i < len(self)):
+        to_pop = []
+        for i in range(len(self)):
             # Update user on progress if too much time has elapsed..
             if (time.time() - start) > self.max_wait:
                 print(f" {100.*i/len(self):.2f}% stack", end="\r", flush=True)
                 start = time.time()
-            hashed = hash(list(self[i]))
+            # Hash the non-stacked columns of this row.
+            hashed = hash(list(keep_view[i]))
+            # hashed = hash(list(self[i]))
             if hashed in lookup:
-                row = lookup[hashed]
-                values = self.pop(i)
-                # Don't dncrement the index because we are popping.
+                row, stack = lookup[hashed]
+                to_pop.append(i)
             else:
-                lookup[hashed] = row = len(lookup)
-                values = self[i]
-                # Increment the index because we are not popping.
-                i += 1
+                row, stack = len(lookup), {c:list() for c in stacked_columns}
+                lookup[hashed] = (row, stack)
             # Copy the values from the row into the stacks.
-            for (new_c, old_c) in zip(new_col_idxs, old_col_idxs):
-                self[row,new_c].append( values.values[old_c] )
+            for (new_c, old_c) in zip(stacked_columns, old_col_idxs):
+                stack[new_c].append( self[i].values[old_c] )
+        # Pop out all of the now-useless rows.
+        for i in to_pop[::-1]:
+            # Update user on progress if too much time has elapsed..
+            if (time.time() - start) > self.max_wait:
+                print(f" {100.*i/len(self):.2f}% stack - pop rows", end="\r", flush=True)
+                start = time.time()
+            self.pop(i)
         # Pop out all of the old columns.
         for c in old_col_names: self.pop(c)
+        # Insert all of the stacked values into new columns.
+        new_stacks = sorted(lookup.values(), key=lambda i: i[0])
+        for i,c in enumerate(stacked_columns):
+            # Update user on progress if too much time has elapsed..
+            if (time.time() - start) > self.max_wait:
+                print(f" {100.*i/len(stacked_columns):.2f}% stack - add stacks", end="\r", flush=True)
+                start = time.time()
+            self[c] = (stack[c] for (_,stack) in new_stacks)
 
 
     # Undo the "stack" operation. Given columns that contain
@@ -1608,18 +1661,23 @@ class Data:
 
     # Give an overview (more detailed than just "str") of the contents
     # of this data. Useful for quickly understanding how data looks.
-    def summarize(self, max_display=None):
+    def summarize(self, max_display=None, file=sys.stdout):
+        # Define a new print function that redirects to the provided file.
+        def print_to_file(*args, **kwargs):
+            kwargs['flush'] = True
+            kwargs['file'] = file
+            return print(*args, **kwargs)
         # Special case for an empty data
         if len(self) == 0:
-            print(self)
+            print_to_file(self)
             return
         # Set the "max_display" to the default value for this class
         if type(max_display) == type(None): max_display = self.max_display
-        print("SUMMARY:")
-        print()
-        print(f"  This data has {len(self)} row{'s' if len(self) != 1 else ''}, {len(self[0])} column{'s' if len(self[0]) != 1 else ''}.")
+        print_to_file("SUMMARY:")
+        print_to_file()
+        print_to_file(f"  This data has {len(self)} row{'s' if len(self) != 1 else ''}, {len(self[0])} column{'s' if len(self[0]) != 1 else ''}.")
         num_ordinal = sum(1 for t in self.types if t in {float,int})
-        print(f"    {num_ordinal} column{'s are' if num_ordinal != 1 else ' is'} recognized as ordinal, {len(self[0])-num_ordinal} {'are' if (len(self[0])-num_ordinal) != 1 else 'is'} categorical.")
+        print_to_file(f"    {num_ordinal} column{'s are' if num_ordinal != 1 else ' is'} recognized as ordinal, {len(self[0])-num_ordinal} {'are' if (len(self[0])-num_ordinal) != 1 else 'is'} categorical.")
         # Get some statistics on the missing values.
         is_none = lambda v: type(v) == type(None)
         missing_rows = {r:sum(map(is_none,v)) for (r,v) in enumerate(self) if (None in v)}
@@ -1629,12 +1687,12 @@ class Data:
             col_indices = [self.names[i] for i in sorted(missing_cols)]
             total_missing_values = sum(missing_rows.values())
             total_values = num_rows * num_cols
-            print(f"    {len(missing_rows)} row{'s have' if len(missing_rows) != 1 else ' has'} missing values.")
-            print(f"    {len(missing_cols)} column{'s have' if len(missing_cols) != 1 else ' has'} missing values.")
-            print(f"    in total, {total_missing_values} of all {total_values} are missing.")
-        print()
-        print("COLUMNS:")
-        print()
+            print_to_file(f"    {len(missing_rows)} row{'s have' if len(missing_rows) != 1 else ' has'} missing values.")
+            print_to_file(f"    {len(missing_cols)} column{'s have' if len(missing_cols) != 1 else ' has'} missing values.")
+            print_to_file(f"    in total, {total_missing_values} of all {total_values} are missing.")
+        print_to_file()
+        print_to_file("COLUMNS:")
+        print_to_file()
         name_len = max(map(len, self.names))
         type_len = max(map(lambda t: len(str(t)), self.types))
         # Describe each column of the data
@@ -1649,14 +1707,14 @@ class Data:
                     to_string = True
                     val = str(val)
                     counts[val] = counts.get(val,0) + 1
-            print(f"  {c:{len(str(self.shape[1]))}d} -- \"{n}\"{'':{1+name_len-len(n)}s}{str(t):{type_len}s} ({len(counts)} unique value{'s' if (len(counts) != 1) else ''})")
+            print_to_file(f"  {c:{len(str(self.shape[1]))}d} -- \"{n}\"{'':{1+name_len-len(n)}s}{str(t):{type_len}s} ({len(counts)} unique value{'s' if (len(counts) != 1) else ''})")
             # Remove the "None" count from "counts" to prevent sorting problems
             none_count = counts.pop(None, 0)
             # For the special case of ordered values, reduce to ranges
             if (t in {int,float}) and (len(counts) > max_display):
                 if (none_count > 0):
                     perc = 100. * (none_count / len(self))
-                    print(f"    None                 {none_count:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
+                    print_to_file(f"    None                 {none_count:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
                 # Order the values by intervals and print
                 min_val = min(counts)
                 max_val = max(counts)
@@ -1671,7 +1729,7 @@ class Data:
                         num = sum(counts[v] for v in counts if lower <= v < upper)
                         cap = ")"
                     perc = 100. * (num / len(self))
-                    print(f"    [{lower:9.2e}, {upper:9.2e}{cap} {num:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
+                    print_to_file(f"    [{lower:9.2e}, {upper:9.2e}{cap} {num:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
             else:
                 if t in {int, float}:
                     # Order the values by their inate ordering
@@ -1685,16 +1743,16 @@ class Data:
                 if (t == str): val_len += 2
                 if (none_count > 0):
                     perc = 100. * (none_count / len(self))
-                    print(f"    {'None':{val_len}s}{'  ' if (t == str) else ''} {none_count:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
+                    print_to_file(f"    {'None':{val_len}s}{'  ' if (t == str) else ''} {none_count:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
                 for val in ordered_vals[:max_display]:
                     perc = 100. * (counts[val] / len(self))
                     if (t == str):
-                        print(f"    \"{val}\"{'':{1+val_len-len(str(val))}s}{counts[val]:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
+                        print_to_file(f"    \"{val}\"{'':{1+val_len-len(str(val))}s}{counts[val]:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
                     else:
-                        print(f"    {self._val_to_str(val):{val_len}s} {counts[val]:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
+                        print_to_file(f"    {self._val_to_str(val):{val_len}s} {counts[val]:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
                 if (len(ordered_vals) > max_display):
-                    print("    ... (increase 'max_display' to see more summary statistics).")
-            print()
+                    print_to_file("    ... (increase 'max_display' to see more summary statistics).")
+            print_to_file()
 
 
 
