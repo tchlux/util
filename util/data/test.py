@@ -77,7 +77,7 @@ def test_data():
     assert(a[0,1] == "a")
 
     # Verify double indexing with slices
-    assert(tuple(a[::-1,1]["1"])[2:] == tuple(["c","b","a"]))
+    assert(tuple(a[::-1,1])[2:] == tuple(["c","b","a"]))
 
     # Verify standard index access
     assert(tuple(a[0]) == tuple([1,"a",1.2]))
@@ -109,6 +109,16 @@ def test_data():
     c = c[['1', '2']].unique()
     assert(c.shape[0] == len(a))
     assert(tuple(c.names) == tuple(b.names[1:]))
+
+    # Verify that sorting a data object and a view object both work.
+    b = a[:]
+    b.sort()
+    assert(tuple(b[:,0]) == tuple(sorted(a[:,0])))
+    b = a[:-1, [0,1]]
+    b.sort()
+    assert(tuple(b[:,1]) == tuple(sorted(a[:-1,1])))
+    # Assert that "a" (the object being viewed) is unmodified.
+    assert(tuple(a['1']) == ('a','b','c','2',None))
 
     # Verify the stack process.
     b = a[:]
@@ -240,7 +250,7 @@ def test_data():
 
     # Verify that "addition" with sequences works correctly (left and right).
     b = a[:]
-    b[:,1] = map(lambda v: (ord(v[0]) if v[0] != None else None), b[:,1])
+    b[:,1] = map(lambda v: (ord(v) if (v != None) else None), b[:,1])
     assert(sum(b[0] + [-1,-97,-1.2]) == 0)
     assert(sum([-1,-97,-1.2] + b[0]) == 0)
     assert(tuple(a[0] + a[0]) == (2,'aa',2.4))
@@ -293,8 +303,7 @@ def test_data():
     assert(tuple(b[0,-1]) == tuple(2*[a[0,-1]]))
 
     # Verify slicing data down to one column.
-    b = a[:,-1]
-    assert(tuple(b[:,0]) == (1.2,3.0,2.4,3.0,None))
+    assert(tuple(a[:,-1]) == (1.2,3.0,2.4,3.0,None))
 
     # Test slicing to access columns and rows.
     b = a[:,:-1]

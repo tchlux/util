@@ -5,6 +5,7 @@ class BadSpecifiedType(Exception): pass
 class BadSpecifiedName(Exception): pass
 class NoNamesSpecified(Exception): pass
 class ImproperUsage(Exception): pass
+class MissingModule(Exception): pass
 class UnknownName(Exception): pass
 class Unsupported(Exception): pass
 class BadAssignment(Exception): pass

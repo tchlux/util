@@ -4,12 +4,9 @@ from util.data.categories import regular_simplex
 from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES, \
     SEPARATORS, FILE_SAMPLE_SIZE, MISSING_SAMPLE_SIZE
 
-# TODO:  Make "Data.sort" sort Data if it is not a view and sort the
-#        _row_indices if it is a view.
 # TODO:  Make "to_matrix" automatically flatten elements of columns
 #        that contain iterables into their base types. If the types
-#        are numeric, use float, otherwise use string. Use "is numeric"
-#        to determine if the target needs to be classified or interpolated.
+#        are numeric, use float, otherwise use string. Use "is numeric".
 # TODO:  Make "to_matrix" automatically consider 'None' a unique value
 #        for categorical columns and add a dimension 'is present' otherwise.
 # TODO:  Wrap the necessary "Numeric" attributes into the matrix,
@@ -22,46 +19,24 @@ from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES, \
 # TODO:  Remove the "fill" method in favor of "predict".
 # TODO:  Make "predict" not require that target columns be convertible
 #        to numeric form, only that they operate under a weighted sum.
-# TODO:  Implment tracking for the "size" of a Row & Data object, and
-#        the recently accessed rows (keep an ordered set of them).
-# TODO:  Implement caching for rows when a Data object becomes very large.
-# TODO:  Make reading data asynchronous, so waiting is only ever done
-#        when an object is accessed by index.
-# TODO:  Implement "Cached List" that estimates the size of its elements
-#        and caches them in batches to minimize memory footprint.
+# TODO:  Fix "type digression" message to say specifically what column
+#        changed types and show the value that triggered the change.
 # TODO:  Implement "parallel read" that create subprocesses that read
 #        chunks of the file, communicate progress, communicate type
 #        digressions, saves chunks in .pkl, then organizes them all
 #        into the expected ordered data format.
-# TODO:  Fix "type digression" message to say specifically what column
-#        changed types and show the value that triggered the change.
-
+# TODO:  Make printout shorter for data with lots of columns.
 # TODO:  Implmenent 'IndexedAudio' reader that mimics the
 #        'IndexedVideo' reader and allows for access to peaks.
 # TODO:  Implemenet 'IndexedText' reader that mimics the
 #        'IndexedVideo' reader and allows for access to characters.
-# TODO:  Implement CompressedLazyData, a list object that keeps track
-#        of its parent Data. When its values are strings, it uses
-#        a recorded separator to process them into a Row only upon
-#        access. It also stores blocks of rows in compressed serial
-#        form when its total size starts to become large. Once the
-#        compressed size becomes large, it caches those compressed
-#        blocks as files.
-# TODO:  Write a 'lazy data' object that stores the raw file read by 
-#        lines, but only processes a sample of that file to infer
-#        types. Lines of file are not processed until they are index
-#        accessed. (This may go in conjunction with CachedData).
-# TODO:  Run operations in the background on a data object?
-#        Every time an operation is "applied" to Data, submit a series
-#        of jobs to its worker and return as if the operation was
-#        completed. Every time an operation on Data is called,
-#        first receive all completed jobs from worker, then continue.
-# TODO:  Allow for stacking data while reading file (or perhaps 
-#        more generally allow users to specify a line-operation)
-# TODO:  Subclass Data object so that the methods are broken up by the
-#        type of function they provide. Stats should be an additional
-#        set of methods outside of summary / operators.
-# TODO:  Make printout shorter for data with lots of columns.
+# TODO:  Implement 'IndexedCSV' reader that reads rows out of a very
+#        large CSV file.
+# TODO:  Implement 'LazyData' whose underlying '.data' object is a
+#        lazy-evaluated 'IndexedCSV' object.
+# TODO:  Implement 'CachedData' whose underlying '.data' object caches
+#        groups of rows to keep the memory footprint low.
+
 
 # ======================================================
 #      Python 'Data' with named and typed columns     
@@ -72,7 +47,7 @@ def is_iterable(obj):
     try:    return (iter(obj) and True)
     except: return False
 
-# Define a python data matrix structure (named and typed columns)
+# Define a python data matrix structure (named and typed columns).
 class Data:
     # Holder for data.
     data = None
@@ -97,7 +72,8 @@ class Data:
     from util.data.exceptions import NameTypeMismatch, \
         BadSpecifiedType, BadSpecifiedName, NoNamesSpecified, \
         ImproperUsage, UnknownName, Unsupported, BadAssignment, \
-        BadElement, BadTarget, BadValue, BadIndex, BadData, Empty
+        BadElement, BadTarget, BadValue, BadIndex, BadData, Empty, \
+        MissingModule
     # Import the classes used to protect this data object.
     from util.data.auxiliary import Descriptor, Column, Row
 
@@ -211,7 +187,7 @@ class Data:
             return self.data[self.row(index[0])][self.names.index(index[1])]
         elif (type(index) == int):
             if (self.view): return Data.Row(self, self.data[self.row(index)])
-            else: return self.data[index]
+            else:           return self.data[index]
         elif (type(index) == str):
             # This index is accessing a column
             if (index not in self.names):
@@ -227,13 +203,38 @@ class Data:
                 num_index = self.names.index(index)
             # Return a mutable "Column" object
             return Data.Column(self, num_index)
+        # Short-circuit for recognizing a column object.
+        elif ((type(index) == tuple) and (len(index) == 2) and
+              (type(index[0]) == slice) and (type(index[1]) in {int, str})):
+            if (type(index[1]) == str):
+                # This index is accessing a column
+                if (index[1] not in self.names):
+                    raise(Data.UnknownName(f"This data does not have a column named '{index[1]}'."))
+                # If this is a view, make that numerical index relative to this.
+                if (self.view):
+                    col_names = list(self.names)
+                    if index not in col_names:
+                        raise(Data.UnknownName(f"This data does not have a column named '{index[1]}'."))
+                    num_index = col_names.index(index[1])
+                # Otherwise, retreive the exact numerical column index.
+                else:
+                    num_index = self.names.index(index)
+            # Handle an integer index.
+            elif (type(index[1]) == int):
+                if (not (-self.shape[1] <= index[1] < self.shape[1])):
+                    raise(Data.BadIndex(f"The integer column index {index[1]} is out of the valid range."))
+                num_index = index[1]
+            # Get the row indices.
+            indices = list(range(len(self))[index[0]])
+            # Return a mutable "Column" object
+            return Data.Column(self, num_index, indices=indices)
         else:
             # This index is retrieving a sliced subset of self.
             rows, cols = self._index_to_rows_cols(index)
             # If they are extracting the full data then assume a copy is desired.
             if ((len(set(rows)), len(set(cols))) == self.shape): return self.copy()
             # Otherwise make an alias data set (a data "view") and return it.
-            return Data(data=self.data, names=self.names.values,
+            return type(self)(data=self.data, names=self.names.values,
                         types=self.types.values, rows=rows, cols=cols)
 
     # Overwrite the standard "[]" get operator to accept strings as well.
@@ -483,15 +484,18 @@ class Data:
         # Construct a new data set that is a copy of the data in this object.
         if self.view: rows, cols = self._row_indices, self._col_indices
         else:         rows, cols = map(list,map(range,self.shape))
-        data = []
+        data = type(self)(names=list(self.names), types=list(self.types))
         for i,row in enumerate(rows):
             # Update user on progress if too much time has elapsed..
             if (time.time() - start) > self.max_wait:
-                print(f" {100.*row/len(self):.2f}% copy", end="\r", flush=True)
+                print(f" {100.*i/len(self):.2f}% copy", end="\r", flush=True)
                 start = time.time()
-            data.append( [self.data[row][col] for col in cols] )
+            # Save time and skip data validation (since we already
+            # know that the data was valid inside this object).
+            row = Data.Row(data, [self.data[row][col] for col in cols])
+            data.data.insert( len(data.data), row )
         # Return a new data object.
-        return Data(data=data, names=list(self.names), types=list(self.types))
+        return data
 
     # Overwrite the 'pop' method.
     def pop(self, index=-1):
@@ -523,10 +527,11 @@ class Data:
         else:
             raise(Data.BadIndex(f"Index {index} of type {type(index)} is not recognized."))
 
-    # Overwrite the 'remove' method.
-    def remove(self, index):
-        if self.view: raise(Data.Unsupported("Cannot 'remove' from a data view. Copy this object to remove items."))
-        return self.data.remove( index )
+    # Overwrite the "sort" method to behave as expected.
+    def sort(self):
+        # If this is a view, sort the row indices.
+        if self.view: self._row_indices.sort(key=lambda row_idx: self.data[row_idx][self._col_indices])
+        else:         self.data.sort(key=lambda row: row.values)
 
     # ========================
     #      Custom Methods     
@@ -691,7 +696,8 @@ class Data:
                 if self.empty: self =  pickle.load(f)
                 else:          self += pickle.load(f)
         elif (ext == "dill"):
-            import dill
+            try:    import dill
+            except: raise(Data.MissingModule("Failed to import 'dill' module. Is it installed?"))
             with file_opener(path, "rb") as f:
                 if self.empty: self =  dill.load(f)
                 else:          self += dill.load(f)
@@ -744,7 +750,6 @@ class Data:
     def save(self, path, create=True):
         # Special case for being empty.
         if (self.empty): raise(Data.Empty("Cannot save empty data."))
-        import pickle, dill, gzip
         # Create the output folder if it does not exist.
         output_folder = os.path.split(os.path.abspath(path))[0]
         if create and not os.path.exists(output_folder): os.makedirs(output_folder)
@@ -753,6 +758,7 @@ class Data:
         compressed = path[-path[::-1].index("."):] == "gz"
         file_opener = open
         if compressed:
+            import gzip
             file_opener = gzip.open
             base_path = path[:-path[::-1].index(".")-1]
             ext = base_path[-base_path[::-1].index("."):]
@@ -760,9 +766,12 @@ class Data:
             ext = path[-path[::-1].index("."):]
         # Handle different base file extensions
         if (ext == "pkl"):
+            import pickle
             with file_opener(path, "wb") as f:
                 pickle.dump(self, f)
         elif (ext == "dill"):
+            try:    import dill
+            except: raise(Data.MissingModule("Failed to import 'dill' module. Is it installed?"))
             with file_opener(path, "wb") as f:
                 dill.dump(self, f)
 
@@ -810,7 +819,9 @@ class Data:
             if (time.time() - start) > self.max_wait:
                 print(f" {100.*row/len(self):.2f}% reorder", end="\r", flush=True)
                 start = time.time()
-            self[row] = [self[row,i] for i in order]
+            # Directly update the row (bypassing validation) because
+            # we know all values were already validated.
+            self[row].values = [self[row,i] for i in order]
 
     # Given a new list of types, re-cast all elements of columns with
     # changed types into the newly specified type.
