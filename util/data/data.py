@@ -4,6 +4,8 @@ from util.data.categories import regular_simplex
 from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES, \
     SEPARATORS, FILE_SAMPLE_SIZE, MISSING_SAMPLE_SIZE
 
+# TODO:  Make sure column order is maintained when getting items.
+# TODO:  Test addition of data with same columns in different order.
 # TODO:  Make "to_matrix" automatically flatten elements of columns
 #        that contain iterables into their base types. If the types
 #        are numeric, use float, otherwise use string. Use "is numeric".
@@ -228,11 +230,17 @@ class Data:
             indices = list(range(len(self))[index[0]])
             # Return a mutable "Column" object
             return Data.Column(self, num_index, indices=indices)
+        # If they are extracting the full data then assume a copy is desired.
+        elif ((type(index) == slice) and (index == slice(None))):
+            return self.copy()
+        elif ((type(index) == tuple) and (len(index) == 2) and
+              (type(index[0]) == slice) and (index[0] == slice(None)) and 
+              (type(index[1]) == slice) and (index[1] == slice(None))):
+            return self.copy()
+        # Othwerwise this is a special index and we need to convert it.
         else:
             # This index is retrieving a sliced subset of self.
             rows, cols = self._index_to_rows_cols(index)
-            # If they are extracting the full data then assume a copy is desired.
-            if ((len(set(rows)), len(set(cols))) == self.shape): return self.copy()
             # Otherwise make an alias data set (a data "view") and return it.
             return type(self)(data=self.data, names=self.names.values,
                         types=self.types.values, rows=rows, cols=cols)
@@ -248,33 +256,40 @@ class Data:
             if (self.view) and (len(self) != len(self.data)):
                 raise(Data.Unsupported("This is a data alias and does not support assignment."))
             elif (self.view) and (index in self.names.values):
-                raise(Data.ImproperUsage("This is a data alias and the provided index conflicts with a column in the original data."))
+                raise(Data.ImproperUsage("This is a data view and the provided index conflicts with a column in the original data."))
             elif (self.view):
                 raise(Data.Unsupported("\n  This is a view of a Data object.\n  Did you expect this new column to be added to the original data?"))
-            # If a non-iterable item was provided, set the whole column with that value.
-            if not is_iterable(value):
-                try:
-                    for v in value: pass
-                except TypeError:
-                    v = value
-                    value = (v for i in range(len(self)))
+            # Check to see if the provided value was a singleton.
+            singleton = (not is_iterable(value)) or (type(value) == str)
+            if (not singleton):
+                try:    singleton = len(value) != len(self)
+                except: pass
+            # If singleton was provided, set the whole column with that value.
+            if singleton:
+                v = value
+                value = (v for i in range(len(self)))
             # Otherwise perform the normal column addition.
             return self.add_column(value, name=index)
         # Get the list of rows and list of columns being assigned.
         rows, cols = self._index_to_rows_cols(index)
+        # ------------------------------------------------------------
+        #    Determine whether a singleton was provided or not.
+        # 
         # Assume if it has an iterator that is not a singleton.
         # Assume that if the value type matches all assigned types it is a singleton.
         singleton = (not is_iterable(value)) or \
                     (all(self.types[c] in {type(value), type(None)} for c in cols))
         # If it has a "length" then use that to verify singleton status.
-        if (singleton and hasattr(value, "__len__")):
-            singleton = len(value) != (len(rows)*len(cols))
+        if singleton:
+            try:    singleton = len(value) != (len(rows)*len(cols))
+            except: pass
         # Assume if the "value" is a string, then this is a singleton.
         if (not singleton) and (type(value) == str): singleton = True
         # Assume if the value is a generator and the column(s) it is
         # assigning to are not *all* generators, it is not a singleton.
         if ((type(value) == GENERATOR_TYPE) and
             any(self.types[c] != GENERATOR_TYPE for c in cols)): singleton = False
+        # ------------------------------------------------------------
         # Assume singleton status is correct.
         if (not singleton): value_iter = iter(value)
         # Reset type entirely if the new data assigns to the full column,
@@ -384,6 +399,8 @@ class Data:
     # Define a convenience funciton for concatenating another
     # similarly typed and named data to self.
     def __iadd__(self, data):
+        import time
+        start = time.time()
         # Check to see if this is a data view object.
         if (self.view): raise(Data.Unsupported("This is a data alias and does not support in-place addition."))
         # Check for improper usage
@@ -396,28 +413,63 @@ class Data:
             self.names = data.names
             self.types = data.types
             # Load in the data
-            for row in data: self.append(row)
+            for i,row in enumerate(data):
+                # Update user on progress if too much time has elapsed..
+                if (time.time() - start) > self.max_wait:
+                    print(f" {100.*i/len(data):.2f}% in-place add", end="\r", flush=True)
+                    start = time.time()
+                self.append(row)
         # Add rows to this from the provided Data
-        elif ((len(self.names) == len(data.names)) and
-              all(n1 == n2 for (n1,n2) in zip(self.names, data.names))):
+        elif (set(self.names) == set(data.names)):
+            # If the names are not in the same order, create a view
+            # on the provided data with the correct order.
+            if (tuple(self.names) != tuple(data.names)): data = data[self.names]
             # Load in the data
-            for row in data: self.append(row)
+            for i,row in enumerate(data):
+                # Update user on progress if too much time has elapsed..
+                if (time.time() - start) > self.max_wait:
+                    print(f" {100.*i/len(data):.2f}% in-place add", end="\r", flush=True)
+                    start = time.time()
+                self.append(row)
         # Add columns to this from the provided Data (if no columns conflict).
         elif (len(self) == len(data)) and (set(self.names).isdisjoint(data.names)):
             for col in data.names: self[col] = data[col]
         # Otherwise if a subset of columns are matching, add rows (and new columns).
-        elif (set(self.names).issubset(data.names)):
+        elif (set(self.names).issubset(data.names) or set(data.names).issubset(self.names)):
             # First add rows for all the same-named columns.
             other_names = set(data.names)
             shared_names = [n for n in self.names if n in other_names]
-            for row in data[:,shared_names]:
+            for i,row in enumerate(data[:,shared_names]):
+                # Update user on progress if too much time has elapsed..
+                if (time.time() - start) > self.max_wait:
+                    print(f" {100.*i/len(data):.2f}% in-place add (new rows)", end="\r", flush=True)
+                    start = time.time()
+                # Fill missing values with "None".
+                if (len(shared_names) < len(self.names)):
+                    # Construct a full row 
+                    full_row = [None] * len(self.names)
+                    i = 0
+                    for j,n in enumerate(self.names):
+                        if (n in other_names):
+                            full_row[j] = row[i]
+                            i += 1
+                    row = full_row
                 self.append(row)
             # Second add new columns for all the new names.
             my_names = set(self.names)
             new_names = [n for n in data.names if n not in my_names]
-            for name in new_names: self[name] = None
+            for i,name in enumerate(new_names):
+                # Update user on progress if too much time has elapsed..
+                if (time.time() - start) > self.max_wait:
+                    print(f" {100.*i/len(new_names):.2f}% in-place add (init cols)", end="\r", flush=True)
+                    start = time.time()
+                self[name] = None
             for r in range(len(data)):
-                self[r-len(data),new_names] = data[r, new_names][0]
+                # Update user on progress if too much time has elapsed..
+                if (time.time() - start) > self.max_wait:
+                    print(f" {100.*i/len(data):.2f}% in-place add (fill cols)", end="\r", flush=True)
+                    start = time.time()
+                self[r-len(data),new_names] = data[r][new_names]
         # Return self
         return self
 
@@ -657,8 +709,9 @@ class Data:
                 raise(Data.BadIndex(f"The provided index, {index}, is not understood.\n It is typed {type_printout}."))
         # Undefined behavior for this index.
         else:
-            type_printout = sorted(map(str,set(map(type,index))))
-            raise(Data.BadIndex(f"The provided index, {index}, is not understood.\n It is typed {type_printout}."))
+            try:    type_printout = sorted(map(str,set(map(type,index))))
+            except: type_printout = str(type(index))
+            raise(Data.BadIndex(f"\n  The provided index, {index}, is not understood.\n  It is typed {type_printout}."))
         # Return the final list of integer-valued rows and columns.
         return rows, cols
 

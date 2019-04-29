@@ -56,6 +56,14 @@ def test_data():
     assert(tuple(b[-2]) == (1,"2",3.0,3))
     assert(tuple(b[-1]) == (-1,None,None,4))
 
+    # Verify in-place addition of new columns (same length data with fewer columns)
+    b = a[:,:-1].copy()
+    c = a[:,:].copy()
+    c["3"] = range(len(c))
+    c += b
+    assert(tuple(c[-2]) == (1,"2",None,None))
+    assert(tuple(c[:,-1]) == tuple(range(5)) + (None,)*5)
+
     # Verify the addition of in place addition of new columns AND rows.
     b = a[:].copy()
     b['3'] = range(len(b))
@@ -96,10 +104,21 @@ def test_data():
     b.retype([str,str,str])
     assert(a.types[0] != str)
 
+    # Assert that the two forms of full-data slicing make copies.
+    assert(id(a[:].data) != id(a.data))
+    assert(id(a[:,:].data) != id(a.data))
+
     # Verify that copies with slicing are deep and that retype works.
     b = a[:]
     b.retype([str,str,str])
     assert(a.types[0] != str)
+
+    # Verify that in-place addition of data with same names in
+    # different order is handled correctly.
+    b = a[:,:]
+    c = a[:,['1','0','2']]
+    b += c
+    assert(tuple(b[:,1]) == 2*tuple(a[:,1]))
 
     # Verify that multiple transformations on data yield correct view.
     b = a[:]
