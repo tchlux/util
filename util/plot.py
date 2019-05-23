@@ -1412,8 +1412,10 @@ class Plot:
 #      Functions for manipulation produces plots     
 # ===================================================
 
-# Convenience function for generating interactive plots in a Jupyter notebook.
-def iplot(plot, *args, html=False, **kwargs):
+# Convenience function for generating interactive plots in a Jupyter
+# notebook. Provide either a single plot or a list of plots as would
+# be given to "plot.multiplot" to create interactive visuals.
+def iplot(plot, *args, html=False, show=True, **kwargs):
     # Set notebook mode for this session if it has not been set.
     global NOTEBOOK_MODE
     plotly = import_package("plotly")
@@ -1422,11 +1424,14 @@ def iplot(plot, *args, html=False, **kwargs):
         NOTEBOOK_MODE = True
     # Disable the generation of HTML strings.
     kwargs['html'] = html
+    kwargs['show'] = show
     # Get the figure for plotting.
-    fig = plot.plot(*args, **kwargs)
-    # Create an interactive plot.
-    plotly.offline.iplot(fig, show_link=False)
-
+    if (type(plot) == Plot): fig = plot.plot(*args, **kwargs)
+    else:                    fig = multiplot(plot, *args, **kwargs)
+    # Create an interactive plot in Jupyter.
+    if show: plotly.offline.iplot(fig, show_link=False)
+    # Return the figure.
+    return fig
 
 # Generates the HTML file and fixes some javascript so that the
 # plot does not have unwanted buttons and links.
