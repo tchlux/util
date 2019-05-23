@@ -3,10 +3,10 @@
 # interacting directly with the dictionary objects that plotly
 # expects. This module currently supports 2D and 3D scatter plots with
 # numerical axes, histograms, subplots (with varying numbers of plots
-# in each row), and plot annotations.
+# in each row), animations, box-plots, and plot annotations.
 # 
 # Required packages:
-#   random, numbers, os, webbrowser, imp, sys, re
+#   random, numbers, os, webbrowser, imp, sys, re, tempfile
 #   numpy
 #   scipy
 # 
@@ -15,34 +15,64 @@
 #   from scipy.spatial import ConvexHull
 #   from scipy.spatial import Delaunay
 # 
+# INSTALLATION:
+# 
+#  Installation requires a SPECIFIC VERSION OF PLOTLY. Here is the
+#  standard set of packages required for usage:
+# 
+#    pip install scipy
+#    pip install numpy
+#    pip install plotly==2.0.15
+# 
+#  This package will not work with newer versions of plotly because
+#  they changed the underlying storage data types for figures.
+#  Any plotly update for this body of code is unlikely.
+# 
+# 
+# USAGE:
+# 
+#  The available (user accessible) functions are:
+# 
+#    plot.Plot        -- The primary class for holding / creating plots.
+#    plot.multiplot   -- A mechanism for plotting multiple Plot
+#                        objects in the same window.
+#    plot.create_html -- A function for generating a local HTML file
+#                        from a figure object (in Plotly terms).
+#    plot.iplot       -- A convenience wrapper for generating
+#                        interactive plots in a Jupyter notebook with
+#                        multiplot functionality as well.
+# 
 
+# --------------------------------------------------------------------
+#                       DEVELOPER COMMENTS
+# 
 # TODO: Plot.add_zero_line(func)
 # TODO: Plot.add_frame(..., persist=True)
 # TODO: Adding multiple frames where the first has no edges and the
 #       rest have edges causes all frames to look like first.
+# 
+# --------------------------------------------------------------------
 
 import random, numbers, os, webbrowser, imp, sys, re, tempfile
 import numpy as np
 from scipy.spatial.qhull import QhullError
 
-NOTEBOOK_MODE = False
-PLOT_MARGIN = 50 # In pixels
-PLOT_POINTS = 1000 # Number of samples
-BRIGHTNESS_RANGE = 0.6 # For default shading of points
+NOTEBOOK_MODE = False    # Jupyter notebook mode
+PLOT_MARGIN = 50         # In pixels
+PLOT_POINTS = 1000       # Number of samples
+BRIGHTNESS_RANGE = 0.6   # For default shading of points
+RANDOM_SEED = 0          # Seed used for new color generation
+MIN_PALATTE_COLORS = 40  # Number of palatte entries to create
+PREVIOUS_FILE_NAMES = [] # <- for tracking auto-append.
+DEFAULT_CAMERA_POSITION = dict(
+    up=dict(x=0, y=0, z=1),
+    center=dict(x=0, y=0, z=0),
+    eye=dict(x=-1.0, y=-2.0, z=0.7)
+) # ^^ When vieiwing 3D plots.
 
-# PALATTE SOURCE: colorlover as cl
-# PALATTE SOURCE: np.array(cl.to_numeric(cl.scales['5']['qual']['Set2']))
-PALATTE = np.array([[ 102.,  194.,  165.],
-                    [ 252.,  141.,   98.],
-                    [ 141.,  160.,  203.],
-                    [ 231.,  138.,  195.],
-                    [ 166.,  216.,   84.]])
 
-PALATTE = PALATTE**2
-PALATTE = PALATTE / np.max(PALATTE) * 255
-# Re-order the palatte so that the colors appear better
-PALATTE = np.concatenate((PALATTE[1:], [PALATTE[0]]))
 # Save the color palatte for plotting a gradient
+# PALATTE SOURCE: colorlover as cl
 # PALATTE SOURCE: np.array(cl.to_numeric(cl.scales['11']['div']['Spectral']))[::-1]
 DEFAULT_GRADIENT = np.array([[  94.,   79.,  162.],
                              [  50.,  136.,  189.],
@@ -55,12 +85,24 @@ DEFAULT_GRADIENT = np.array([[  94.,   79.,  162.],
                              [ 244.,  109.,   67.],
                              [ 213.,   62.,   79.],
                              [ 158.,    1.,   66.]])
-MIN_COLORS = 40
+
+# PALATTE SOURCE: colorlover as cl
+# PALATTE SOURCE: np.array(cl.to_numeric(cl.scales['5']['qual']['Set2']))
+PALATTE = np.array([[ 102.,  194.,  165.],
+                    [ 252.,  141.,   98.],
+                    [ 141.,  160.,  203.],
+                    [ 231.,  138.,  195.],
+                    [ 166.,  216.,   84.]])
+PALATTE = PALATTE**2
+PALATTE = PALATTE / np.max(PALATTE) * 255
+# Re-order the palatte so that the colors appear better
+PALATTE = np.concatenate((PALATTE[1:], [PALATTE[0]]))
+
+
 # Expand the palatte using random combinations of existing colors
-RANDOM_SEED = 0
 random.seed(RANDOM_SEED)
 palatte_size = len(PALATTE)
-for i in range(MIN_COLORS - palatte_size):
+for i in range(MIN_PALATTE_COLORS - palatte_size):
     # Create lots of extra colors
     c = np.array([random.choice(PALATTE[:palatte_size,0]),
                   random.choice(PALATTE[:palatte_size,1]),
@@ -70,31 +112,6 @@ for i in range(MIN_COLORS - palatte_size):
 # Re-seed the random number generator so that it is not tainted
 random.seed()
 
-DEFAULT_CAMERA_POSITION = dict(
-    up=dict(x=0, y=0, z=1),
-    center=dict(x=0, y=0, z=0),
-    eye=dict(x=-1.0, y=-2.0, z=0.7)
-)
-
-PREVIOUS_FILE_NAMES = []
-
-DIRECTORY = os.path.dirname(os.path.abspath(__file__))
-BLUE = np.array((100,100,255), dtype=np.uint8)
-RED = np.array((255,100,100), dtype=np.uint8)
-WHITE = np.array((255,255,255), dtype=np.uint8)
-
-
-# Importer function to make sure that the a local file name doesn't
-# conflict with the true installed package name
-def import_package(name, custom_name=None):
-    # Use a custom name if provided, otherwise just name
-    custom_name = custom_name or name
-    # Find and open a file that is the non-local package name
-    f, pathname, desc = imp.find_module(name, [p for p in sys.path if
-                                               p not in os.getcwd()])
-    # Load the module
-    module = imp.load_module(custom_name, f, pathname, desc)
-    return module
 
 # ==================================================================
 #                         SameAs Decorator
@@ -143,88 +160,9 @@ def same_as(to_copy, mention_usage=False):
     return decorator_handler
 
 
-# ===============================================================
-#     Convert a matrix into an image for display
-# 
-def matrix_to_img(matrix, file_name, directory=".", pos_color=BLUE,
-                  mid_color=WHITE, neg_color=RED, show=False):
-    import time
-    from PIL import Image
-    import numpy as np
-    if len(matrix.shape) == 2:
-        matrix = np.asarray(matrix, dtype="float64")
-        img = np.zeros(matrix.shape + (3,), dtype="uint8")
-        max_val = np.max(matrix)
-        min_val = abs(np.min(matrix))
-        start = time.time()
-        # Rescale the matrix of numbers to range [-1,1]
-        for row in range(matrix.shape[0]):
-            if (time.time() - start > 1):
-                print(row,":",matrix.shape[0],end="\r")
-                start = time.time()
-            for col in range(matrix.shape[1]):
-                # Rescale positive values to range from white to blue
-                if matrix[row,col] >= 0:
-                    val = matrix[row,col] / max_val
-                    img[row,col,:] = val * pos_color + (1-val) * mid_color
-                # Rescale negative values to range from white to red
-                else:
-                    val = -matrix[row,col] / min_val
-                    img[row,col,:] = val * neg_color + (1-val) * mid_color
-    elif len(matrix.shape) == 3:
-        img = np.array(matrix, dtype="uint8")
-    else:
-        class UnrecognizedFormat(Exception): pass
-        raise(UnrecognizedFormat("Unrecognized matrix shape.."))
-    # Convert the scaled values into an actual image and save to desktop.
-    img = Image.fromarray(img)
-    file_name = os.path.join(directory, file_name)
-    print("saving image at",file_name+"..")
-    img.save(file_name)
-    if show: os.system(f"open {file_name}")
-# ===============================================================
-
-
-
-#      Coloring Data     
-# =======================
-
-# Given some data, color the data according to a palatte with uniform
-# interpolation between the colors in the palatte from the minimum
-# value provided to the maximimum value provided
-def color_data(values, palatte=DEFAULT_GRADIENT, opacity=1.0):
-    no_none = [v for v in values if type(v) != type(None)]
-    shift = min(no_none)
-    scale = (max(no_none) - shift) * 1.11
-    if (scale == 0): scale = 1.0
-    def color(value):
-        if value == None: return None
-        # Generate the index as a float (for interpolating)
-        index = len(palatte) * (value-shift) / scale
-        # Get the exact colors on either side of this index
-        lower = int(index)
-        upper = lower + 1
-        if (lower > len(palatte)-1): lower = len(palatte)-1
-        if (upper > len(palatte)-1): upper = len(palatte)-1
-        index -= lower
-        # Interpolate between the lower and upper colors
-        c = tuple(palatte[lower]*(1-index) + palatte[upper]*(index))
-        # Return the interpolated color.
-        return 'rgba(%i,%i,%i,%f)'%(c+(opacity,))
-    return list(map(color, values))
-
-# Given a color string, convert it into an array of numbers
-def color_string_to_array(color_string):
-    colors = color_string[color_string.index('(')+1:
-                          color_string.index(')')].split(',')
-    color = list(map(float,colors))
-    if len(color) == 3: color += [1.0]
-    if len(color) != 4: raise(Exception("Bad number of elements in color string."))
-    return np.array(color)
-
 #      Class for building a plotly plot     
 # ==========================================
-
+# 
 # Class that serves as an interface to the standard "data & layout"
 # containers that need to be managed in order to produce Plotly plots.
 # This class uses the offline modes of plotly to produce local HTML
@@ -1412,6 +1350,7 @@ class Plot:
 #      Functions for manipulation produces plots     
 # ===================================================
 
+
 # Convenience function for generating interactive plots in a Jupyter
 # notebook. Provide either a single plot or a list of plots as would
 # be given to "plot.multiplot" to create interactive visuals.
@@ -1432,6 +1371,7 @@ def iplot(plot, *args, html=False, show=True, **kwargs):
     if show: plotly.offline.iplot(fig, show_link=False)
     # Return the figure.
     return fig
+
 
 # Generates the HTML file and fixes some javascript so that the
 # plot does not have unwanted buttons and links.
@@ -1525,167 +1465,6 @@ def create_html(fig, file_name=None, show=True, append=False,
     # Open the plot in a webbrowser if the user wants that
     if show: webbrowser.open("file://"+os.path.abspath(file_name))
     return file_name
-
-# Private function for use only by the "plot" function. See the
-# descriptions of input arguments at "def plot".
-def _animate(data, plot_layout, loop_duration, bounce, transition,
-             data_easing, redraw, slider_transition, initial_frame,
-             frame_label, show_play_pause, show_frame_label):
-    # Get a list of all frame names
-    frame_names = []
-    for d in data: 
-        if d["frame"] not in frame_names:
-            frame_names.append(d["frame"])
-
-    transition_duration = (loop_duration / len(frame_names)) * 1000
-    # Get a list of names and their legend groups (make sure that all
-    # data series have a legend group and avoid conflicts)
-    names_and_groups = {}
-    all_groups = []
-    for d in data:
-        if d["legendgroup"] not in all_groups:
-            all_groups.append(d["legendgroup"])
-    for i,d in enumerate(data):
-        if (d["legendgroup"] == None):
-            if d["name"] not in names_and_groups:
-                group = d["name"]
-                number = 1
-                new_group = lambda: "%s %s"%(group,number)
-                while group in all_groups:
-                    name = new_group()
-                    number += 1
-                all_groups.append(group)
-                names_and_groups[d["name"]] = group
-            d["legendgroup"] = names_and_groups[d["name"]]
-
-    # Remove "None" from the list of groups
-    if None in all_groups: all_groups.remove(None)
-
-    # Construct a universal legend group for all time steps
-    details = []
-    for group in all_groups:
-        names = []
-        for d in data:
-            if (d["legendgroup"] == group) and (d["name"] not in names):
-                names.append(d["name"])
-        for d in data:
-            if(d["legendgroup"] == group) and (d["name"] in names):
-                det = d.copy()
-                # Remove all displayable data from the details
-                for val in ["x", "y", "z"]:
-                    if val in det: det[val] = [None]
-                if "text" in det: det["text"] = None
-                det.pop("frame")
-                details.append(det)
-                names.remove(d["name"])
-            if (len(names) == 0): break
-
-    # Organize all of the data by frame
-    list_data_dicts = [[d for d in data if (d["frame"] == fn)]
-                       for fn in frame_names]
-    annotations = plot_layout.pop("annotations",[])
-    non_framed = [a for a in annotations if "frame" not in a]
-    annotations = [a for a in annotations if "frame" in a]
-    plot_layout["annotations"] = non_framed
-    # Initialize a figure
-    figure = {"data":[], "layout":plot_layout, "frames":[]}
-
-    # Pick the initial value for the animation if necessary
-    if type(initial_frame) == type(None): 
-        initial_frame = frame_names[0]
-
-    if show_play_pause:
-        # Controls the list of elements transitioned through when "Play"
-        # is pressed. {"redraw": True} causes the slider to stop working.
-        # "transition" controls the movement of data points, NOT the slider.
-        # "[None]" forces a pause, which requires 'immediate" and 0 duration.
-        slider_menu = [{
-            'buttons': [
-                {'args': [frame_names + (frame_names[::-1] if bounce else []), 
-                          {'frame': {'duration': transition_duration, 'redraw': redraw},
-                           'fromcurrent': True, 
-                           'transition': {'duration': transition_duration if data_easing else 0,
-                                          'easing': transition}}],
-                 'label': 'Play', 'method': 'animate'},
-                {'args': [[None], {'frame': {'duration': 0, 'redraw': redraw},
-                                   'mode': 'immediate', 
-                                   'transition': {'duration': 0}}],
-                 'label':'Pause', 'method':'animate'}],
-            'direction': 'left',
-            'pad': {'r': 10, 't': 85},
-            'showactive': True,
-            'type': 'buttons',
-            'x': 0.1, 'y': 0,
-            'xanchor': 'right',
-            'yanchor': 'top'
-        }]
-        # Initialize a holder for 'updatemenus' if it doesn't exist
-        if "updatemenus" not in figure["layout"]:
-            figure['layout']['updatemenus'] = []
-        # Add the menu to the figure layout
-        figure['layout']['updatemenus'] += slider_menu
-
-    # "transition" controls the animation of the slider.
-    sliders_dict = {
-        # 'active': 0,
-        'yanchor': 'top',
-        'xanchor': 'left',
-        'currentvalue': {
-            'font': {'size': 16},
-            'prefix': frame_label,
-            'visible': show_frame_label,
-            'xanchor': 'right'
-        }, 
-        'transition': {'duration': transition_duration, 'easing': slider_transition},
-        'pad': {'b': 10, 't': 50 if max(map(len,frame_names)) < 20 else 65},
-        'len': 0.9 if show_play_pause else 1,
-        'x': 0.1 if show_play_pause else 0,
-        'y': 0,
-        'steps': []
-    }
-
-    # make frames
-    for el,data_dicts in zip(frame_names, list_data_dicts):
-        frame = {'data': [], 'name': el}
-        # Animate a plot
-        if el == frame_names[0]:
-            for d in data_dicts:
-                f_data = d.copy()
-                f_data.pop("frame","")
-                f_data["showlegend"] = False
-                # Generate data dicts in the usual way.
-                figure['data'].append(f_data)
-            for d in details:
-                figure['data'].append(d.copy())
-
-        # Add all data dicts for this step to the frame data
-        for d in data_dicts:
-            f_data = d.copy()
-            f_data.pop("frame","")
-            f_data["showlegend"] = False
-            frame['data'].append(f_data)
-        for d in details:
-            frame['data'].append(d.copy())
-
-        layout = {"annotations":[]}        
-        for a in annotations:
-            if (a["frame"] == el):
-                layout["annotations"].append( a )
-        frame["layout"] = layout
-
-        figure['frames'].append(frame)
-        # Controls what happens when this element of the slider is
-        # clicked. The first duration is for the data, the second is
-        # for the slider.
-        slider_step = {'args': [[el],
-            {'frame': {'duration': transition_duration, 'easing':transition, 'redraw': redraw},
-             'transition': {'duration': transition_duration if data_easing else 0, 
-                            'easing': slider_transition}}
-        ], 'label': el, 'method': 'animate'}
-        sliders_dict['steps'].append(slider_step)
-
-    figure['layout']['sliders'] = [sliders_dict]
-    return figure
 
 
 # Make multiple plots fit onto one browser window, options for sharing
@@ -1860,6 +1639,217 @@ def multiplot(plots, x_domains=None, y_domains=None, html=True,
     if html: create_html(fig, show=show, append=append, **kwargs)
     # Return the figure to be plotted
     return fig
+
+
+# =================================================
+#      Helper functions needed for this module     
+# =================================================
+
+# Importer function to make sure that the a local file name doesn't
+# conflict with the true installed package name
+def import_package(name, custom_name=None):
+    # Use a custom name if provided, otherwise just name
+    custom_name = custom_name or name
+    # Find and open a file that is the non-local package name
+    f, pathname, desc = imp.find_module(name, [p for p in sys.path if
+                                               p not in os.getcwd()])
+    # Load the module
+    module = imp.load_module(custom_name, f, pathname, desc)
+    return module
+
+# Given some data, color the data according to a palatte with uniform
+# interpolation between the colors in the palatte from the minimum
+# value provided to the maximimum value provided
+def color_data(values, palatte=DEFAULT_GRADIENT, opacity=1.0):
+    no_none = [v for v in values if type(v) != type(None)]
+    shift = min(no_none)
+    scale = (max(no_none) - shift) * 1.11
+    if (scale == 0): scale = 1.0
+    def color(value):
+        if value == None: return None
+        # Generate the index as a float (for interpolating)
+        index = len(palatte) * (value-shift) / scale
+        # Get the exact colors on either side of this index
+        lower = int(index)
+        upper = lower + 1
+        if (lower > len(palatte)-1): lower = len(palatte)-1
+        if (upper > len(palatte)-1): upper = len(palatte)-1
+        index -= lower
+        # Interpolate between the lower and upper colors
+        c = tuple(palatte[lower]*(1-index) + palatte[upper]*(index))
+        # Return the interpolated color.
+        return 'rgba(%i,%i,%i,%f)'%(c+(opacity,))
+    return list(map(color, values))
+
+# Given a color string, convert it into an array of numbers
+def color_string_to_array(color_string):
+    colors = color_string[color_string.index('(')+1:
+                          color_string.index(')')].split(',')
+    color = list(map(float,colors))
+    if len(color) == 3: color += [1.0]
+    if len(color) != 4: raise(Exception("Bad number of elements in color string."))
+    return np.array(color)
+
+# Private function for use only by the "plot" function. See the
+# descriptions of input arguments at "def plot".
+def _animate(data, plot_layout, loop_duration, bounce, transition,
+             data_easing, redraw, slider_transition, initial_frame,
+             frame_label, show_play_pause, show_frame_label):
+    # Get a list of all frame names
+    frame_names = []
+    for d in data: 
+        if d["frame"] not in frame_names:
+            frame_names.append(d["frame"])
+
+    transition_duration = (loop_duration / len(frame_names)) * 1000
+    # Get a list of names and their legend groups (make sure that all
+    # data series have a legend group and avoid conflicts)
+    names_and_groups = {}
+    all_groups = []
+    for d in data:
+        if d["legendgroup"] not in all_groups:
+            all_groups.append(d["legendgroup"])
+    for i,d in enumerate(data):
+        if (d["legendgroup"] == None):
+            if d["name"] not in names_and_groups:
+                group = d["name"]
+                number = 1
+                new_group = lambda: "%s %s"%(group,number)
+                while group in all_groups:
+                    name = new_group()
+                    number += 1
+                all_groups.append(group)
+                names_and_groups[d["name"]] = group
+            d["legendgroup"] = names_and_groups[d["name"]]
+
+    # Remove "None" from the list of groups
+    if None in all_groups: all_groups.remove(None)
+
+    # Construct a universal legend group for all time steps
+    details = []
+    for group in all_groups:
+        names = []
+        for d in data:
+            if (d["legendgroup"] == group) and (d["name"] not in names):
+                names.append(d["name"])
+        for d in data:
+            if(d["legendgroup"] == group) and (d["name"] in names):
+                det = d.copy()
+                # Remove all displayable data from the details
+                for val in ["x", "y", "z"]:
+                    if val in det: det[val] = [None]
+                if "text" in det: det["text"] = None
+                det.pop("frame")
+                details.append(det)
+                names.remove(d["name"])
+            if (len(names) == 0): break
+
+    # Organize all of the data by frame
+    list_data_dicts = [[d for d in data if (d["frame"] == fn)]
+                       for fn in frame_names]
+    annotations = plot_layout.pop("annotations",[])
+    non_framed = [a for a in annotations if "frame" not in a]
+    annotations = [a for a in annotations if "frame" in a]
+    plot_layout["annotations"] = non_framed
+    # Initialize a figure
+    figure = {"data":[], "layout":plot_layout, "frames":[]}
+
+    # Pick the initial value for the animation if necessary
+    if type(initial_frame) == type(None): 
+        initial_frame = frame_names[0]
+
+    if show_play_pause:
+        # Controls the list of elements transitioned through when "Play"
+        # is pressed. {"redraw": True} causes the slider to stop working.
+        # "transition" controls the movement of data points, NOT the slider.
+        # "[None]" forces a pause, which requires 'immediate" and 0 duration.
+        slider_menu = [{
+            'buttons': [
+                {'args': [frame_names + (frame_names[::-1] if bounce else []), 
+                          {'frame': {'duration': transition_duration, 'redraw': redraw},
+                           'fromcurrent': True, 
+                           'transition': {'duration': transition_duration if data_easing else 0,
+                                          'easing': transition}}],
+                 'label': 'Play', 'method': 'animate'},
+                {'args': [[None], {'frame': {'duration': 0, 'redraw': redraw},
+                                   'mode': 'immediate', 
+                                   'transition': {'duration': 0}}],
+                 'label':'Pause', 'method':'animate'}],
+            'direction': 'left',
+            'pad': {'r': 10, 't': 85},
+            'showactive': True,
+            'type': 'buttons',
+            'x': 0.1, 'y': 0,
+            'xanchor': 'right',
+            'yanchor': 'top'
+        }]
+        # Initialize a holder for 'updatemenus' if it doesn't exist
+        if "updatemenus" not in figure["layout"]:
+            figure['layout']['updatemenus'] = []
+        # Add the menu to the figure layout
+        figure['layout']['updatemenus'] += slider_menu
+
+    # "transition" controls the animation of the slider.
+    sliders_dict = {
+        # 'active': 0,
+        'yanchor': 'top',
+        'xanchor': 'left',
+        'currentvalue': {
+            'font': {'size': 16},
+            'prefix': frame_label,
+            'visible': show_frame_label,
+            'xanchor': 'right'
+        }, 
+        'transition': {'duration': transition_duration, 'easing': slider_transition},
+        'pad': {'b': 10, 't': 50 if max(map(len,frame_names)) < 20 else 65},
+        'len': 0.9 if show_play_pause else 1,
+        'x': 0.1 if show_play_pause else 0,
+        'y': 0,
+        'steps': []
+    }
+
+    # make frames
+    for el,data_dicts in zip(frame_names, list_data_dicts):
+        frame = {'data': [], 'name': el}
+        # Animate a plot
+        if el == frame_names[0]:
+            for d in data_dicts:
+                f_data = d.copy()
+                f_data.pop("frame","")
+                f_data["showlegend"] = False
+                # Generate data dicts in the usual way.
+                figure['data'].append(f_data)
+            for d in details:
+                figure['data'].append(d.copy())
+
+        # Add all data dicts for this step to the frame data
+        for d in data_dicts:
+            f_data = d.copy()
+            f_data.pop("frame","")
+            f_data["showlegend"] = False
+            frame['data'].append(f_data)
+        for d in details:
+            frame['data'].append(d.copy())
+
+        layout = {"annotations":[]}        
+        for a in annotations:
+            if (a["frame"] == el):
+                layout["annotations"].append( a )
+        frame["layout"] = layout
+
+        figure['frames'].append(frame)
+        # Controls what happens when this element of the slider is
+        # clicked. The first duration is for the data, the second is
+        # for the slider.
+        slider_step = {'args': [[el],
+            {'frame': {'duration': transition_duration, 'easing':transition, 'redraw': redraw},
+             'transition': {'duration': transition_duration if data_easing else 0, 
+                            'easing': slider_transition}}
+        ], 'label': el, 'method': 'animate'}
+        sliders_dict['steps'].append(slider_step)
+
+    figure['layout']['sliders'] = [sliders_dict]
+    return figure
 
 
 # ================================================
