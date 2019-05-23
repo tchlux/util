@@ -13,7 +13,11 @@ CWD = os.path.dirname(os.path.abspath(__file__))
 
 # Wrapper class for using the LSHEP fortran code
 class LSHEP(Approximator):
-    def __init__(self):
+    #  radius -- Multiplier on the computed radius of influence. For
+    #            data that is not uniformly dense, consider growing
+    #            this number (growing the radius of influence of all
+    #            points) until desired model smoothness is obtained.
+    def __init__(self, radius=2):
         self.linear_shepard = fmodpy.fimport(
             os.path.join(CWD,"linear_shepard.f95"),
             module_link_args=["-lblas","-llapack","-lgfortran"], 
@@ -21,6 +25,7 @@ class LSHEP(Approximator):
         self.lshep = self.linear_shepard.lshep
         self.lshepval = self.linear_shepard.lshepval
         self.ierrors = {}
+        self.radius = radius
         self.x = self.f = self.a = self.rw = None
 
     # Use fortran code to compute the boxes for the given data
@@ -38,6 +43,8 @@ class LSHEP(Approximator):
             # In-place update of self.a and self.rw
             self.lshep(self.x.shape[0], self.x.shape[1],
                        self.x, self.f[i], self.a[i], self.rw[i], **kwargs)
+            # Multiply in the radius modifier.
+            self.rw[-1] *= self.radius
 
     # Use fortran code to evaluate the computed boxes
     def _predict(self, x, display_wait_sec=.5):

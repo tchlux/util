@@ -94,7 +94,7 @@ def test_data():
     assert(tuple(a["0"])[:-2] == tuple([1,2,3]))
 
     # Verify slicing by index
-    assert(tuple(a[:1][0]) == tuple(a[0]))
+    assert(tuple(a[:2][0]) == tuple(a[0]))
 
     # Verify slicing by names
     assert(tuple(a["0","2"][0]) == tuple([1,1.2]))

@@ -24,20 +24,8 @@
 import random, numbers, os, webbrowser, imp, sys, re, tempfile
 import numpy as np
 from scipy.spatial.qhull import QhullError
-from util.decorators import same_as
 
-# Importer function to make sure that the a local file name doesn't
-# conflict with the true installed package name
-def import_package(name, custom_name=None):
-    # Use a custom name if provided, otherwise just name
-    custom_name = custom_name or name
-    # Find and open a file that is the non-local package name
-    f, pathname, desc = imp.find_module(name, [p for p in sys.path if
-                                               p not in os.getcwd()])
-    # Load the module
-    module = imp.load_module(custom_name, f, pathname, desc)
-    return module
-
+NOTEBOOK_MODE = False
 PLOT_MARGIN = 50 # In pixels
 PLOT_POINTS = 1000 # Number of samples
 BRIGHTNESS_RANGE = 0.6 # For default shading of points
@@ -94,6 +82,65 @@ DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 BLUE = np.array((100,100,255), dtype=np.uint8)
 RED = np.array((255,100,100), dtype=np.uint8)
 WHITE = np.array((255,255,255), dtype=np.uint8)
+
+
+# Importer function to make sure that the a local file name doesn't
+# conflict with the true installed package name
+def import_package(name, custom_name=None):
+    # Use a custom name if provided, otherwise just name
+    custom_name = custom_name or name
+    # Find and open a file that is the non-local package name
+    f, pathname, desc = imp.find_module(name, [p for p in sys.path if
+                                               p not in os.getcwd()])
+    # Load the module
+    module = imp.load_module(custom_name, f, pathname, desc)
+    return module
+
+# ==================================================================
+#                         SameAs Decorator
+# 
+# Decorator that copies the documentation and arguemnts of another
+# function (specified as input). Useful for making decorators (:P)
+# Optional "mention_usage" updates documentation when True to disclose
+# the name of the function being wrapped (and the reuse of signature).
+# 
+# USAGE: 
+# 
+#   @same_as(<func_to_copy>)
+#   def <function_to_decorate>(...):
+#      ...
+# 
+#   OR
+# 
+#   <function> = same_as(<func_to_copy>)(<function_to_decorate>)
+#   
+def same_as(to_copy, mention_usage=False):
+    import inspect
+    # Create a function that takes one argument, a function to be
+    # decorated. This will be called by python when decorating.
+    def decorator_handler(func):
+        if hasattr(func, "__name__"): original_name = func.__name__
+        else:                         original_name = str(func)
+        # Set the documentation string for this new function
+        documentation = inspect.getdoc(to_copy)
+        if documentation == None: 
+            documentation = inspect.getcomments(to_copy)
+        # Store the documentation and signature into the wrapped function
+        if hasattr(to_copy, "__name__"):
+            func.__name__ = to_copy.__name__
+            if mention_usage:
+                documentation = (
+                    "\nThe function '%s' has been decorated with the signature "+
+                    "of '%s'. (likely for aliasing / decoration)\n\n")%(
+                        original_name, to_copy.__name__) + documentation
+        # Try copying the signature if possible
+        try:               func.__signature__ = inspect.signature(to_copy)
+        except ValueError: pass
+        # Finalize by copying documentation
+        func.__doc__ = documentation
+        return func
+    # Return the decorator handler
+    return decorator_handler
 
 
 # ===============================================================
@@ -268,6 +315,7 @@ class Plot:
             if type(colors) != type(None):
                 # Get the color of each node in the simplex as a numpy array
                 colors = [colors[i] for i in simp]
+                # colors = [(colors if type(colors) == str else colors[i]) for i in simp]
                 colors = [c[c.index('(')+1:c.index(')')].split(',')
                           for c in colors]
                 colors = np.array([list(map(float,c)) for c in colors])
@@ -552,7 +600,7 @@ class Plot:
     def add_function(self, name, func, min_max_x, min_max_y=[],
                      grid_lines=True, plot_points=PLOT_POINTS,
                      vectorized=False, mode=None, plot_type=None,
-                     **kwargs):
+                     use_gradient=None, **kwargs):
         if (len(min_max_y) > 0): self.is_3d = True
         # If we have two control axes, square root the plot points
         if self.is_3d:
@@ -560,6 +608,8 @@ class Plot:
             # If no y was provided, set it to default value
             if len(min_max_y) == 0: min_max_y = [0.0,0.0]
             if mode == None: plot_type = 'surface'
+            # Set the gradient for 3d plots.
+            if (type(use_gradient) == type(None)): use_gradient = True
         else:
             if mode == None: mode = 'lines'
 
@@ -585,8 +635,8 @@ class Plot:
 
         if "hoverinfo" not in kwargs: kwargs["hoverinfo"] = "name+x+y"+("+z" if self.is_3d else "")
         # Call the standard plot function
-        self.add(name, *x_vals, response, mode=mode,
-                 plot_type=plot_type, **kwargs)
+        self.add(name, *x_vals, response, mode=mode, plot_type=plot_type,
+                 use_gradient=use_gradient, **kwargs)
             
         # If this is a 3D surface plot and grid_lines=True, add grid lines
         if (self.is_3d and plot_type == 'surface') and grid_lines:
@@ -795,7 +845,7 @@ class Plot:
     #  ... <any additional plotly data-dictionary args> ...
     def add(self, name, x_values=None, y_values=None, z_values=None,
             mode=None, plot_type=None, group=None,
-            show_in_legend=True, shade=False, use_gradient=False,
+            show_in_legend=True, shade=False, use_gradient=None,
             palatte=DEFAULT_GRADIENT, text=None, color=None,
             opacity=1.0, line_color=None, line_width=None, fill=None,
             fill_color=None, fill_opacity=0.6, symbol='circle',
@@ -863,8 +913,8 @@ class Plot:
             else:
                 self.color_num += 1
                 color = self.color(self.color_num, alpha=opacity)
-        else:
-            shade = False
+        # Cancel shading if a color was provided.
+        else: shade = False
         if type(line_color) == type(None):
             line_color = color
         if type(fill_color) == type(None):
@@ -1361,6 +1411,22 @@ class Plot:
         
 #      Functions for manipulation produces plots     
 # ===================================================
+
+# Convenience function for generating interactive plots in a Jupyter notebook.
+def iplot(plot, *args, html=False, **kwargs):
+    # Set notebook mode for this session if it has not been set.
+    global NOTEBOOK_MODE
+    plotly = import_package("plotly")
+    if not NOTEBOOK_MODE:
+        plotly.offline.init_notebook_mode()
+        NOTEBOOK_MODE = True
+    # Disable the generation of HTML strings.
+    kwargs['html'] = html
+    # Get the figure for plotting.
+    fig = plot.plot(*args, **kwargs)
+    # Create an interactive plot.
+    plotly.offline.iplot(fig, show_link=False)
+
 
 # Generates the HTML file and fixes some javascript so that the
 # plot does not have unwanted buttons and links.

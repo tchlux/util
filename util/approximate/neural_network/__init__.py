@@ -2,11 +2,41 @@
 from util.approximate import Approximator
 
 # Use keras and tensorflow to make a multi-layer perceptron regressor.
+# 
+#  Fit / Init Parameters:
+# 
+#    layers      (32,)*10 -- Dense layer structure of this neural network.
+#    activation  'relu'   -- Activation function for each layer.
+#    optimizer   'sgd'    -- Method of minimizing "loss" function.
+#    loss        'mse'    -- The function measuring error.
+#    epochs      5000     -- Number of epochs of optimizer iterations to take.
+#    batch_size  None     -- The size of each batch for loss minimization.
+#    verbose     0        -- The level of Keras verbosity.
+# 
 class NeuralNetwork(Approximator):
-    def __init__(self, *args, **kwargs): pass
-    def _fit(self, x, y, *args, layers=(32,)*10, activation='relu',
-             optimizer='sgd', loss='mse', epochs=5000,
-             batch_size=None, verbose=0, **kwargs):
+    def __init__(self, *args, **kwargs):
+        # Set some default parameters.
+        defaults = dict(layers=(32,)*10, activation='relu',
+                        optimizer='sgd', loss='mse', epochs=5000,
+                        batch_size=None, verbose=0)
+        # Update the defaults with the user specs.
+        defaults.update(kwargs)
+        # Store the default settings for this neural network for fit-time.
+        self.default_settings = defaults
+
+    def _fit(self, x, y, *args, **user_kwargs):
+        # Set the defaults, then overwrite them with user keyword arguments.
+        kwargs = self.default_settings.copy()
+        kwargs.update(user_kwargs)
+        # Convert the needed keyword arguments into local variables.
+        layers = kwargs.pop('layers')
+        activation = kwargs.pop('activation')
+        optimizer = kwargs.pop('optimizer')
+        loss = kwargs.pop('loss')
+        epochs = kwargs.pop('epochs')
+        batch_size = kwargs.pop('batch_size')
+        verbose = kwargs.pop('verbose')
+        # Import numpy module.
         import numpy as np
         # Silence the "backend" message from keras on import.
         import os, sys

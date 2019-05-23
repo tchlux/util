@@ -275,12 +275,11 @@ class Row:
     # Generic boolean operator function.
     def _gen_operator(self, other, op_name):
         # First check for length.
-        if hasattr(other, "__len__"):
+        try:    has_len = len(other) or True
+        except: has_len = False
+        if has_len:
             # If the length doesn't match, check if it is a singleton.
             if (len(other) != len(self)):
-                # If it is not a singleton, raise an error.
-                if (type(other) != self.data.types[self.column]):
-                    raise(self.data.BadValue(f"Length '{len(other)}' does not have the same number of elements as this Row, {len(self)}."))
                 # Otherwise return singleton comparison.
                 for v in self:
                     if (type(v) == type(None)): yield None

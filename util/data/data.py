@@ -4,8 +4,11 @@ from util.data.categories import regular_simplex
 from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES, \
     SEPARATORS, FILE_SAMPLE_SIZE, MISSING_SAMPLE_SIZE
 
-# TODO:  Make sure column order is maintained when getting items.
-# TODO:  Test addition of data with same columns in different order.
+# TODO:  Make access of a single row (in slicing) return a Row object.
+# TODO:  Make "save" and "load" to CSV support having iterables of
+#        readable types. Expand them out to columns with particular
+#        names (for compatibility with other software), read those
+#        particular names back into a stack.
 # TODO:  Make "to_matrix" automatically flatten elements of columns
 #        that contain iterables into their base types. If the types
 #        are numeric, use float, otherwise use string. Use "is numeric".
@@ -241,6 +244,9 @@ class Data:
         else:
             # This index is retrieving a sliced subset of self.
             rows, cols = self._index_to_rows_cols(index)
+            # If this is only accessing a single row, return a Row object.
+            if (type(index) == tuple) and (len(index) == 2) and (type(index[0]) == int): 
+                return self.data[rows[0]][cols]
             # Otherwise make an alias data set (a data "view") and return it.
             return type(self)(data=self.data, names=self.names.values,
                         types=self.types.values, rows=rows, cols=cols)
@@ -1737,11 +1743,12 @@ class Data:
             return
         # Set the "max_display" to the default value for this class
         if type(max_display) == type(None): max_display = self.max_display
-        print_to_file("SUMMARY:")
+        num_rows, num_cols = self.shape
+        print_to_file(f"SUMMARY:")
         print_to_file()
-        print_to_file(f"  This data has {len(self)} row{'s' if len(self) != 1 else ''}, {len(self[0])} column{'s' if len(self[0]) != 1 else ''}.")
-        num_ordinal = sum(1 for t in self.types if t in {float,int})
-        print_to_file(f"    {num_ordinal} column{'s are' if num_ordinal != 1 else ' is'} recognized as ordinal, {len(self[0])-num_ordinal} {'are' if (len(self[0])-num_ordinal) != 1 else 'is'} categorical.")
+        print_to_file(f"  This data has {num_rows} row{'s' if num_rows != 1 else ''}, {num_cols} column{'s' if num_cols != 1 else ''}.")
+        num_numeric = sum(1 for t in self.types if t in {float,int})
+        print_to_file(f"    {num_numeric} column{'s are' if num_numeric != 1 else ' is'} recognized as numeric, {num_cols-num_numeric} {'are' if (num_cols-num_numeric) != 1 else 'is'} categorical.")
         # Get some statistics on the missing values.
         is_none = lambda v: type(v) == type(None)
         missing_rows = {r:sum(map(is_none,v)) for (r,v) in enumerate(self) if (None in v)}
@@ -1778,7 +1785,7 @@ class Data:
             if (t in {int,float}) and (len(counts) > max_display):
                 if (none_count > 0):
                     perc = 100. * (none_count / len(self))
-                    print_to_file(f"    None                 {none_count:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
+                    print_to_file(f"    None                   {none_count:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
                 # Order the values by intervals and print
                 min_val = min(counts)
                 max_val = max(counts)

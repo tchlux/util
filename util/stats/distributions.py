@@ -212,7 +212,7 @@ def cdf_fit(data, fit="linear", smooth=None):
                     vals.append(data_vals[index])
                 return np.array(vals)
             except TypeError:
-                index = np.searchsorted(data, x, side="right") - 1
+                index = np.searchsorted(data, x_val, side="right") - 1
                 index = max(index, 0)
                 # Handle the single value case
                 return data_vals[index]
