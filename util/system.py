@@ -185,21 +185,22 @@ class Timer:
     #-----------------------------------------------------------------
     #                            Private
     import time as _time
-    _a = _b = None
-    # Start the timer when it is initialized by default.
-    def __init__(self): self._begin()
+    _a = 0
+    _b = None
     # Offer a function for explicitly beginning a timer.
     def _begin(self):
         self._a = self._time.time()
         self._b = None
+        return self._a
     # End function for this timer.
     def _end(self):
         self._b = self._time.time()
         return self._b
     # Return the elapsed time since start.
     def _check(self):
-        if (self._b == None): return self._time.time() - self._a
-        else:                return self._b - self._a
+        if   (self._a is None): return 0
+        elif (self._b is None): return self._time.time() - self._a
+        else:                   return self._b - self._a
     # Overwrite the "__call__" method of the provided object.
     def _callset(obj, func):
         class Float(type(obj)):
@@ -219,7 +220,7 @@ class Timer:
     @property
     def stop(self):
         if (self._b == None): return Timer._callset(self._end(), self.total)
-        else:                 return Timer._callset(self._b, self.total)
+        else:                 return Timer._callset(self._b,     self.total)
     # Return the "total time from start" if running, return "total time" if finished.
     @property
     def total(self):

@@ -1,10 +1,8 @@
 import os, time, pickle  # System libraries
 
 # Item tree building constants
-MAX_ITEMS_PER_LAYER = 10000   # Max number of items kept per layer
-SUPPORT_INCREMENT = 0.025     # The amount to incrment support per trim
-                              # if there are still too many items
-MIN_SUPPORT = 0.1
+MAX_ITEMS_PER_LAYER = 100    # Max number of items kept per layer
+MIN_SUPPORT = 0.0
 DEFAULT_ORDER = False
 
 def DEFAULT_OUT(*args, **kwargs):
@@ -21,10 +19,12 @@ def _check_consistency(data):
 class AprioriTree:
     # "output" should be a function that takes a string as an argument
     # and has an argument named "end" that declares the line-end behavior
-    def __init__(self, support=MIN_SUPPORT, output=DEFAULT_OUT, ordered=DEFAULT_ORDER):
+    def __init__(self, support=MIN_SUPPORT, output=DEFAULT_OUT,
+                 ordered=DEFAULT_ORDER, max_items=MAX_ITEMS_PER_LAYER):
         self.data = []
         self.support = support
         self.ordered = ordered
+        self.max_items = max_items
         if ordered: 
             raise(Exception("No ordered implementation available yet. Consider making all values tuples (<column index>, value)."))
         self.current_items = {}
@@ -89,9 +89,8 @@ class AprioriTree:
     # Post: All items that do not have enough support are removed
     def _trim_items(self, support=None):
         min_support = self.support if (support == None) else support
-        to_remove = []
         # Create a generator so we can pop while iterating
-        curr_items_gen = (item for item in list(self.current_items.keys()))
+        curr_items_gen = list(self.current_items.keys())
         len_curr_items = len(self.current_items)
         for i,item in enumerate(curr_items_gen):
             if not i%(len_curr_items//100 + 1):
@@ -101,11 +100,14 @@ class AprioriTree:
             if self.current_items[item] < min_support:
                 self.current_items.pop(item)
         # If there are still too many items, trim off more
-        if len(self.current_items) > MAX_ITEMS_PER_LAYER:
-            self._trim_items(min_support + SUPPORT_INCREMENT)
-        else: # Otherwise, done trimming
-            self.print("%i items at %0.1f%% support"%
-                       (len(self.current_items), 100.0*min_support))
+        if len(self.current_items) > self.max_items:
+            to_remove = sorted(self.current_items, key=lambda i:-self.current_items[i])
+            for i in range(self.max_items,len(to_remove)):
+                self.current_items.pop(to_remove[i])
+        # Done trimming.
+        min_support = min(self.current_items.values())
+        self.print("%i items at %0.1f%% support"%
+                   (len(self.current_items), 100.0*min_support))
 
 
     # Pre:  "self.current_items" and "self.data" have been

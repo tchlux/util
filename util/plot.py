@@ -1286,11 +1286,6 @@ class Plot:
                  marker_line_color="rgba(0,0,0,1))",
                  marker_line_width=2, label=False, label_y_offset=1,
                  label_x_offset=0, **kwargs):
-        # Add a label if that is desired.
-        if label: 
-            self.add_node(name+"_label", x+label_x_offset, 
-                          y+label_y_offset, mode="text", text=name)
-
         # Disable "white" mode if color was provided
         if ("color" in kwargs) and (type(kwargs["color"]) != type(None)): 
             white = False
@@ -1306,10 +1301,17 @@ class Plot:
             marker_line_width = 0
             kwargs["color"] = self.color(
                 color=kwargs.get("color","(0,0,0)"), alpha=0)
-        return self.add(name, [x], [y], *args, symbol=symbol,
-                        marker_line_width=marker_line_width,
-                        marker_line_color=marker_line_color, 
-                        hoverinfo=hoverinfo, **kwargs)
+        # Store the output of the addition.
+        output = self.add(name, [x], [y], *args, symbol=symbol,
+                          marker_line_width=marker_line_width,
+                          marker_line_color=marker_line_color, 
+                          hoverinfo=hoverinfo, **kwargs)
+        # Add a label if that is desired (after so it's on top).
+        if label: self.add_node(name+"_label", x+label_x_offset, 
+                                y+label_y_offset, mode="text", text=name,
+                                hoverinfo="skip")
+        # Return the output.
+        return output
 
     # Wrapper for "plot" that draws lines between nodes in a sequence.
     def add_edge(self, nodes, color="rgba(0,0,0,1)", mode="lines", 
@@ -1337,6 +1339,7 @@ class Plot:
                     break
             # If we don't find a matching node, break
             else: break
+        kwargs["hoverinfo"] = "skip"
         output = self.add("", x, y, mode=mode, color=color, *args, **kwargs)
         # Cycle that new element to the front of data so that it is
         # rendered underneath all nodes.

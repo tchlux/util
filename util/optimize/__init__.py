@@ -92,10 +92,17 @@ class Tracker:
         converged = False
         if (self.tries >= self.min_steps):
             # Check for max steps requirement.
-            if (self.tries >= self.max_steps): return True
+            if (self.tries >= self.max_steps):
+                if self.display:
+                    print("Attempt limit exhausted.")
+                    self.display = False
+                return True
             # Check for time requirement
-            time_done = (time.time() - self.start > self.max_time)
-            if time_done: return time_done
+            if (time.time() - self.start > self.max_time):
+                if self.display:
+                    print("Time limit exhausted.")
+                    self.display = False
+                return True
             # Check for change requirement
             change = [abs(o - self.min_obj) for (o,t,s) in self.record[-self.min_steps:]]
             divisor = max(self.record)[0] - min(self.record)[0]
@@ -106,6 +113,9 @@ class Tracker:
                 # Check if the relative convergence of the most recent
                 # window of solutions is slower than a prescribed value
                 converged = max(change) / divisor < self.min_change
+        if (converged and self.display):
+            print("Achieved convergence limit.")
+            self.display = False
         return converged
 # ====================================================================
 # ====================================================================
@@ -139,14 +149,14 @@ class Tracker:
 #                      function , bounds, initial solution, obj args)
 #                      and will find a candidate minimum solution.
 #      This file provides the methods:
-#       AdaptiveNormal  - Quasi simulated annealing with exhaustion,
-#            (default)    best for noisy multi-min spaces.
-#       AMPGO           - BFGS with tunneling away from prior solutions,
-#                         best for smooth locally convex multi-min spaces
-#       DiRect          - The divided rectangles method, provably convergent
-#                         at a slow rate, offers "region" of best solution.
-#       Random          - Pure random baseline for comparison, best for
-#                         discontinuous and noisy spaces.
+#       DiRect         - The divided rectangles method, provably convergent
+#            (default)   at a slow rate, offers "region" of best solution.
+#       AMPGO          - BFGS with tunneling away from prior solutions,
+#                        best for smooth locally convex multi-min spaces
+#       AdaptiveNormal - Quasi simulated annealing with exhaustion,
+#                        best for noisy multi-min spaces.
+#       Random         - Pure random baseline for comparison, best for
+#                        discontinuous and noisy spaces.
 #   checkpoint      -- Boolean indicating whether or not a checkpoint
 #                      file should be saved with intermediate best solutions
 #   checkpoint_file -- String name of the file to save for checkpointing
@@ -157,7 +167,7 @@ class Tracker:
 def minimize(objective, solution, bounds=None, args=tuple(),
              max_time=DEFAULT_MAX_TIME_SEC, min_steps=DEFAULT_MIN_STEPS,
              max_steps=DEFAULT_MAX_STEPS,  min_improvement=DEFAULT_MIN_IMPROVEMENT, 
-             display=False, method=DiRect, checkpoint=False,
+             display=True, method=DiRect, checkpoint=True,
              checkpoint_file=CHECKPOINT_FILE):
     # Convert the solution into a float array (if it's not already)
     solution = np.asarray(solution, dtype=float)
@@ -169,7 +179,7 @@ def minimize(objective, solution, bounds=None, args=tuple(),
         bounds = list(zip(lower, upper))
 
     # Initialize a tracker for halting the optimization
-    t = Tracker(objective, max_time, min_steps, min_improvement,
+    t = Tracker(objective, max_time, min_steps, max_steps, min_improvement,
                 display, checkpoint, checkpoint_file)
     # Get the initial objective value of the provided solution.
     t.check(solution, *args)
@@ -191,7 +201,8 @@ def minimize(objective, solution, bounds=None, args=tuple(),
             p.show(show_legend=False)
         except: pass
             
-    # Remove the checkpoint file
-    if os.path.exists(checkpoint_file): os.remove(checkpoint_file)
+    # Remove the checkpoint file if checkpoint is turned off.
+    if (not checkpoint) and os.path.exists(checkpoint_file):
+        os.remove(checkpoint_file)
     return t.best_sol
 

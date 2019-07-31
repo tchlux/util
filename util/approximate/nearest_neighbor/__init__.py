@@ -1,7 +1,8 @@
 import numpy as np
 from util.approximate import WeightedApproximator
 from util.math import is_none, abs_diff
-from sklearn.neighbors import KDTree
+from util.approximate.nearest_neighbor.bt import BallTree
+# from sklearn.neighbors import BallTree
 
 # Construct an approximation algorithm that only returns the average
 # of the fit points.
@@ -28,10 +29,14 @@ class NearestNeighbor(WeightedApproximator):
 
     # Use fortran code to compute the boxes for the given data
     def _fit(self, control_points, k=None, display=True, **kwargs):
-        if (not is_none(k)): self.num_neighbors = k
+        if (not is_none(k)): self.num_neighbors=k
         # Process and store local information
         self.points = control_points.copy()
-        self.tree = KDTree(self.points)
+        self.tree = BallTree(self.points)
+        # Update the associated 'y' values if they exist (since points
+        # were shuffled on the construction of the tree).
+        if (not is_none(self.y)):
+            self.y = self.y[self.tree.index_mapping]
         # Automatically select the value for "k" if appropriate and
         # the response values are available for the points.
         if is_none(self.num_neighbors):
@@ -128,6 +133,9 @@ def auto(points, values, metric=abs_diff, max_k=None, samples=100,
 
 
 if __name__ == "__main__":
+
+    np.random.seed(0)
+
     TEST_AUTO = False
     if TEST_AUTO:
         d = 10
@@ -136,8 +144,9 @@ if __name__ == "__main__":
         values = np.random.random(size=(n,d))
         k = auto(points, values, display=True)
 
-    from util.approximate import condition
-    m = condition(NearestNeighbor, method="MPCA", display=True)()
+    # from util.approximate import condition
+    # m = condition(NearestNeighbor, method="MPCA", display=True)()
+    m = NearestNeighbor()
     from util.approximate.testing import test_plot
     p,x,y = test_plot(m, N=30, fun=lambda x: x[0]**3, plot_points=4000)
     p.show()
