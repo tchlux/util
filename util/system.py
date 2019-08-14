@@ -69,11 +69,11 @@ def pause(string="press enter to continue.."):
 #                     chunk extensions in the form "part %i of %i".
 #   verbose        -- Prints out status information when set to True.
 def disassemble(file_path, max_size_bytes=50*(2**20),
-                chunk_ext="_(part_%i_of_%i).chunk", verbose=True):
+                chunk_ext="__%i-of-%i.chunk", verbose=True):
     class FileTooSmall(Exception): pass
-    import os
+    import os, math
     size = os.path.getsize(file_path)
-    chunks = int(size / max_size_bytes + 0.5)
+    chunks = math.ceil(size / max_size_bytes)
     if (chunks <= 1): raise(FileTooSmall("The provided file is smaller than 'max_size'."))
     if verbose:
         print()
@@ -89,6 +89,58 @@ def disassemble(file_path, max_size_bytes=50*(2**20),
                     print(" writing chunk %i of %i in '%s'..."%(c,chunks,out.name))
                 out.write(f.read(max_size_bytes))
            
+
+# This function provides the counterpart to `disassemble` above.
+def assemble(output_names=(), chunk_ext="__%i-of-%i.chunk", verbose=True):
+    # Check for a usable `chunk_ext` that can correctly determine file parts.
+    class BadChunkExtension(Exception): pass
+    chunk_ext_pieces = chunk_ext.split("%i")
+    enough_numbers = len(chunk_ext_pieces) == 3
+    if (not enough_numbers):
+        raise(BadChunkExtension("Provided chunk extension must have two '%i' for indexing."))
+    good_delimiter = (len(chunk_ext_pieces[1]) > 0) and (
+        chunk_ext_pieces[0] not in chunk_ext_pieces[1]) and (
+        chunk_ext_pieces[0] not in chunk_ext_pieces[2]) and (
+        chunk_ext_pieces[1] not in chunk_ext_pieces[0]) and (
+        chunk_ext_pieces[1] not in chunk_ext_pieces[2]) and (
+        chunk_ext_pieces[2] not in chunk_ext_pieces[0]) and (
+        chunk_ext_pieces[2] not in chunk_ext_pieces[1])
+    if (not good_delimiter):
+        raise(BadChunkExtension("Provided chunk extension must have mutually exclusive strings around '%i'."))
+    # Beginning of the actual function.
+    if verbose: print(" Beginning `assemble`")
+    # Get all of the paths to the pieces of this file.
+    import os
+    output_dir = os.getcwd()
+    # Find candidate output files automatically.
+    chunk_start = chunk_ext_pieces[0]
+    chunk_mid = chunk_ext_pieces[1]
+    chunk_end = chunk_ext_pieces[2]
+    if (len(output_names) == 0):
+        if verbose: print(f"  searching for candidates in '{output_dir}'")
+        output_names = tuple(sorted({
+            n.split(chunk_start)[0] for n in os.listdir(output_dir)
+            if n[-len(chunk_end):] == chunk_end}))
+    # Re-assemble all of the provided names.
+    for name in output_names:
+        if verbose: print(f"  assembling {name}")
+        output_path = os.path.join(output_dir, name)
+        # Skip the file if it already exists (do not overwrite).
+        if (os.path.exists(output_path)):
+            print(f"  file '{name}' already exists, skipping")
+            continue
+        # Get all of the chunks of this file in order.
+        sort_key = lambda n: int(n.split(chunk_mid)[0].split(chunk_start)[-1])
+        chunk_paths = sorted((n for n in os.listdir(output_dir)
+                              if (n[:len(name)] == name) and       # <- starts right
+                              (n.count(chunk_start) == 1) and      # <- splits well
+                              (n[-len(chunk_end):] == chunk_end)), # <- ends right
+                             key=sort_key) # <- sort by integer chunk count
+        if verbose: print(f"    {chunk_paths}")
+        with open(output_path, "wb") as out:
+            # Concatenate all of the files into the single output file.
+            for f_path in sorted(chunk_paths):
+                with open(f_path, "rb") as f: out.write(f.read())
 
 # Execute a blocking command with a subprocess, on completion provide
 # the return code, stdout as string, and stderr as string. This should
