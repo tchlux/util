@@ -107,7 +107,7 @@ class qHullDelaunay(WeightedApproximator):
 class Delaunay(WeightedApproximator):
     os.environ["OMP_NESTED"] = "TRUE"
     from util.approximate.delaunay import delsparse
-    def __init__(self, parallel=False, pmode=None):
+    def __init__(self, parallel=False, pmode=None, chain=None):
         # Get the source fortran code module
         path_to_src = os.path.join(CWD,"delsparse.f90")
         # Set up the algorithm for parallel or serial evaluation.
@@ -115,6 +115,7 @@ class Delaunay(WeightedApproximator):
         self.delaunayp = self.delsparse.delaunaysparsep
         self.delaunays = self.delsparse.delaunaysparses
         self.pmode = pmode
+        self.chain = chain
         # Initialize containers.
         self.pts = None
         self.errs = {}
@@ -140,12 +141,12 @@ class Delaunay(WeightedApproximator):
                            pts_in, p_in.shape[1], p_in, simp_out,
                            weights_out, error_out, extrap=100.0,
                            pmode=self.pmode, ibudget=ibudget,
-                           eps=epsilon)
+                           eps=epsilon, chain=self.chain)
         else:
             self.delaunays(self.pts.shape[0], self.pts.shape[1],
                            pts_in, p_in.shape[1], p_in, simp_out,
                            weights_out, error_out, extrap=100.0, 
-                           ibudget=ibudget, eps=epsilon)
+                           ibudget=ibudget, eps=epsilon, chain=self.chain)
         # Remove "extrapolation" errors if the user doesn't care.
         if allow_extrapolation: error_out = np.where(error_out == 1, 0, error_out)
         # Handle any errors that may have occurred.
@@ -187,6 +188,12 @@ class DelaunayP3(Delaunay):
     from util.approximate.delaunay import delsparse
     def __init__(self, parallel=True, pmode=3):
         return super().__init__(parallel=parallel, pmode=pmode)
+
+# Wrapper class for using the Delaunay fortran code
+class DelaunayP3CT(Delaunay):
+    from util.approximate.delaunay import delsparse
+    def __init__(self, parallel=True, pmode=3,chain=True):
+        return super().__init__(parallel=parallel, pmode=pmode, chain=chain)
 
 
 if __name__ == "__main__":
