@@ -282,8 +282,8 @@ LOGICAL :: CHAINL
 
 ! Local variables.
 INTEGER :: I, J, K ! Loop iteration variables.
-INTEGER :: ITMP, JTMP ! Temporary variables for swapping, looping, etc.
 INTEGER :: IEXTRAPS ! Extrapolation budget.
+INTEGER :: ITMP, JTMP ! Temporary variables for swapping, looping, etc.
 INTEGER :: LWORK ! Size of the work array.
 INTEGER :: MI ! Index of current interpolation point.
 REAL(KIND=R8) :: CURRRAD ! Radius of the current circumsphere.
@@ -304,6 +304,7 @@ REAL(KIND=R8) :: PLANE(D+1) ! The hyperplane containing a facet.
 REAL(KIND=R8) :: PRGOPT_DWNNLS(1) ! Options array for DWNNLS.
 REAL(KIND=R8) :: PROJ(D) ! The projection of the current iterate.
 REAL(KIND=R8) :: TAU(D) ! Householder reflector constants.
+REAL(KIND=R8) :: X(D) ! The solution to a linear system.
 
 ! Extrapolation work arrays are only allocated if DWNNLS is called.
 INTEGER, ALLOCATABLE :: IWORK_DWNNLS(:) ! Only for DWNNLS.
@@ -401,7 +402,7 @@ IF (MINRAD < EPSL) THEN ! Check for degeneracies in points spacing.
 
 ! Query DGEQP3 for optimal work array size (LWORK).
 LWORK = -1
-CALL DGEQP3(D-1,D,LQ,D,IPIV,TAU,B,LWORK,IERR(1))
+CALL DGEQP3(D,D,LQ,D,IPIV,TAU,B,LWORK,IERR(1))
 LWORK = INT(B(1)) ! Compute the optimal work array size.
 ALLOCATE(WORK(LWORK), STAT=I) ! Allocate WORK to size LWORK.
 IF (I .NE. 0) THEN ! Check for memory allocation errors.
@@ -422,9 +423,9 @@ OUTER : DO MI = 1, M
 
    ! Check if extrapolation is enabled.
    IF (EXTRAPL < EPSL) THEN
-      IEXTRAPS = -1 ! If not, set the extrapolation budget to a negative.
+      IEXTRAPS = -1 ! If not, set the extrapolation budget negative.
    ELSE
-      IEXTRAPS = 1 ! Allow for exactly one extrapolation.
+      IEXTRAPS = 1 ! Allow for exactly one projection for this point.
    END IF
 
    ! If there is no useable seed or if chaining is turned off, then make a new
@@ -459,9 +460,9 @@ OUTER : DO MI = 1, M
       ITMP = SIMPS(JTMP,MI)
       SIMPS(JTMP,MI) = SIMPS(D+1,MI)
 
-      ! If the least weighted vertex (JTMP) is not the first vertex, then
-      ! just drop row (I-1) from the linear system (corresponding to the
-      ! JTMP-1st column of A^T).
+      ! If the least weighted vertex (index JTMP) is not the first vertex,
+      ! then just drop row (JTMP-1) from the linear system (corresponding
+      ! to column (JTMP-1) of A^T).
       IF(JTMP .NE. 1) THEN
          AT(:,JTMP-1) = AT(:,D); B(JTMP-1) = B(D)
       ! However, if JTMP = 1, then both A^T and B must be reconstructed.
@@ -487,9 +488,9 @@ OUTER : DO MI = 1, M
 
          ! If extrapolation is allowed (EXTRAP>0), check the budget.
          ELSE IF (IEXTRAPS .EQ. 0) THEN
-            ! A second extrapolation has been attempted. This code is
-            ! rarely called, except in extreme cases involving poorly
-            ! conditioned simplices near the convex hull of P.
+            ! A second projection has been attempted. This code is rarely
+            ! called, except in extreme cases involving nearly singular
+            ! simplices near the convex hull of P.
 
             ! Swap the weights to match the simplex indices, and zero the
             ! most negative weight.
@@ -538,9 +539,9 @@ OUTER : DO MI = 1, M
                ! Swap the weights to match, and zero the most negative weight.
                WEIGHTS(JTMP,MI) = WEIGHTS(D+1,MI)
                WEIGHTS(D+1,MI) = 0.0_R8
-               ! If the least weighted vertex (JTMP) is not the first vertex,
-               ! then just drop row (JTMP-1) from the linear system
-               ! (corresponding to the JTMP-1st column of A^T).
+               ! If the least weighted vertex (index JTMP) is not the first
+               ! vertex, then just drop row (JTMP-1) from the linear system
+               ! (corresponding to column (JTMP-1) of A^T).
                IF (JTMP .NE. 1) THEN
                   AT(:,JTMP-1) = AT(:,D); B(JTMP-1) = B(D)
                ! However, if JTMP=1, then both A^T and B must be reconstructed.
@@ -650,7 +651,7 @@ SUBROUTINE MAKEFIRSTSIMP()
 SIMPS(:,MI) = 0
 MINRAD = HUGE(0.0_R8)
 DO I = 1, N
-   ! Check the distance to Q(:,MI)
+   ! Check the distance to Q(:,MI).
    CURRRAD = DNRM2(D, PTS(:,I) - PROJ(:), 1)
    IF (CURRRAD < MINRAD) THEN; MINRAD = CURRRAD; SIMPS(1,MI) = I; END IF
 END DO
@@ -663,39 +664,59 @@ DO I = 1, N
    CURRRAD = DNRM2(D, PTS(:,I)-PTS(:,SIMPS(1,MI)), 1)
    IF (CURRRAD < MINRAD) THEN; MINRAD = CURRRAD; SIMPS(2,MI) = I; END IF
 END DO
-! Set up the first row of the system A X = B.
+! Set up the first row of the linear system.
 AT(:,1) = PTS(:,SIMPS(2,MI)) - PTS(:,SIMPS(1,MI))
 B(1) = DDOT(D, AT(:,1), 1, AT(:,1), 1) / 2.0_R8
 ! Loop to collect the remaining D-1 vertices for the first simplex.
 DO I = 2, D
-   MINRAD = HUGE(0.0_R8) ! Re-initialize the radius for each iteration.
+   ! For numerical stability, refactor A^T P = Q R for the next iteration.
+   LQ(:,1:I-1) = AT(:,1:I-1)
+   CALL DGEQP3(D, I-1, LQ, D, IPIV, TAU, WORK, LWORK, IERR(MI))
+   IF(IERR(MI) < 0) THEN ! LAPACK illegal input error.
+      IERR(MI) = 80; RETURN
+   END IF
+   ! Set the RHS to P^T B.
+   FORALL (ITMP = 1:I-1) X(ITMP) = B(IPIV(ITMP))
+   ! Solve R^T Q^T X = P^T B for Q^T X, and save for later.
+   CALL DTRSM('L', 'U', 'T', 'N', I-1, 1, 1.0_R8, LQ, D, X, D)
+   ! Make a copy for computing the current center.
+   CENTER(1:I-1) = X(1:I-1)
+   CENTER(I:D) = 0.0_R8
+   ! Apply Q from the left.
+   CALL DORMQR('L', 'N', D, 1, I-1, LQ, D, TAU, CENTER, D, WORK, &
+     LWORK, IERR(MI))
+   IF(IERR(MI) < 0) THEN ! LAPACK illegal input error.
+      IERR(MI) = 83; RETURN
+   END IF
+   CENTER = CENTER + PTS(:,SIMPS(1,MI))
+   ! Re-initialize the radius for each iteration.
+   MINRAD = HUGE(0.0_R8)
    ! Check each point P* in PTS.
    DO J = 1, N
       ! Check that this point is not already in the simplex.
       IF (ANY(SIMPS(:,MI) .EQ. J)) CYCLE
-      ! Add P* to linear system, and compute the minimum norm solution.
-      AT(:,I) = PTS(:,J) - PTS(:,SIMPS(1,MI))
-      B(I) = DDOT(D, AT(:,I), 1, AT(:,I), 1) / 2.0_R8
-      LQ(:,1:I) = AT(:,1:I)
-      ! Compute A^T P = Q R.
-      CALL DGEQP3(D, I, LQ, D, IPIV, TAU, WORK, LWORK, IERR(MI))
-      IF(IERR(MI) < 0) THEN ! LAPACK illegal input error.
-         IERR(MI) = 80; RETURN
-      ELSE IF (ABS(LQ(I,I)) < EPSL) THEN ! A is rank-deficient.
-         CYCLE ! If rank-deficient, skip this point.
-      END IF
-      ! Set CENTER = P^T B.
-      FORALL (ITMP = 1:I) CENTER(ITMP) = B(IPIV(ITMP))
-      ! Get the radius using R^T Q^T X = P^T B.
-      CALL DTRSM('L', 'U', 'T', 'N', I, 1, 1.0_R8, LQ, D, CENTER, D)
-      CENTER(I+1:D) = 0.0_R8
-      CALL DORMQR('L', 'N', D, 1, I, LQ, D, TAU, CENTER, D, WORK, LWORK, &
-         IERR(MI))
+      ! If PTS(:,J) is more than twice MINRAD from CENTER, do a quick skip.
+      IF (DNRM2(D, CENTER - PTS(:,J), 1) > 2.0_R8 * MINRAD) CYCLE
+      ! Perform a rank-1 update to the current QR factorization of A^T by
+      ! rotating PTS(:,I) - PTS(:,SIMPS(1,MI)) by Q^T and storing in the
+      ! final column of R.
+      LQ(:,I) = PTS(:,J) - PTS(:,SIMPS(1,MI))
+      CALL DORMQR('L', 'T', D, 1, I-1, LQ(:,1:I-1), D, TAU, LQ(:,I), D, &
+        WORK, LWORK, IERR(MI))
       IF(IERR(MI) < 0) THEN ! LAPACK illegal input error.
          IERR(MI) = 83; RETURN
       END IF
-      ! Calculate the radius and compare it to the current minimum.
-      CURRRAD = DNRM2(D, CENTER, 1)
+      ! Implicitly apply the next Householder reflector.
+      LQ(I,I) = DNRM2(D+1-I, LQ(I:D,I), 1)
+      IF (LQ(I,I) < EPSL) THEN ! A is rank-deficient.
+         CYCLE ! If rank-deficient, skip this point.
+      END IF
+      ! Update the current radius by \| Q^T X \| = \| X \|.
+      WORK(1:I-1) = (LQ(1:I-1,I) / 2.0_R8) - X(1:I-1)
+      WORK(I) = LQ(I,I) / 2.0_R8
+      X(I) = DDOT(I, LQ(1:I,I), 1, WORK(1:I), 1) / LQ(I,I)
+      CURRRAD = DNRM2(I, X(1:I), 1)
+      ! Compare the last component of Q^T X to the current minimum.
       IF (CURRRAD < MINRAD) THEN; MINRAD = CURRRAD; SIMPS(I+1,MI) = J; END IF
    END DO
    ! Check that a point was found. If not, then all the points must lie in a
@@ -757,6 +778,31 @@ SIDE1 = SIGN(1.0_R8,SIDE1)
 SIMPS(D+1,MI) = 0
 CENTER(:) = 0.0_R8
 MINRAD = HUGE(0.0_R8)
+! If D=1, just check for the closest point on SIDE1 of PTS(:,SIMPS(1,MI)).
+IF (D .EQ. 1) THEN
+   ! Loop through all points P* in PTS.
+   DO I = 1, N
+      ! Check that P* is on the appropriate halfspace.
+      SIDE2 = (PTS(1,I) - PLANE(2)) * SIDE1
+      IF (SIDE2 < EPSL .OR. SIMPS(1,MI) .EQ. I) CYCLE
+      ! Check that P* is closer than the current solution.
+      IF (SIDE2 > MINRAD) CYCLE
+      ! Update the minimum distance and save the index I.
+      MINRAD = SIDE2
+      SIMPS(2,MI) = I
+   END DO
+   IERR(MI) = 0 ! Reset the error flag to 'success' code.
+   ! Check for extrapolation condition.
+   IF(SIMPS(2,MI) .EQ. 0) RETURN
+   ! Add new point to the linear system.
+   AT(1,1) = PTS(1,SIMPS(2,MI)) - PTS(1,SIMPS(1,MI))
+   B(1) = (AT(1,1) ** 2.0_R8) / 2.0_R8
+   RETURN
+END IF
+! Set the RHS to P^T B.
+FORALL (ITMP = 1:D-1) X(ITMP) = B(IPIV(ITMP))
+! Solve R^T Q^T X = P^T B for Q^T X.
+CALL DTRSM('L', 'U', 'T', 'N', D-1, 1, 1.0_R8, LQ, D, X, D)
 ! Loop through all points P* in PTS.
 DO I = 1, N
    ! Check that P* is inside the current ball.
@@ -764,22 +810,25 @@ DO I = 1, N
    ! Check that P* is on the appropriate halfspace.
    SIDE2 = DDOT(D,PLANE(1:D),1,PTS(:,I),1) - PLANE(D+1)
    IF (SIDE1*SIDE2 < EPSL .OR. ANY(SIMPS(:,MI) .EQ. I)) CYCLE ! If not, skip.
-   ! Add P* to the linear system, and solve to get shifted CENTER.
-   AT(:,D) = PTS(:,I) - PTS(:,SIMPS(1,MI))
-   B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_R8
-   LQ = AT
-   CENTER = B
-   ! Compute A^T = LU
-   CALL DGETRF(D, D, LQ, D, IPIV, IERR(MI))
-   IF (IERR(MI) < 0) THEN ! LAPACK illegal input.
-      IERR(MI) = 81; RETURN
-   ELSE IF (IERR(MI) > 0) THEN ! Rank-deficiency detected.
-      IERR(MI) = 61; RETURN
+   ! Perform a rank-1 update to the current QR factorization of A^T by
+   ! rotating PTS(:,I) - PTS(:,SIMPS(1,MI) by Q^T and storing in the
+   ! final column of R.
+   LQ(:,D) = PTS(:,I) - PTS(:,SIMPS(1,MI))
+   CALL DORMQR('L', 'T', D, 1, D-1, LQ(:,1:D-1), D, TAU, LQ(:,D), D, WORK, &
+     LWORK, IERR(MI))
+   IF(IERR(MI) < 0) THEN ! LAPACK illegal input error.
+      IERR(MI) = 83; RETURN
    END IF
-   ! Use A^T = LU to solve A X = B, where X = CENTER - P_1.
-   CALL DGETRS('T', D, 1, LQ, D, IPIV, CENTER, D, IERR(MI))
-   IF (IERR(MI) < 0) THEN ! LAPACK illegal input.
-      IERR(MI) = 82; RETURN
+   ! Update the last element of Q^T X.
+   WORK(1:D-1) = (LQ(1:D-1,D) / 2.0_R8) - X(1:D-1)
+   WORK(D) = LQ(D,D) / 2.0_R8
+   CENTER(1:D-1) = X(1:D-1)
+   CENTER(D) = DDOT(D, LQ(:,D), 1, WORK(1:D), 1) / LQ(D,D)
+   ! Get the center by applying Q to the solution.
+   CALL DORMQR('L', 'N', D, 1, D-1, LQ, D, TAU, CENTER, D, WORK, LWORK, &
+      IERR(MI))
+   IF(IERR(MI) < 0) THEN ! LAPACK illegal input error.
+      IERR(MI) = 83; RETURN
    END IF
    ! Update the new radius, center, and simplex.
    MINRAD = DNRM2(D, CENTER, 1)
@@ -808,7 +857,8 @@ SUBROUTINE MAKEPLANE()
 ! Then the last column of Q is orthogonal to the range of A^T, and in ker A.
 !
 ! Upon output, PLANE(1:D) contains the normal vector c and PLANE(D+1)
-! contains \alpha defining the plane.
+! contains \alpha defining the plane. Also, LQ, IPIV, and TAU define a QR
+! factorizaton of the first D-1 columns of A^T.
 
 IF (D > 1) THEN ! Check that D-1 > 0, otherwise the plane is trivial.
    ! Compute the QR factorization.
@@ -1244,8 +1294,8 @@ LOGICAL :: CHAINL, PLVL1, PLVL2
 ! Local variables.
 LOGICAL :: PTINSIMP ! Tells if Q(:,MI) is in SIMPS(:,MI).
 INTEGER :: I, J, K ! Loop iteration variables.
-INTEGER :: IERR_PRIV ! Private copy of the error flag.
 INTEGER :: IEXTRAPS ! Extrapolation budget.
+INTEGER :: IERR_PRIV ! Private copy of the error flag.
 INTEGER :: ITMP, JTMP ! Temporary variables for swapping, looping, etc.
 INTEGER :: LWORK ! Size of the work array.
 INTEGER :: MI ! Index of current interpolation point.
@@ -1264,11 +1314,13 @@ INTEGER :: SEED(D+1) ! Copy of the SEED simplex. Only used if CHAIN = .TRUE.
 REAL(KIND=R8) :: AT(D,D) ! The transpose of A, the linear coefficient matrix.
 REAL(KIND=R8) :: B(D) ! The RHS of a linear system. 
 REAL(KIND=R8) :: CENTER(D) ! The circumcenter of a simplex. 
+REAL(KIND=R8) :: CENTER_PRIV(D) ! Private copy of CENTER.
 REAL(KIND=R8) :: LQ(D,D) ! Holds LU or QR factorization of AT.
 REAL(KIND=R8) :: PLANE(D+1) ! The hyperplane containing a facet.
 REAL(KIND=R8) :: PRGOPT_DWNNLS(1) ! Options array for DWNNLS.
 REAL(KIND=R8) :: PROJ(D) ! The projection of the current iterate.
 REAL(KIND=R8) :: TAU(D) ! Householder reflector constants.
+REAL(KIND=R8) :: X(D) ! The solution to a linear system.
 
 ! Extrapolation work arrays are only allocated if DWNNLS is called.
 INTEGER, ALLOCATABLE :: IWORK_DWNNLS(:) ! Only for DWNNLS.
@@ -1386,7 +1438,7 @@ IF (MINRAD < EPSL) THEN ! Check for degeneracies in points spacing.
 
 ! Query DGEQP3 for optimal work array size (LWORK).
 LWORK = -1
-CALL DGEQP3(D-1,D,LQ,D,IPIV,TAU,B,LWORK,IERR(1))
+CALL DGEQP3(D,D,LQ,D,IPIV,TAU,B,LWORK,IERR(1))
 LWORK = INT(B(1)) ! Compute the optimal work array size.
 ALLOCATE(WORK(LWORK), STAT=I) ! Allocate WORK to size LWORK.
 IF (I .NE. 0) THEN ! Check for memory allocation errors.
@@ -1409,8 +1461,9 @@ IERR(:) = 40
 ! thread has a private copy.
 !$OMP& PRIVATE(I, J, K, IEXTRAPS, ITMP, JTMP, CURRRAD, MI, MINRAD,        &
 !$OMP&         RNORML, SIDE1, SIDE2, IERR_PRIV, VERTEX_PRIV, MINRAD_PRIV, &
-!$OMP&         PTINSIMP, IPIV, AT, B, CENTER, LQ, PLANE, PROJ, TAU, WORK, &
-!$OMP&         IWORK_DWNNLS, W_DWNNLS, WORK_DWNNLS, X_DWNNLS),            &
+!$OMP&         PTINSIMP, IPIV, AT, B, CENTER, CENTER_PRIV, LQ, PLANE,     &
+!$OMP&         PROJ, TAU, WORK, X, IWORK_DWNNLS, W_DWNNLS, WORK_DWNNLS,   &
+!$OMP&         X_DWNNLS),                                                 &
 !
 ! Any variables not explicitly listed above receive the SHARED scope
 ! by default and are visible across all threads.
@@ -1436,9 +1489,9 @@ OUTER : DO MI = 1, M
 
    ! Check if extrapolation is enabled.
    IF (EXTRAPL < EPSL) THEN
-      IEXTRAPS = -1 ! If not, set the extrapolation budget to a negative.
+      IEXTRAPS = -1 ! If not, set the extrapolation budget negative.
    ELSE
-      IEXTRAPS = 1 ! Allow for exactly one extrapolation.
+      IEXTRAPS = 1 ! Allow for exactly one projection for this point.
    END IF
 
    ! If there is no useable seed or if chaining is turned off, then make a new
@@ -1543,6 +1596,32 @@ B(1) = DDOT(D, AT(:,1), 1, AT(:,1), 1) / 2.0_R8
 
 ! Loop to collect the remaining D-1 vertices for the first simplex.
 DO I = 2, D
+   ! Compute A^T P = Q R for the current matrix A^T.
+   LQ(:,1:I-1) = AT(:,1:I-1)
+   CALL DGEQP3(D, I-1, LQ, D, IPIV, TAU, WORK, LWORK, IERR_PRIV)
+   IF(IERR_PRIV < 0) THEN ! LAPACK illegal input error.
+      !$OMP CRITICAL(CHECK_IERR)
+      IERR(MI) = 80
+      !$OMP END CRITICAL(CHECK_IERR)
+      CYCLE OUTER
+   END IF
+   ! Set the RHS to P^T B.
+   FORALL (ITMP = 1:I-1) X(ITMP) = B(IPIV(ITMP))
+   ! Solve R^T Q^T X = P^T B for Q^T X, and save for later.
+   CALL DTRSM('L', 'U', 'T', 'N', I-1, 1, 1.0_R8, LQ, D, X, D)
+   ! Make a copy for computing the current center.
+   CENTER(1:I-1) = X(1:I-1)
+   CENTER(I:D) = 0.0_R8
+   ! Apply Q from the left.
+   CALL DORMQR('L', 'N', D, 1, I-1, LQ, D, TAU, CENTER, D, WORK, &
+     LWORK, IERR_PRIV)
+   IF(IERR_PRIV < 0) THEN ! LAPACK illegal input error.
+      !$OMP CRITICAL(CHECK_IERR)
+      IERR(MI) = 83
+      !$OMP END CRITICAL(CHECK_IERR)
+      CYCLE OUTER
+   END IF
+   CENTER = CENTER + PTS(:,SIMPS(1,MI))
    ! Re-initialize the radius for each iteration.
    MINRAD = HUGE(0.0_R8)
    MINRAD_PRIV = HUGE(0.0_R8)
@@ -1553,11 +1632,11 @@ DO I = 2, D
    !
    ! The FIRSTPRIVATE list specifies initialized variables, of which each
    ! thread has a private copy.
-   !$OMP& FIRSTPRIVATE(MINRAD_PRIV, VERTEX_PRIV, B), &
+   !$OMP& FIRSTPRIVATE(LQ, MINRAD_PRIV, VERTEX_PRIV, X), &
    !
    ! The PRIVATE list specifies uninitialized variables, of which each
    ! thread has a private copy.
-   !$OMP& PRIVATE(J, CURRRAD, LQ, CENTER, WORK, TAU, IPIV, ITMP), &
+   !$OMP& PRIVATE(J, CURRRAD, WORK), &
    !
    ! The REDUCTION clause specifies a PRIVATE variable that will retain
    ! some value (i.e., max, min, sum, etc.) upon output.
@@ -1576,32 +1655,28 @@ DO I = 2, D
       IF (IERR_PRIV .NE. 0) CYCLE ! If an error occurs, skip to the end.
       ! Check that this point is not already in the simplex.
       IF (ANY(SIMPS(:,MI) .EQ. J)) CYCLE
-      ! Add P* to linear system, and compute the minimum norm solution.
-      LQ(:,1:I-1) = AT(:,1:I-1)
+      ! If PTS(:,J) is more than twice MINRAD_PRIV from CENTER, do a quick skip.
+      IF (DNRM2(D, CENTER - PTS(:,J), 1) > 2.0_R8 * MINRAD_PRIV) CYCLE
+      ! Perform a rank-1 update to the current QR factorization of A^T by
+      ! rotating PTS(:,I) - PTS(:,SIMPS(1,MI) by Q^T and storing in the
+      ! final column of R.
       LQ(:,I) = PTS(:,J) - PTS(:,SIMPS(1,MI))
-      B(I) = DDOT(D, LQ(:,I), 1, LQ(:,I), 1) / 2.0_R8
-      ! Compute A^T P = Q R.
-      CALL DGEQP3(D, I, LQ, D, IPIV, TAU, WORK, LWORK, IERR_PRIV)
+      CALL DORMQR('L', 'T', D, 1, I-1, LQ(:,1:I-1), D, TAU, LQ(:,I), D, &
+        WORK, LWORK, IERR_PRIV)
       IF(IERR_PRIV < 0) THEN ! LAPACK illegal input error.
-         IERR_PRIV = 80
-         CYCLE ! Skip to the end of the loop.
-      ELSE IF (ABS(LQ(I,I)) < EPSL) THEN ! A is rank-deficient.
-         IERR_PRIV = 0
+         IERR_PRIV = 83; CYCLE
+      END IF
+      ! Implicitly apply the next Householder reflector.
+      LQ(I,I) = DNRM2(D+1-I, LQ(I:D,I), 1)
+      IF (LQ(I,I) < EPSL) THEN ! A is rank-deficient.
          CYCLE ! If rank-deficient, skip this point.
       END IF
-      ! Set CENTER = P^T B.
-      FORALL (ITMP = 1:I) CENTER(ITMP) = B(IPIV(ITMP))
-      ! Get the radius using R^T Q^T X = P^T B.
-      CALL DTRSM('L', 'U', 'T', 'N', I, 1, 1.0_R8, LQ, D, CENTER, D)
-      CENTER(I+1:D) = 0.0_R8
-      CALL DORMQR('L', 'N', D, 1, I, LQ, D, TAU, CENTER, D, WORK, LWORK, &
-         IERR_PRIV)
-      IF(IERR_PRIV < 0) THEN ! LAPACK illegal input error.
-         IERR_PRIV = 83
-         CYCLE ! Skip to the end of the loop.
-      END IF
-      ! Calculate the radius and compare it to the current minimum.
-      CURRRAD = DNRM2(D, CENTER, 1)
+      ! Update the current radius by \| Q^T X \| = \| X \|.
+      WORK(1:I-1) = (LQ(1:I-1,I) / 2.0_R8) - X(1:I-1)
+      WORK(I) = LQ(I,I) / 2.0_R8
+      X(I) = DDOT(I, LQ(1:I,I), 1, WORK(1:I), 1) / LQ(I,I)
+      CURRRAD = DNRM2(I, X(1:I), 1)
+      ! Compare the last component of Q^T X to the current minimum.
       IF (CURRRAD < MINRAD_PRIV) THEN
          MINRAD_PRIV = CURRRAD; VERTEX_PRIV = J
       END IF
@@ -1793,9 +1868,9 @@ END IF
       ITMP = SIMPS(JTMP,MI)
       SIMPS(JTMP,MI) = SIMPS(D+1,MI)
 
-      ! If the least weighted vertex (JTMP) is not the first vertex, then
-      ! just drop row (JTMP-1) from the linear system (corresponding to the
-      ! JTMP-1st column of A^T).
+      ! If the least weighted vertex (index JTMP) is not the first vertex,
+      ! then just drop row (JTMP-1) from the linear system (corresponding
+      ! to column (JTMP-1) of A^T).
       IF(JTMP .NE. 1) THEN
          AT(:,JTMP-1) = AT(:,D); B(JTMP-1) = B(D)
       ! However, if JTMP = 1, then both A^T and B must be reconstructed.
@@ -1888,104 +1963,161 @@ IF (D > 1) THEN ! Check that D-1 > 0, otherwise the plane is trivial.
    END IF
    ! Calculate the constant \alpha defining the plane.
    PLANE(D+1) = DDOT(D,PLANE(1:D),1,PTS(:,SIMPS(1,MI)),1)
+   ! Compute the sign for the side of PLANE containing Q(:,MI).
+   SIDE1 =  DDOT(D,PLANE(1:D),1,PROJ(:),1) - PLANE(D+1)
+   SIDE1 = SIGN(1.0_R8,SIDE1)
+
+   ! Set the RHS to P^T B.
+   FORALL (ITMP = 1:D-1) X(ITMP) = B(IPIV(ITMP))
+   ! Solve R^T Q^T X = P^T B for Q^T X.
+   CALL DTRSM('L', 'U', 'T', 'N', D-1, 1, 1.0_R8, LQ, D, X, D)
+
+   ! Initialize the center, radius, simplex, and OpenMP variabls.
+   SIMPS(D+1,MI) = 0
+   CENTER(:) = 0.0_R8
+   CENTER_PRIV(:) = 0.0_R8
+   MINRAD = HUGE(0.0_R8)
+   MINRAD_PRIV = HUGE(0.0_R8)
+   VERTEX_PRIV = 0
+
+   ! Begin Level 2 parallel loop over N points in PTS.
+   !$OMP PARALLEL &
+   !
+   ! The FIRSTPRIVATE list specifies initialized variables, of which each
+   ! thread has a private copy.
+   !$OMP& FIRSTPRIVATE(CENTER_PRIV, LQ, MINRAD_PRIV, VERTEX_PRIV), &
+   !
+   ! The PRIVATE list specifies uninitialized variables, of which each
+   ! thread has a private copy.
+   !$OMP& PRIVATE(I, SIDE2, WORK), &
+   !
+   ! The REDUCTION clause specifies a PRIVATE variable that will retain
+   ! some value (i.e., max, min, sum, etc.) upon output.
+   !$OMP& REDUCTION(MAX:IERR_PRIV), &
+   !
+   ! Any variables not explicitly listed above receive the SHARED scope
+   ! by default and are visible across all threads.
+   !$OMP& DEFAULT(SHARED), &
+   !
+   !$OMP& IF(PLVL2)
+
+   ! Initialize the error flag.
+   IERR_PRIV = 0
+   !$OMP DO SCHEDULE(STATIC)
+   DO I = 1, N
+      IF(IERR_PRIV .NE. 0) CYCLE ! If an error occurs, skip to the end.
+      ! Check that P* is inside the current ball.
+      IF (DNRM2(D, PTS(:,I) - CENTER_PRIV(:), 1) > MINRAD_PRIV) CYCLE
+      ! Check that P* is on the appropriate halfspace.
+      SIDE2 = DDOT(D,PLANE(1:D),1,PTS(:,I),1) - PLANE(D+1)
+      IF (SIDE1*SIDE2 < EPSL .OR. ANY(SIMPS(:,MI) .EQ. I)) CYCLE
+      ! Perform a rank-1 update to the current QR factorization of A^T by
+      ! rotating PTS(:,I) - PTS(:,SIMPS(1,MI) by Q^T and storing in the
+      ! final column of R.
+      LQ(:,D) = PTS(:,I) - PTS(:,SIMPS(1,MI))
+      CALL DORMQR('L', 'T', D, 1, D-1, LQ(:,1:D-1), D, TAU, LQ(:,D), D, WORK, &
+        LWORK, IERR_PRIV)
+      IF(IERR_PRIV < 0) THEN ! LAPACK illegal input error.
+         IERR_PRIV = 83; CYCLE
+      END IF
+      ! Update the last element of Q^T X.
+      WORK(1:D-1) = (LQ(1:D-1,D) / 2.0_R8) - X(1:D-1)
+      WORK(D) = LQ(D,D) / 2.0_R8
+      CENTER_PRIV(1:D-1) = X(1:D-1)
+      CENTER_PRIV(D) = DDOT(D, LQ(:,D), 1, WORK(1:D), 1) / LQ(D,D)
+      ! Get the center by applying Q to the solution.
+      CALL DORMQR('L', 'N', D, 1, D-1, LQ, D, TAU, CENTER_PRIV, D, &
+         WORK, LWORK, IERR_PRIV)
+      IF(IERR_PRIV < 0) THEN ! LAPACK illegal input error.
+         IERR_PRIV = 83; CYCLE
+      END IF
+      ! Update the new radius, center, and simplex.
+      MINRAD_PRIV = DNRM2(D, CENTER_PRIV, 1)
+      CENTER_PRIV(:) = CENTER_PRIV(:) + PTS(:,SIMPS(1,MI))
+      VERTEX_PRIV = I
+   END DO
+   !$OMP END DO
+   !$OMP CRITICAL(REDUC_4)
+   ! Check if PTS(:,VERTEX_PRIV) is inside the circumball.
+   IF (VERTEX_PRIV .NE. 0) THEN
+      IF (DNRM2(D, PTS(:,VERTEX_PRIV) - CENTER(:), 1) < MINRAD) THEN
+         MINRAD = MINRAD_PRIV
+         CENTER(:) = CENTER_PRIV(:)
+         SIMPS(D+1,MI) = VERTEX_PRIV
+      END IF
+   END IF
+   !$OMP END CRITICAL(REDUC_4)
+   !$OMP END PARALLEL
+   ! End level 2 parallel region.
+
+   ! Check for error flags.
+   IF(IERR_PRIV .NE. 0) THEN
+      ! Store the error code.
+      !$OMP CRITICAL(CHECK_IERR)
+      IERR(MI) = IERR_PRIV
+      !$OMP END CRITICAL(CHECK_IERR)
+      CYCLE OUTER
+   END IF
+   ! Check for extrapolation condition.
+   IF(SIMPS(D+1,MI) .NE. 0) THEN
+      ! Add new point to the linear system.
+      AT(:,D) = PTS(:,SIMPS(D+1,MI)) - PTS(:,SIMPS(1,MI))
+      B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_R8
+   END IF
 ELSE ! Special case where D=1.
    PLANE(1) = 1.0_R8
    PLANE(2) = PTS(1,SIMPS(1,MI))
-END IF
-! Compute the sign for the side of PLANE containing Q(:,MI).
-SIDE1 =  DDOT(D,PLANE(1:D),1,PROJ(:),1) - PLANE(D+1)
-SIDE1 = SIGN(1.0_R8,SIDE1)
-! Initialize the center, radius, simplex, and OpenMP variabls.
-SIMPS(D+1,MI) = 0
-CENTER(:) = 0.0_R8
-TAU(:) = 0.0_R8
-MINRAD = HUGE(0.0_R8)
-MINRAD_PRIV = HUGE(0.0_R8)
-VERTEX_PRIV = 0
+   SIDE1 = SIGN(1.0_R8, PROJ(1) - PLANE(2))
+   ! Initialize the radius, simplex, and OpenMP variabls.
+   SIMPS(2,MI) = 0
+   MINRAD = HUGE(0.0_R8)
+   MINRAD_PRIV = HUGE(0.0_R8)
+   VERTEX_PRIV = 0
+   ! Begin Level 2 parallel loop over N points in PTS.
+   !$OMP PARALLEL &
+   !
+   ! The FIRSTPRIVATE list specifies initialized variables, of which each
+   ! thread has a private copy.
+   !$OMP& FIRSTPRIVATE(MINRAD_PRIV, VERTEX_PRIV), &
+   !
+   ! The PRIVATE list specifies uninitialized variables, of which each
+   ! thread has a private copy.
+   !$OMP& PRIVATE(I, SIDE2), &
+   !
+   ! Any variables not explicitly listed above receive the SHARED scope
+   ! by default and are visible across all threads.
+   !$OMP& DEFAULT(SHARED), &
+   !
+   !$OMP& IF(PLVL2)
 
-! Begin Level 2 parallel loop over N points in PTS.
-!$OMP PARALLEL &
-!
-! The FIRSTPRIVATE list specifies initialized variables, of which each
-! thread has a private copy.
-!$OMP& FIRSTPRIVATE(MINRAD_PRIV, VERTEX_PRIV), &
-!
-! The PRIVATE list specifies uninitialized variables, of which each
-! thread has a private copy.
-!$OMP& PRIVATE(I, SIDE2, LQ, CENTER, IPIV), &
-!
-! The REDUCTION clause specifies a PRIVATE variable that will retain
-! some value (i.e., max, min, sum, etc.) upon output.
-!$OMP& REDUCTION(MAX:IERR_PRIV), &
-!
-! Any variables not explicitly listed above receive the SHARED scope
-! by default and are visible across all threads.
-!$OMP& DEFAULT(SHARED), &
-!
-!$OMP& IF(PLVL2)
-
-! Initialize the error flag.
-IERR_PRIV = 0
-!$OMP DO SCHEDULE(STATIC)
-DO I = 1, N
-   IF(IERR_PRIV .NE. 0) CYCLE ! If an error occurs, skip to the end.
-   ! Check that P* is inside the current ball.
-   IF (DNRM2(D, PTS(:,I) - CENTER(:), 1) > MINRAD_PRIV) CYCLE ! If not, skip.
-   ! Check that P* is on the appropriate halfspace.
-   SIDE2 = DDOT(D,PLANE(1:D),1,PTS(:,I),1) - PLANE(D+1)
-   IF (SIDE1*SIDE2 < EPSL .OR. ANY(SIMPS(:,MI) .EQ. I)) CYCLE ! If not, skip.
-   ! Add P* to the linear system, and solve to get shifted CENTER.
-   LQ(:,1:D-1) = AT(:,1:D-1)
-   CENTER(1:D-1) = B(1:D-1)
-   LQ(:,D) = PTS(:,I) - PTS(:,SIMPS(1,MI))
-   CENTER(D) = DDOT(D, LQ(:,D), 1, LQ(:,D), 1) / 2.0_R8
-   ! Compute A^T = LU.
-   CALL DGETRF(D, D, LQ, D, IPIV, IERR_PRIV)
-   IF (IERR_PRIV < 0) THEN ! LAPACK illegal input.
-      IERR_PRIV = 81
-      CYCLE ! Skip to the end of the loop.
-   ELSE IF (IERR_PRIV > 0) THEN ! Rank-deficiency detected.
-      IERR_PRIV = 61
-      CYCLE ! Skip to the end of the loop.
+   !$OMP DO SCHEDULE(STATIC)
+   DO I = 1, N
+      ! Check that P* is on the appropriate halfspace.
+      SIDE2 = (PTS(1,I) - PLANE(2)) * SIDE1
+      IF (SIDE2 < EPSL .OR. SIMPS(1,MI) .EQ. I) CYCLE
+      ! Check that P* is closer than the current solution.
+      IF (SIDE2 > MINRAD) CYCLE
+      ! Update the minimum distance and save the index I.
+      MINRAD_PRIV = SIDE2
+      VERTEX_PRIV = I
+   END DO
+   !$OMP END DO
+   !$OMP CRITICAL(REDUC_4)
+   ! Check if PTS(:,VERTEX_PRIV) is inside the circumball.
+   IF (VERTEX_PRIV .NE. 0) THEN
+      IF (MINRAD_PRIV < MINRAD) THEN
+         MINRAD = MINRAD_PRIV
+         SIMPS(2,MI) = VERTEX_PRIV
+      END IF
    END IF
-   ! Use A^T = LU to solve A X = B, where X = CENTER - P_1.
-   CALL DGETRS('T', D, 1, LQ, D, IPIV, CENTER, D, IERR_PRIV)
-   IF (IERR_PRIV < 0) THEN ! LAPACK illegal input.
-      IERR_PRIV = 82
-      CYCLE ! Skip to the end of the loop.
+   !$OMP END CRITICAL(REDUC_4)
+   !$OMP END PARALLEL
+   ! Check for extrapolation condition.
+   IF(SIMPS(2,MI) .NE. 0) THEN
+      ! Add new point to the linear system.
+      AT(1,1) = PTS(1,SIMPS(2,MI)) - PTS(1,SIMPS(1,MI))
+      B(1) = (AT(1,1) ** 2.0_R8) / 2.0_R8
    END IF
-   ! Update the new radius, center, and simplex.
-   MINRAD_PRIV = DNRM2(D, CENTER, 1)
-   CENTER(:) = CENTER(:) + PTS(:,SIMPS(1,MI))
-   VERTEX_PRIV = I
-END DO
-!$OMP END DO
-!$OMP CRITICAL(REDUC_4)
-! Check if PTS(:,VERTEX_PRIV) is inside the circumball.
-IF (VERTEX_PRIV .NE. 0) THEN
-   IF (DNRM2(D, PTS(:,VERTEX_PRIV) - TAU(:), 1) < MINRAD) THEN
-      MINRAD = MINRAD_PRIV
-      TAU(:) = CENTER(:)
-      SIMPS(D+1,MI) = VERTEX_PRIV
-   END IF
-END IF
-!$OMP END CRITICAL(REDUC_4)
-!$OMP END PARALLEL
-! End level 2 parallel region.
-
-! Check for error flags.
-IF(IERR_PRIV .NE. 0) THEN
-   ! Store the error code.
-   !$OMP CRITICAL(CHECK_IERR)
-   IERR(MI) = IERR_PRIV
-   !$OMP END CRITICAL(CHECK_IERR)
-   CYCLE OUTER
-END IF
-! Check for extrapolation condition.
-IF(SIMPS(D+1,MI) .NE. 0) THEN
-   ! Add new point to the linear system.
-   AT(:,D) = PTS(:,SIMPS(D+1,MI)) - PTS(:,SIMPS(1,MI))
-   B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_R8
 END IF
 ! RETURN
 ! END SUBROUTINE MAKESIMPLEX
@@ -2006,9 +2138,9 @@ END IF
 
          ! If extrapolation is allowed (EXTRAP>0), check the budget.
          ELSE IF (IEXTRAPS .EQ. 0) THEN
-            ! A second extrapolation has been attempted. This code is
-            ! rarely called, except in extreme cases involving poorly
-            ! conditioned simplices near the convex hull of P.
+            ! A second projection has been attempted. This code is rarely
+            ! called, except in extreme cases involving nearly singular
+            ! simplices near the convex hull of P.
 
             ! Swap the weights to match the simplex indices, and zero the
             ! most negative weight.
@@ -2067,7 +2199,7 @@ END IF
                WEIGHTS(JTMP,MI) = WEIGHTS(D+1,MI)
                WEIGHTS(D+1,MI) = 0.0_R8
                !$OMP END CRITICAL(CHECK_IERR)
-               ! If the least weighted vertex (JTMP) is not the first vertex,
+               ! If the least weighted vertex (index JTMP) is not the first vertex,
                ! then just drop row (JTMP-1) from the linear system
                ! (corresponding to the JTMP-1st column of A^T).
                IF (JTMP .NE. 1) THEN
@@ -2161,104 +2293,159 @@ IF (D > 1) THEN ! Check that D-1 > 0, otherwise the plane is trivial.
    END IF
    ! Calculate the constant \alpha defining the plane.
    PLANE(D+1) = DDOT(D,PLANE(1:D),1,PTS(:,SIMPS(1,MI)),1)
+   ! Compute the sign for the side of PLANE containing Q(:,MI).
+   SIDE1 =  DDOT(D,PLANE(1:D),1,PROJ(:),1) - PLANE(D+1)
+   SIDE1 = SIGN(1.0_R8,SIDE1)
+   ! Set the RHS to P^T B.
+   FORALL (ITMP = 1:D-1) X(ITMP) = B(IPIV(ITMP))
+   ! Solve R^T Q^T X = P^T B for Q^T X.
+   CALL DTRSM('L', 'U', 'T', 'N', D-1, 1, 1.0_R8, LQ, D, X, D)
+   ! Initialize the center, radius, simplex, and OpenMP variabls.
+   SIMPS(D+1,MI) = 0
+   CENTER(:) = 0.0_R8
+   CENTER_PRIV(:) = 0.0_R8
+   MINRAD = HUGE(0.0_R8)
+   MINRAD_PRIV = HUGE(0.0_R8)
+   VERTEX_PRIV = 0
+
+   ! Begin Level 2 parallel loop over N points in PTS.
+   !$OMP PARALLEL &
+   !
+   ! The FIRSTPRIVATE list specifies initialized variables, of which each
+   ! thread has a private copy.
+   !$OMP& FIRSTPRIVATE(CENTER_PRIV, LQ, MINRAD_PRIV, VERTEX_PRIV), &
+   !
+   ! The PRIVATE list specifies uninitialized variables, of which each
+   ! thread has a private copy.
+   !$OMP& PRIVATE(I, SIDE2, WORK), &
+   !
+   ! The REDUCTION clause specifies a PRIVATE variable that will retain
+   ! some value (i.e., max, min, sum, etc.) upon output.
+   !$OMP& REDUCTION(MAX:IERR_PRIV), &
+   !
+   ! Any variables not explicitly listed above receive the SHARED scope
+   ! by default and are visible across all threads.
+   !$OMP& DEFAULT(SHARED), &
+   !
+   !$OMP& IF(PLVL2)
+
+   ! Initialize the error flag.
+   IERR_PRIV = 0
+   !$OMP DO SCHEDULE(STATIC)
+   DO I = 1, N
+      IF(IERR_PRIV .NE. 0) CYCLE ! If an error occurs, skip to the end.
+      ! Check that P* is inside the current ball.
+      IF (DNRM2(D, PTS(:,I) - CENTER_PRIV(:), 1) > MINRAD_PRIV) CYCLE
+      ! Check that P* is on the appropriate halfspace.
+      SIDE2 = DDOT(D,PLANE(1:D),1,PTS(:,I),1) - PLANE(D+1)
+      IF (SIDE1*SIDE2 < EPSL .OR. ANY(SIMPS(:,MI) .EQ. I)) CYCLE
+      ! Perform a rank-1 update to the current QR factorization of A^T by
+      ! rotating PTS(:,I) - PTS(:,SIMPS(1,MI) by Q^T and storing in the
+      ! final column of R.
+      LQ(:,D) = PTS(:,I) - PTS(:,SIMPS(1,MI))
+      CALL DORMQR('L', 'T', D, 1, D-1, LQ(:,1:D-1), D, TAU, LQ(:,D), D, WORK, &
+        LWORK, IERR_PRIV)
+      IF(IERR_PRIV < 0) THEN ! LAPACK illegal input error.
+         IERR_PRIV = 83; CYCLE
+      END IF
+      ! Update the last element of Q^T X.
+      WORK(1:D-1) = (LQ(1:D-1,D) / 2.0_R8) - X(1:D-1)
+      WORK(D) = LQ(D,D) / 2.0_R8
+      CENTER_PRIV(1:D-1) = X(1:D-1)
+      CENTER_PRIV(D) = DDOT(D, LQ(:,D), 1, WORK(1:D), 1) / LQ(D,D)
+      ! Get the center by applying Q to the solution.
+      CALL DORMQR('L', 'N', D, 1, D-1, LQ, D, TAU, CENTER_PRIV, D, &
+         WORK, LWORK, IERR_PRIV)
+      IF(IERR_PRIV < 0) THEN ! LAPACK illegal input error.
+         IERR_PRIV = 83; CYCLE
+      END IF
+      ! Update the new radius, center, and simplex.
+      MINRAD_PRIV = DNRM2(D, CENTER_PRIV, 1)
+      CENTER_PRIV(:) = CENTER_PRIV(:) + PTS(:,SIMPS(1,MI))
+      VERTEX_PRIV = I
+   END DO
+   !$OMP END DO
+   !$OMP CRITICAL(REDUC_4)
+   ! Check if PTS(:,VERTEX_PRIV) is inside the circumball.
+   IF (VERTEX_PRIV .NE. 0) THEN
+      IF (DNRM2(D, PTS(:,VERTEX_PRIV) - CENTER(:), 1) < MINRAD) THEN
+         MINRAD = MINRAD_PRIV
+         CENTER(:) = CENTER_PRIV(:)
+         SIMPS(D+1,MI) = VERTEX_PRIV
+      END IF
+   END IF
+   !$OMP END CRITICAL(REDUC_4)
+   !$OMP END PARALLEL
+   ! End level 2 parallel region.
+
+   ! Check for error flags.
+   IF(IERR_PRIV .NE. 0) THEN
+      ! Store the error code.
+      !$OMP CRITICAL(CHECK_IERR)
+      IERR(MI) = IERR_PRIV
+      !$OMP END CRITICAL(CHECK_IERR)
+      CYCLE OUTER
+   END IF
+   ! Check for extrapolation condition.
+   IF(SIMPS(D+1,MI) .NE. 0) THEN
+      ! Add new point to the linear system.
+      AT(:,D) = PTS(:,SIMPS(D+1,MI)) - PTS(:,SIMPS(1,MI))
+      B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_R8
+   END IF
 ELSE ! Special case where D=1.
    PLANE(1) = 1.0_R8
    PLANE(2) = PTS(1,SIMPS(1,MI))
-END IF
-! Compute the sign for the side of PLANE containing Q(:,MI).
-SIDE1 =  DDOT(D,PLANE(1:D),1,PROJ(:),1) - PLANE(D+1)
-SIDE1 = SIGN(1.0_R8,SIDE1)
-! Initialize the center, radius, simplex, and OpenMP variabls.
-SIMPS(D+1,MI) = 0
-CENTER(:) = 0.0_R8
-TAU(:) = 0.0_R8
-MINRAD = HUGE(0.0_R8)
-MINRAD_PRIV = HUGE(0.0_R8)
-VERTEX_PRIV = 0
+   SIDE1 = SIGN(1.0_R8, PROJ(1) - PLANE(2))
+   ! Initialize the radius, simplex, and OpenMP variabls.
+   SIMPS(2,MI) = 0
+   MINRAD = HUGE(0.0_R8)
+   MINRAD_PRIV = HUGE(0.0_R8)
+   VERTEX_PRIV = 0
+   ! Begin Level 2 parallel loop over N points in PTS.
+   !$OMP PARALLEL &
+   !
+   ! The FIRSTPRIVATE list specifies initialized variables, of which each
+   ! thread has a private copy.
+   !$OMP& FIRSTPRIVATE(MINRAD_PRIV, VERTEX_PRIV), &
+   !
+   ! The PRIVATE list specifies uninitialized variables, of which each
+   ! thread has a private copy.
+   !$OMP& PRIVATE(I, SIDE2), &
+   !
+   ! Any variables not explicitly listed above receive the SHARED scope
+   ! by default and are visible across all threads.
+   !$OMP& DEFAULT(SHARED), &
+   !
+   !$OMP& IF(PLVL2)
 
-! Begin Level 2 parallel loop over N points in PTS.
-!$OMP PARALLEL &
-!
-! The FIRSTPRIVATE list specifies initialized variables, of which each
-! thread has a private copy.
-!$OMP& FIRSTPRIVATE(MINRAD_PRIV, VERTEX_PRIV), &
-!
-! The PRIVATE list specifies uninitialized variables, of which each
-! thread has a private copy.
-!$OMP& PRIVATE(I, SIDE2, LQ, CENTER, IPIV), &
-!
-! The REDUCTION clause specifies a PRIVATE variable that will retain
-! some value (i.e., max, min, sum, etc.) upon output.
-!$OMP& REDUCTION(MAX:IERR_PRIV), &
-!
-! Any variables not explicitly listed above receive the SHARED scope
-! by default and are visible across all threads.
-!$OMP& DEFAULT(SHARED), &
-!
-!$OMP& IF(PLVL2)
-
-! Initialize the error flag.
-IERR_PRIV = 0
-!$OMP DO SCHEDULE(STATIC)
-DO I = 1, N
-   IF(IERR_PRIV .NE. 0) CYCLE ! If an error occurs, skip to the end.
-   ! Check that P* is inside the current ball.
-   IF (DNRM2(D, PTS(:,I) - CENTER(:), 1) > MINRAD_PRIV) CYCLE ! If not, skip.
-   ! Check that P* is on the appropriate halfspace.
-   SIDE2 = DDOT(D,PLANE(1:D),1,PTS(:,I),1) - PLANE(D+1)
-   IF (SIDE1*SIDE2 < EPSL .OR. ANY(SIMPS(:,MI) .EQ. I)) CYCLE ! If not, skip.
-   ! Add P* to the linear system, and solve to get shifted CENTER.
-   LQ(:,1:D-1) = AT(:,1:D-1)
-   CENTER(1:D-1) = B(1:D-1)
-   LQ(:,D) = PTS(:,I) - PTS(:,SIMPS(1,MI))
-   CENTER(D) = DDOT(D, LQ(:,D), 1, LQ(:,D), 1) / 2.0_R8
-   ! Compute A^T = LU.
-   CALL DGETRF(D, D, LQ, D, IPIV, IERR_PRIV)
-   IF (IERR_PRIV < 0) THEN ! LAPACK illegal input.
-      IERR_PRIV = 81
-      CYCLE ! Skip to the end of the loop.
-   ELSE IF (IERR_PRIV > 0) THEN ! Rank-deficiency detected.
-      IERR_PRIV = 61
-      CYCLE ! Skip to the end of the loop.
+   !$OMP DO SCHEDULE(STATIC)
+   DO I = 1, N
+      ! Check that P* is on the appropriate halfspace.
+      SIDE2 = (PTS(1,I) - PLANE(2)) * SIDE1
+      IF (SIDE2 < EPSL .OR. SIMPS(1,MI) .EQ. I) CYCLE
+      ! Check that P* is closer than the current solution.
+      IF (SIDE2 > MINRAD) CYCLE
+      ! Update the minimum distance and save the index I.
+      MINRAD_PRIV = SIDE2
+      VERTEX_PRIV = I
+   END DO
+   !$OMP END DO
+   !$OMP CRITICAL(REDUC_4)
+   ! Check if PTS(:,VERTEX_PRIV) is inside the circumball.
+   IF (VERTEX_PRIV .NE. 0) THEN
+      IF (MINRAD_PRIV < MINRAD) THEN
+         MINRAD = MINRAD_PRIV
+         SIMPS(2,MI) = VERTEX_PRIV
+      END IF
    END IF
-   ! Use A^T = LU to solve A X = B, where X = CENTER - P_1.
-   CALL DGETRS('T', D, 1, LQ, D, IPIV, CENTER, D, IERR_PRIV)
-   IF (IERR_PRIV < 0) THEN ! LAPACK illegal input.
-      IERR_PRIV = 82
-      CYCLE ! Skip to the end of the loop.
+   !$OMP END CRITICAL(REDUC_4)
+   !$OMP END PARALLEL
+   ! Check for extrapolation condition.
+   IF(SIMPS(2,MI) .NE. 0) THEN
+      ! Add new point to the linear system.
+      AT(1,1) = PTS(1,SIMPS(2,MI)) - PTS(1,SIMPS(1,MI))
+      B(1) = (AT(1,1) ** 2.0_R8) / 2.0_R8
    END IF
-   ! Update the new radius, center, and simplex.
-   MINRAD_PRIV = DNRM2(D, CENTER, 1)
-   CENTER(:) = CENTER(:) + PTS(:,SIMPS(1,MI))
-   VERTEX_PRIV = I
-END DO
-!$OMP END DO
-!$OMP CRITICAL(REDUC_4)
-! Check if PTS(:,VERTEX_PRIV) is inside the circumball.
-IF (VERTEX_PRIV .NE. 0) THEN
-   IF (DNRM2(D, PTS(:,VERTEX_PRIV) - TAU(:), 1) < MINRAD) THEN
-      MINRAD = MINRAD_PRIV
-      TAU(:) = CENTER(:)
-      SIMPS(D+1,MI) = VERTEX_PRIV
-   END IF
-END IF
-!$OMP END CRITICAL(REDUC_4)
-!$OMP END PARALLEL
-! End level 2 parallel region.
-
-! Check for error flags.
-IF(IERR_PRIV .NE. 0) THEN
-   ! Store the error code.
-   !$OMP CRITICAL(CHECK_IERR)
-   IERR(MI) = IERR_PRIV
-   !$OMP END CRITICAL(CHECK_IERR)
-   CYCLE OUTER
-END IF
-! Check for extrapolation condition.
-IF(SIMPS(D+1,MI) .NE. 0) THEN
-   ! Add new point to the linear system.
-   AT(:,D) = PTS(:,SIMPS(D+1,MI)) - PTS(:,SIMPS(1,MI))
-   B(D) = DDOT(D, AT(:,D), 1, AT(:,D), 1) / 2.0_R8
 END IF
 ! RETURN
 ! END SUBROUTINE MAKESIMPLEX
