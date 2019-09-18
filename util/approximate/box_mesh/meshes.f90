@@ -39,8 +39,13 @@ CONTAINS
     INTEGER :: step, box, dim, idx, other_pt_idx, other_pt
     ! Miscellaneous integers for stepping
 
-    ! Assume all boxes except the last were already built correctly,
-    ! add a new box and reshape old boxes that may have been impacted
+    ! Cycle through all pairs of points and make sure the boxes do not
+    ! contain neighbors. This search could be made more efficient,
+    ! but that constitutes future work on this code.
+    ! 
+    ! For example, one could build the mesh one-step-at-a-time and
+    ! assume all boxes except the last were already built correctly,
+    ! add a new box and reshape old boxes that may have been impacted.
     compute_box_shapes : DO box = 1,SIZE(pts,2)
        compute_other_points : DO other_pt_idx = 1,SIZE(pts,2)
           IF (box .EQ. other_pt_idx) CYCLE compute_other_points
@@ -52,7 +57,7 @@ CONTAINS
           in_upper = (box_widths(SIZE(pts,1)+1:,box) .LT. 0.0_REAL64) .OR. &
                (box_widths(SIZE(pts,1)+1:,box) > pts(:,other_pt_idx)-pts(:,box))
           ! If the box contains the new point, then rebuild the box
-          rebuild_box : IF (ALL(in_lower .AND. in_upper)) THEN         
+          rebuild_box : IF (ALL(in_lower .AND. in_upper)) THEN
              ! Find the dimension of max magnitude (Linf) difference
              dim = MAXLOC(ABS(pts(:,other_pt_idx) - pts(:,box)),1)
              ! Check if we are adjusting the upper or lower width of
@@ -60,12 +65,8 @@ CONTAINS
              IF (pts(dim,box) > pts(dim,other_pt_idx)) THEN
                 box_widths(dim,box) = &
                      pts(dim,box) - pts(dim,other_pt_idx)
-                box_widths(dim+SIZE(pts,1),other_pt_idx) = &
-                     pts(dim,box) - pts(dim,other_pt_idx)
              ELSE
                 box_widths(dim+SIZE(pts,1),box) = &
-                     pts(dim,other_pt_idx) - pts(dim,box)
-                box_widths(dim,other_pt_idx) = &
                      pts(dim,other_pt_idx) - pts(dim,box)
              END IF
           END IF rebuild_box
@@ -74,10 +75,10 @@ CONTAINS
   END SUBROUTINE build_ibm
 
 
-     !                    Box Mesh Computations                    
+  !                    Box Mesh Computations                    
   !=============================================================
 
-  SUBROUTINE eval_box_mesh(boxes, widths, x_points, box_vals)
+  SUBROUTINE eval_order_1_box_mesh(boxes, widths, x_points, box_vals)
     ! Subroutine for computing the values of all the boxes at an x-point
     REAL (KIND=REAL64), INTENT(IN), DIMENSION(:,:) :: boxes
     REAL (KIND=REAL64), INTENT(IN), DIMENSION(SIZE(boxes,1)*2, &
@@ -126,6 +127,59 @@ CONTAINS
        box_vals(pt_num,:) = box_vals(pt_num,:) / SUM(box_vals(pt_num,:))
     END DO convexify
 
-  END SUBROUTINE eval_box_mesh
+  END SUBROUTINE eval_order_1_box_mesh
+
+
+  SUBROUTINE eval_order_2_box_mesh(boxes, widths, x_points, box_vals)
+    ! Subroutine for computing the values of all the boxes at an x-point
+    REAL (KIND=REAL64), INTENT(IN), DIMENSION(:,:) :: boxes
+    REAL (KIND=REAL64), INTENT(IN), DIMENSION(SIZE(boxes,1)*2, &
+         SIZE(boxes,2)) :: widths
+    REAL (KIND=REAL64), INTENT(IN), DIMENSION(:,:) :: x_points
+    REAL (KIND=REAL64), INTENT(OUT), DIMENSION(SIZE(x_points,2)&
+         &,SIZE(boxes,2)) :: box_vals
+    ! ^^ Holder for the evaluation of each box at the given x-point
+    INTEGER :: pt_num, box_num, dim
+    REAL (KIND=REAL64), DIMENSION(SIZE(boxes,1)) :: shifted_box
+    ! ^^ local variables for computing the box evaluations
+
+    ! Compute the linear box spline for each cube
+    box_evals : DO CONCURRENT (pt_num=1:SIZE(x_points,2), box_num=1:SIZE(boxes,2))
+       ! Calculate the normalized distance from center of this box
+       normalize_box : DO dim = 1, SIZE(boxes,1)
+          IF (x_points(dim,pt_num) .LT. boxes(dim,box_num)) THEN
+             shifted_box(dim) = &
+                  (boxes(dim,box_num) - x_points(dim,pt_num)) / &
+                  widths(dim,box_num)
+          ELSE
+             shifted_box(dim) = &
+                  (x_points(dim,pt_num) - boxes(dim,box_num)) / &
+                  widths(SIZE(boxes,1)+dim,box_num)
+          END IF
+       END DO normalize_box
+       ! Store the evaluation of this box for this x-data point
+
+       ! ! Order 1 approximation
+       ! box_vals(pt_num, box_num) = PRODUCT(&
+       !      MAX(1.0_REAL64 - shifted_box, 0.0_REAL64))
+
+       ! Order 2 approximation
+       shifted_box = 1.5_REAL64 + 1.5_REAL64 * shifted_box
+       WHERE ((1.0_REAL64 .LE. shifted_box) .AND. &
+            (shifted_box .LT. 2.0_REAL64)) shifted_box = (&
+            -(2*shifted_box**2 - 6*shifted_box + 3) )
+       WHERE ((2.0_REAL64 .LE. shifted_box) .AND. &
+            (shifted_box .LE. 3.0_REAL64)) shifted_box = (&
+            (shifted_box - 3)**2)
+       WHERE (shifted_box .GT. 3.0_REAL64) shifted_box = 0.0_REAL64
+       box_vals(pt_num, box_num) = PRODUCT(shifted_box)
+    END DO box_evals
+    ! Make the weights convex.
+    convexify: DO pt_num=1, SIZE(box_vals,1)
+       box_vals(pt_num,:) = box_vals(pt_num,:) / SUM(box_vals(pt_num,:))
+    END DO convexify
+
+  END SUBROUTINE eval_order_2_box_mesh
+
 
 END MODULE meshes

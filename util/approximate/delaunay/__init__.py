@@ -105,6 +105,8 @@ class qHullDelaunay(WeightedApproximator):
 
 # Wrapper class for using the Delaunay fortran code
 class Delaunay(WeightedApproximator):
+    # from multiprocessing import cpu_count
+    # os.environ["OMP_NUM_THREADS"] = str(cpu_count())
     os.environ["OMP_NESTED"] = "TRUE"
     from util.approximate.delaunay import delsparse
     def __init__(self, parallel=False, pmode=None, chain=None):

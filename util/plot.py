@@ -855,7 +855,12 @@ class Plot:
                 self.color_num += 1
                 color = self.color(self.color_num, alpha=opacity)
         # Cancel shading if a color was provided.
-        else: shade = False
+        else:
+            shade = False
+            # Automatically convert tuple colors to color strings.
+            if (type(color) == tuple) and (len(color) in {3,4}):
+                color = ("rgba" if len(color) == 4 else "rgb") + str(color)
+
         if type(line_color) == type(None):
             line_color = color
         if type(fill_color) == type(None):
