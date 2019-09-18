@@ -251,6 +251,8 @@ class Plot:
         if (scale > 0) and (not has_none): 
             # If colors were provided, then average them to produce out color
             if type(colors) != type(None):
+                # Return the color if there is only one.
+                if (type(colors) == str): return colors
                 # Get the color of each node in the simplex as a numpy array
                 colors = [colors[i] for i in simp]
                 # colors = [(colors if type(colors) == str else colors[i]) for i in simp]
@@ -547,7 +549,8 @@ class Plot:
             if len(min_max_y) == 0: min_max_y = [0.0,0.0]
             if mode == None: plot_type = 'surface'
             # Set the gradient for 3d plots.
-            if (type(use_gradient) == type(None)): use_gradient = True
+            if (use_gradient is None) and ("color" not in kwargs):
+                use_gradient = True
         else:
             if mode == None: mode = 'lines'
 

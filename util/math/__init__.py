@@ -2,7 +2,7 @@
 from util.math.fraction import Fraction
 
 # Useful for checking near-equal cases when roundoff error is involved.
-SMALL = 1.4901161193847656*10**(-8) 
+SMALL = 2**(-26)
 #       ^^ SQRT(EPSILON( 0.0_REAL64 ))
 
 # Given a list of lists, flatten it to one dimension.

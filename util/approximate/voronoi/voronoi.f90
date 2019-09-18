@@ -81,6 +81,7 @@ SUBROUTINE PREDICT(POINTS, DOTS, EVAL_PT, WEIGHTS, ERROR)
   ERROR = 0
   ! Distances to all points from evaluation point.
   DO I = 1, SIZE(POINTS, 2)
+     ! TODO: Use a faster distance calculation method here.
      DISTANCES(I) = SUM((EVAL_PT - POINTS(:,I)) ** 2)
   END DO
   ! Check for overflow encountered in the squared distance computation.

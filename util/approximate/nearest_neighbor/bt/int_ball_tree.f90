@@ -1,23 +1,23 @@
-MODULE BALL_TREE
-  USE ISO_FORTRAN_ENV, ONLY: REAL64, INT64
+MODULE INT_BALL_TREE
+  USE ISO_FORTRAN_ENV, ONLY: REAL32, REAL64, INT32, INT8, INT64
   IMPLICIT NONE
-  INTEGER :: DIST_CALCS
 
 CONTAINS
 
   ! Re-arrange elements of POINTS into a binary ball tree.
   RECURSIVE SUBROUTINE BUILD_TREE(POINTS, SQ_SUMS, RADII, ORDER,&
        ROOT, LEAF_SIZE, COMPUTED_SQ_SUMS)
-    REAL(KIND=REAL64),   INTENT(INOUT), DIMENSION(:,:) :: POINTS
-    REAL(KIND=REAL64),   INTENT(OUT),   DIMENSION(:) :: SQ_SUMS, RADII
-    INTEGER(KIND=INT64), INTENT(INOUT), DIMENSION(:) :: ORDER
-    INTEGER(KIND=INT64), INTENT(IN), OPTIONAL :: ROOT, LEAF_SIZE
-    LOGICAL, INTENT(IN), OPTIONAL :: COMPUTED_SQ_SUMS
+    INTEGER(KIND=INT8),  INTENT(INOUT), DIMENSION(:,:) :: POINTS
+    INTEGER(KIND=INT64), INTENT(OUT),   DIMENSION(:) :: SQ_SUMS
+    REAL(KIND=REAL64),   INTENT(OUT),   DIMENSION(:) :: RADII
+    INTEGER(KIND=INT32), INTENT(INOUT), DIMENSION(:) :: ORDER
+    INTEGER(KIND=INT32), INTENT(IN), OPTIONAL :: ROOT, LEAF_SIZE
+    LOGICAL,             INTENT(IN), OPTIONAL :: COMPUTED_SQ_SUMS
     ! Local variables
-    INTEGER(KIND=INT64) :: CENTER_IDX, MAX_IDX, I, J, LS
-    REAL(KIND=REAL64), DIMENSION(SIZE(POINTS,1)) :: PT
-    REAL(KIND=REAL64), DIMENSION(SIZE(ORDER)) :: SQ_DISTS
-    REAL(KIND=REAL64) :: MAX_SQ_DIST, SQ_DIST
+    INTEGER(KIND=INT32) :: CENTER_IDX, MAX_IDX, I, J, LS
+    INTEGER(KIND=INT64), DIMENSION(SIZE(POINTS,1)) :: PT
+    INTEGER(KIND=INT64), DIMENSION(SIZE(ORDER))    :: SQ_DISTS
+    INTEGER(KIND=INT64) :: MAX_SQ_DIST, SQ_DIST
     ! Set the leaf size to 1 by default (most possible work required,
     ! but guarantees successful use with any leaf size).
     IF (PRESENT(LEAF_SIZE)) THEN ; LS = LEAF_SIZE
@@ -36,9 +36,9 @@ CONTAINS
        ! 1) Compute distances between first point (random) and all others.
        ! 2) Pick the furthest point (on conv hull) from first as the center node.
        J = ORDER(1)
-       PT(:) = POINTS(:,J)
+       PT(:) = INT(POINTS(:,J), INT64)
        CENTER_IDX = 1
-       MAX_SQ_DIST = 0.0_REAL64
+       MAX_SQ_DIST = 0_INT32
        DO I = 2, SIZE(ORDER)
           SQ_DIST = SQ_SUMS(J) + SQ_SUMS(ORDER(I)) - &
                2 * DOT_PRODUCT(POINTS(:,ORDER(I)), PT(:))
@@ -55,34 +55,34 @@ CONTAINS
     CALL SWAPI(ORDER(1), ORDER(CENTER_IDX))
     ! Measure squared distance beween "center" node and all other points.
     J = ORDER(1)
-    PT(:) = POINTS(:,J)
-    SQ_DISTS(1) = 0.0_REAL64
+    PT(:) = INT(POINTS(:,J), INT64)
+    SQ_DISTS(1) = 0.0_INT32
     CENTER_TO_ALL : DO I = 2, SIZE(ORDER)
        SQ_DISTS(I) = SQ_SUMS(J) + SQ_SUMS(ORDER(I)) - &
             2 * DOT_PRODUCT(POINTS(:,ORDER(I)), PT(:))
     END DO CENTER_TO_ALL
     ! Base case for recursion, once we have few enough points, exit.
     IF (SIZE(ORDER) .LE. LS) THEN
-       RADII(ORDER(1)) = SQRT(MAXVAL(SQ_DISTS))
+       RADII(ORDER(1)) = SQRT( REAL(MAXVAL(SQ_DISTS),REAL64) )
        IF (SIZE(ORDER) .GT. 1) RADII(ORDER(2:)) = 0.0_REAL64
        RETURN
-    ELSE IF (SIZE(ORDER) .EQ. 2_INT64) THEN
+    ELSE IF (SIZE(ORDER) .EQ. 2_INT32) THEN
        ! If the leaf size is 1 and there are only 2 elements, store
        ! the radius and exit (since there are no further steps.
-       RADII(ORDER(1)) = SQRT(SQ_DISTS(2))
+       RADII(ORDER(1)) = SQRT( REAL(SQ_DISTS(2),REAL64) )
        RADII(ORDER(2)) = 0.0_REAL64
        RETURN
     END IF
     ! Rearrange "SQ_DISTS" about the median value.
     ! Compute the last index that will belong "inside" this node.
     MAX_IDX = (SIZE(ORDER) + 1) / 2
-    CALL ARGSELECT(SQ_DISTS, ORDER, MAX_IDX)
+    CALL INT_ARGSELECT(SQ_DISTS, ORDER, MAX_IDX)
     ! Now ORDER has been rearranged such that the median distance
     ! element of POINTS is at the median location.
     ! Identify the furthest point (must be in second half of list).
     I = MAX_IDX + MAXLOC(SQ_DISTS(MAX_IDX+1:),1)
     ! Store the "radius" of this ball, the furthest point.
-    RADII(ORDER(1)) = SQRT(SQ_DISTS(I))
+    RADII(ORDER(1)) = SQRT( REAL(SQ_DISTS(I),REAL64) )
     ! Move the furthest point into the spot after the median (outer root).
     CALL SWAPI(ORDER(I), ORDER(MAX_IDX+1))
     ! Move the median point (furthest "interior") to the front (inner root).
@@ -90,21 +90,22 @@ CONTAINS
     ! Recurisively create this tree.
     !   build a tree with the root being the furthest from this center
     !   for the remaining "interior" points of this center node.
-    CALL BUILD_TREE(POINTS, SQ_SUMS, RADII, ORDER(2:MAX_IDX), 1_INT64, LS, .TRUE.)
+    CALL BUILD_TREE(POINTS, SQ_SUMS, RADII, ORDER(2:MAX_IDX), 1_INT32, LS, .TRUE.)
     !   build a tree with the root being the furthest from this center
     !   for the remaining "exterior" points of this center node.
     !   Only perform this operation if there are >0 points available.
     IF (MAX_IDX < SIZE(ORDER)) &
          CALL BUILD_TREE(POINTS, SQ_SUMS, RADII, &
-         ORDER(MAX_IDX+1:), 1_INT64, LS, .TRUE.)
+         ORDER(MAX_IDX+1:), 1_INT32, LS, .TRUE.)
   END SUBROUTINE BUILD_TREE
 
   ! Re-organize a built tree so that it is more usefully packed in memory.
   SUBROUTINE FIX_ORDER(POINTS, SQ_SUMS, RADII, ORDER)
-    REAL(KIND=REAL64),   INTENT(INOUT), DIMENSION(:,:) :: POINTS
-    REAL(KIND=REAL64),   INTENT(OUT),   DIMENSION(:) :: SQ_SUMS, RADII
-    INTEGER(KIND=INT64), INTENT(INOUT), DIMENSION(:) :: ORDER
-    INTEGER(KIND=INT64) :: I
+    INTEGER(KIND=INT8),  INTENT(INOUT), DIMENSION(:,:) :: POINTS
+    INTEGER(KIND=INT64), INTENT(INOUT), DIMENSION(:)   :: SQ_SUMS
+    REAL(KIND=REAL64),   INTENT(INOUT), DIMENSION(:)   :: RADII
+    INTEGER(KIND=INT32), INTENT(INOUT), DIMENSION(:)   :: ORDER
+    INTEGER(KIND=INT32) :: I
     ! Execute the swap operation.
     POINTS(:,:) = POINTS(:,ORDER)
     SQ_SUMS(:) = SQ_SUMS(ORDER)
@@ -112,49 +113,48 @@ CONTAINS
     FORALL (I=1:SIZE(ORDER)) ORDER(I) = I
   END SUBROUTINE FIX_ORDER
 
-
   ! Compute the K nearest elements of TREE to each point in POINTS.
   SUBROUTINE NEAREST(POINTS, K, TREE, SQ_SUMS, RADII, ORDER, &
        LEAF_SIZE, INDICES, DISTS)
-    REAL(KIND=REAL64), INTENT(IN), DIMENSION(:,:) :: POINTS, TREE
-    REAL(KIND=REAL64), INTENT(IN), DIMENSION(:)   :: SQ_SUMS, RADII
-    INTEGER(KIND=INT64), INTENT(IN), DIMENSION(:) :: ORDER
-    INTEGER(KIND=INT64), INTENT(IN)               :: K, LEAF_SIZE
-    INTEGER(KIND=INT64), INTENT(OUT), DIMENSION(K,SIZE(POINTS,2)) :: INDICES
+    INTEGER(KIND=INT8),  INTENT(IN), DIMENSION(:,:) :: POINTS, TREE
+    INTEGER(KIND=INT64), INTENT(IN), DIMENSION(:)   :: SQ_SUMS
+    REAL(KIND=REAL64),   INTENT(IN), DIMENSION(:)   :: RADII
+    INTEGER(KIND=INT32), INTENT(IN), DIMENSION(:)   :: ORDER
+    INTEGER(KIND=INT32), INTENT(IN)                 :: K, LEAF_SIZE
+    INTEGER(KIND=INT32), INTENT(OUT), DIMENSION(K,SIZE(POINTS,2)) :: INDICES
     REAL(KIND=REAL64),   INTENT(OUT), DIMENSION(K,SIZE(POINTS,2)) :: DISTS
     ! Local variables.
     INTEGER :: I
-    INTEGER(KIND=INT64), DIMENSION(K+LEAF_SIZE+2) :: INDS_BUFFER
+    INTEGER(KIND=INT32), DIMENSION(K+LEAF_SIZE+2) :: INDS_BUFFER
     REAL(KIND=REAL64),   DIMENSION(K+LEAF_SIZE+2) :: DISTS_BUFFER
     ! For each point in this set, use the recursive branching
     ! algorithm to identify the nearest elements of TREE.
-
     DO I = 1, SIZE(POINTS,2)
-       DIST_CALCS = 0
-       CALL PT_NEAREST(POINTS(:,I), K, TREE, SQ_SUMS, RADII, ORDER, &
-            LEAF_SIZE, INDS_BUFFER, DISTS_BUFFER)
+       CALL PT_NEAREST(INT(POINTS(:,I),INT64), K, TREE, SQ_SUMS, &
+            RADII, ORDER, LEAF_SIZE, INDS_BUFFER, DISTS_BUFFER)
        ! Sort the first K elements of the temporary arry for return.
        INDICES(:,I) = INDS_BUFFER(:K)
        DISTS(:,I) = DISTS_BUFFER(:K)
-       ! PRINT *, 'BALL_TREE.F90: DIST CALCS =', DIST_CALCS
     END DO
   END SUBROUTINE NEAREST
 
   ! Compute the K nearest elements of TREE to each point in POINTS.
   RECURSIVE SUBROUTINE PT_NEAREST(POINT, K, TREE, SQ_SUMS, RADII, &
        ORDER, LEAF_SIZE, INDICES, DISTS, FOUND, PT_SS)
-    REAL(KIND=REAL64), INTENT(IN), DIMENSION(:)   :: POINT
-    REAL(KIND=REAL64), INTENT(IN), DIMENSION(:,:) :: TREE
-    REAL(KIND=REAL64), INTENT(IN), DIMENSION(:)   :: SQ_SUMS, RADII
-    INTEGER(KIND=INT64), INTENT(IN), DIMENSION(:) :: ORDER
-    INTEGER(KIND=INT64), INTENT(IN)               :: K, LEAF_SIZE
-    INTEGER(KIND=INT64), INTENT(OUT), DIMENSION(:) :: INDICES
+    INTEGER(KIND=INT64), INTENT(IN), DIMENSION(:)   :: POINT
+    INTEGER(KIND=INT8),  INTENT(IN), DIMENSION(:,:) :: TREE
+    INTEGER(KIND=INT64), INTENT(IN), DIMENSION(:)   :: SQ_SUMS
+    REAL(KIND=REAL64),   INTENT(IN), DIMENSION(:)   :: RADII
+    INTEGER(KIND=INT32), INTENT(IN), DIMENSION(:)   :: ORDER
+    INTEGER(KIND=INT32), INTENT(IN)                 :: K, LEAF_SIZE
+    INTEGER(KIND=INT32), INTENT(OUT), DIMENSION(:) :: INDICES
     REAL(KIND=REAL64),   INTENT(OUT), DIMENSION(:) :: DISTS
-    INTEGER(KIND=INT64), INTENT(INOUT), OPTIONAL   :: FOUND
-    REAL(KIND=REAL64),   INTENT(IN),    OPTIONAL   :: PT_SS
+    INTEGER(KIND=INT32), INTENT(INOUT), OPTIONAL   :: FOUND
+    INTEGER(KIND=INT64), INTENT(IN),    OPTIONAL   :: PT_SS
     ! Local variables
-    INTEGER(KIND=INT64) :: F, I, I1, I2
-    REAL(KIND=REAL64)   :: D, D1, D2, PS
+    INTEGER(KIND=INT32) :: F, I, I1, I2
+    REAL(KIND=REAL64)   :: D, D1, D2
+    INTEGER(KIND=INT64) :: PS
     ! Initialize FOUND for first call, if FOUND is present then
     ! this must not be first and all are present.
     INITIALIZE : IF (PRESENT(FOUND)) THEN
@@ -165,9 +165,8 @@ CONTAINS
        PS = SUM(POINT(:)**2)
        ! Measure distance to root.
        INDICES(1) = ORDER(1)
-       DISTS(1) = SQRT(PS + SQ_SUMS(ORDER(1)) - &
-            2*DOT_PRODUCT(POINT(:), TREE(:,ORDER(1))))
-       DIST_CALCS = DIST_CALCS + 1
+       DISTS(1) = SQRT( REAL(PS + SQ_SUMS(ORDER(1)) - &
+            2*DOT_PRODUCT(POINT(:), TREE(:,ORDER(1))), REAL64) )
        ! Set the "points found" to be 1.
        F = 1
     END IF INITIALIZE
@@ -175,20 +174,20 @@ CONTAINS
     BRANCH_OR_LEAF : IF (SIZE(ORDER) .GT. LEAF_SIZE) THEN
        ! Measure distance to inner child.
        I1 = ORDER(2)
-       D1 = SQRT(PS + SQ_SUMS(I1) - 2*DOT_PRODUCT(POINT(:),TREE(:,I1)))
-       DIST_CALCS = DIST_CALCS + 1
+       D1 = SQRT( REAL(PS + SQ_SUMS(I1) - &
+            2*DOT_PRODUCT(POINT(:),TREE(:,I1)), REAL64) )
        ! Store this distance calculation and index.
-       F = F + 1_INT64
+       F = F + 1_INT32
        INDICES(F) = I1
        DISTS(F) = D1
        ! Measure distance to outer child the same as above.
-       I = (SIZE(ORDER) + 1) / 2_INT64
-       I2 = ORDER(I+1_INT64)
+       I = (SIZE(ORDER) + 1) / 2_INT32
+       I2 = ORDER(I+1_INT32)
        IF (I2 .NE. I1) THEN
-          D2 = SQRT(PS + SQ_SUMS(I2) - 2*DOT_PRODUCT(POINT(:),TREE(:,I2)))
-          DIST_CALCS = DIST_CALCS + 1
+          D2 = SQRT( REAL(PS + SQ_SUMS(I2) - &
+               2*DOT_PRODUCT(POINT(:),TREE(:,I2)), REAL64) )
           ! Store this distance calculation and index.
-          F = F + 1_INT64
+          F = F + 1_INT32
           INDICES(F) = I2
           DISTS(F) = D2
        ELSE ; D2 = HUGE(D2)
@@ -210,14 +209,14 @@ CONTAINS
           SEARCH_OUTER1 : IF (((F .LT. K) .OR. (D .GT. D2 - RADII(I2))) &
                .AND. (I2 .NE. I1)) THEN
              CALL PT_NEAREST(POINT, K, TREE, SQ_SUMS, RADII, &
-                  ORDER(I+1_INT64:), LEAF_SIZE, INDICES, DISTS, F, PS)
+                  ORDER(I+1_INT32:), LEAF_SIZE, INDICES, DISTS, F, PS)
           END IF SEARCH_OUTER1
        ELSE
           ! Search the outer child if it could contain a nearer point.
           SEARCH_OUTER2 : IF (((F .LT. K) .OR. (D .GT. D2 - RADII(I2))) &
                .AND. (I2 .NE. I1)) THEN
              CALL PT_NEAREST(POINT, K, TREE, SQ_SUMS, RADII, &
-                  ORDER(I+1_INT64:), LEAF_SIZE, INDICES, DISTS, F, PS)
+                  ORDER(I+1_INT32:), LEAF_SIZE, INDICES, DISTS, F, PS)
           END IF SEARCH_OUTER2
           ! Search the inner child if it could contain a nearer point.
           SEARCH_INNER2 : IF ((F .LT. K) .OR. (D .GT. D1 - RADII(I1))) THEN
@@ -230,11 +229,10 @@ CONTAINS
     ELSE
        DIST_TO_CHILDREN : DO I = 2, SIZE(ORDER)
           ! Measure distance to all children of this node.
-          D = SQRT(PS + SQ_SUMS(ORDER(I)) - &
-               2*DOT_PRODUCT(POINT(:),TREE(:,ORDER(I))))
-          DIST_CALCS = DIST_CALCS + 1
+          D = SQRT( REAL(PS + SQ_SUMS(ORDER(I)) - &
+               2*DOT_PRODUCT(POINT(:),TREE(:,ORDER(I))), REAL64) )
           ! Store this distance.
-          F = F + 1_INT64
+          F = F + 1_INT32
           DISTS(F) = D
           INDICES(F) = ORDER(I)
        END DO DIST_TO_CHILDREN
@@ -270,10 +268,19 @@ CONTAINS
 
 
   ! Short subroutines for swapping out two values.
-  SUBROUTINE SWAPI(V1, V2)
+  SUBROUTINE SWAPIS(V1, V2)
     INTEGER(KIND=INT64), INTENT(INOUT) :: V1, V2
     ! Local temp
     INTEGER(KIND=INT64) :: TEMP
+    TEMP = V1
+    V1 = V2
+    V2 = TEMP
+  END SUBROUTINE SWAPIS
+
+  SUBROUTINE SWAPI(V1, V2)
+    INTEGER(KIND=INT32), INTENT(INOUT) :: V1, V2
+    ! Local temp
+    INTEGER(KIND=INT32) :: TEMP
     TEMP = V1
     V1 = V2
     V2 = TEMP
@@ -288,6 +295,17 @@ CONTAINS
     V2 = TEMP
   END SUBROUTINE SWAPR
 
+  SUBROUTINE SWAPP(V1, V2)
+    REAL(KIND=REAL64), DIMENSION(:) :: V1, V2
+    ! Local temp
+    INTEGER(KIND=INT32) :: I
+    REAL(KIND=REAL64) :: TEMP
+    DO I = 1, SIZE(V1)
+       TEMP = V1(I)
+       V1(I) = V2(I)
+       V2(I) = TEMP
+    END DO
+  END SUBROUTINE SWAPP
 
   ! ------------------------------------------------------------------
   !                       FastSelect method
@@ -329,11 +347,11 @@ CONTAINS
   RECURSIVE SUBROUTINE ARGSELECT(VALUES, INDICES, K, DIVISOR, MAX_SIZE)
     ! Arguments
     REAL(KIND=REAL64), INTENT(INOUT), DIMENSION(:) :: VALUES
-    INTEGER(KIND=INT64), INTENT(INOUT), DIMENSION(:) :: INDICES
-    INTEGER(KIND=INT64), INTENT(IN)                  :: K
-    INTEGER(KIND=INT64), INTENT(IN), OPTIONAL        :: DIVISOR, MAX_SIZE
+    INTEGER(KIND=INT32), INTENT(INOUT), DIMENSION(:) :: INDICES
+    INTEGER(KIND=INT32), INTENT(IN)                  :: K
+    INTEGER(KIND=INT32), INTENT(IN), OPTIONAL        :: DIVISOR, MAX_SIZE
     ! Locals
-    INTEGER(KIND=INT64) :: LEFT, RIGHT, L, R, MS, D
+    INTEGER(KIND=INT32) :: LEFT, RIGHT, L, R, MS, D
     REAL(KIND=REAL64) :: P
     ! Initialize the divisor (for making subsets).
     IF (PRESENT(DIVISOR)) THEN ; D = DIVISOR
@@ -397,6 +415,77 @@ CONTAINS
        IF (K .LE. R) RIGHT = R - 1
     END DO
   END SUBROUTINE ARGSELECT
+
+  RECURSIVE SUBROUTINE INT_ARGSELECT(VALUES, INDICES, K, DIVISOR, MAX_SIZE)
+    ! Arguments
+    INTEGER(KIND=INT64), INTENT(INOUT), DIMENSION(:) :: VALUES
+    INTEGER(KIND=INT32), INTENT(INOUT), DIMENSION(:) :: INDICES
+    INTEGER(KIND=INT32), INTENT(IN)                  :: K
+    INTEGER(KIND=INT32), INTENT(IN), OPTIONAL        :: DIVISOR, MAX_SIZE
+    ! Locals
+    INTEGER(KIND=INT32) :: LEFT, RIGHT, L, R, MS, D, P
+    ! Initialize the divisor (for making subsets).
+    IF (PRESENT(DIVISOR)) THEN ; D = DIVISOR
+    ELSE IF (SIZE(VALUES) .GE. 2**23) THEN ; D = 2**5
+    ELSE IF (SIZE(VALUES) .GE. 2**20) THEN ; D = 2**3
+    ELSE                                   ; D = 2**2
+    END IF
+    ! Initialize the max size (before subsets are created).
+    IF (PRESENT(MAX_SIZE)) THEN ; MS = MAX_SIZE
+    ELSE                        ; MS = 2**10
+    END IF
+    ! Initialize LEFT and RIGHT to be the entire array.
+    LEFT = 1
+    RIGHT = SIZE(VALUES)
+    ! Loop until done finding the K-th element.
+    DO WHILE (LEFT .LT. RIGHT)
+       ! Use SELECT recursively to improve the quality of the
+       ! selected pivot value for large arrays.
+       IF (RIGHT - LEFT .GT. MS) THEN
+          ! Compute how many elements should be left and right of K
+          ! to maintain the same percentile in a subset.
+          L = K - K / D
+          R = L + (SIZE(VALUES) / D)
+          ! Perform fast select on an array a fraction of the size about K.
+          CALL INT_ARGSELECT(VALUES(L:R), INDICES(L:R), K - L + 1, DIVISOR, MAX_SIZE)
+       END IF
+       ! Pick a partition element at position K.
+       P = VALUES(K)
+       L = LEFT
+       R = RIGHT
+       ! Move the partition element to the front of the list.
+       CALL SWAPIS(VALUES(LEFT), VALUES(K))
+       CALL SWAPI(INDICES(LEFT), INDICES(K))
+       ! Pre-swap the left and right elements (temporarily putting a
+       ! larger element on the left) before starting the partition loop.
+       IF (VALUES(RIGHT) .GT. P) THEN
+          CALL SWAPIS(VALUES(LEFT), VALUES(RIGHT))
+          CALL SWAPI(INDICES(LEFT), INDICES(RIGHT))
+       END IF
+       ! Now partition the elements about the pivot value "T".
+       DO WHILE (L .LT. R)
+          CALL SWAPIS(VALUES(L), VALUES(R))
+          CALL SWAPI(INDICES(L), INDICES(R))
+          L = L + 1
+          R = R - 1
+          DO WHILE (VALUES(L) .LT. P) ; L = L + 1 ; END DO
+          DO WHILE (VALUES(R) .GT. P) ; R = R - 1 ; END DO
+       END DO
+       ! Place the pivot element back into its appropriate place.
+       IF (VALUES(LEFT) .EQ. P) THEN
+          CALL SWAPIS(VALUES(LEFT), VALUES(R))
+          CALL SWAPI(INDICES(LEFT), INDICES(R))
+       ELSE
+          R = R + 1
+          CALL SWAPIS(VALUES(R), VALUES(RIGHT))
+          CALL SWAPI(INDICES(R), INDICES(RIGHT))
+       END IF
+       ! adjust left and right towards the boundaries of the subset
+       ! containing the (k - left + 1)th smallest element
+       IF (R .LE. K) LEFT = R + 1
+       IF (K .LE. R) RIGHT = R - 1
+    END DO
+  END SUBROUTINE INT_ARGSELECT
   ! ------------------------------------------------------------------
 
 
@@ -431,10 +520,10 @@ CONTAINS
   ! 
   RECURSIVE SUBROUTINE ARGSORT(VALUES, INDICES, MIN_SIZE)
     REAL(KIND=REAL64),   INTENT(INOUT), DIMENSION(:)            :: VALUES
-    INTEGER(KIND=INT64), INTENT(INOUT), DIMENSION(SIZE(VALUES)) :: INDICES
-    INTEGER(KIND=INT64), INTENT(IN), OPTIONAL                   :: MIN_SIZE
+    INTEGER(KIND=INT32), INTENT(INOUT), DIMENSION(SIZE(VALUES)) :: INDICES
+    INTEGER(KIND=INT32), INTENT(IN), OPTIONAL                   :: MIN_SIZE
     ! Local variables
-    INTEGER(KIND=INT64) :: I, MS
+    INTEGER(KIND=INT32) :: I, MS
     IF (PRESENT(MIN_SIZE)) THEN ; MS = MIN_SIZE
     ELSE                        ; MS = 2**6
     END IF
@@ -457,12 +546,12 @@ CONTAINS
   END SUBROUTINE ARGSORT
 
   ! This function efficiently partitions values based on the median
-  ! of the first, middle, and last elements of the VALUES array. This
-  ! function returns the index of the pivot.
+  ! of the (first, middle, last) elements of the VALUES array. This
+  ! function returns the final index of the pivot.
   FUNCTION ARGPARTITION(VALUES, INDICES) RESULT(LEFT)
     REAL(KIND=REAL64),   INTENT(INOUT), DIMENSION(:)            :: VALUES
-    INTEGER(KIND=INT64), INTENT(INOUT), DIMENSION(SIZE(VALUES)) :: INDICES
-    INTEGER(KIND=INT64) :: LEFT, MID, RIGHT
+    INTEGER(KIND=INT32), INTENT(INOUT), DIMENSION(SIZE(VALUES)) :: INDICES
+    INTEGER(KIND=INT32) :: LEFT, MID, RIGHT
     REAL(KIND=REAL64)   :: PIVOT
     ! Use the median of the first, middle, and last element as the
     ! pivot. Place the pivot at the end of the array.
@@ -514,10 +603,10 @@ CONTAINS
   ! Insertion sort (best for small lists).
   SUBROUTINE INSERTION_ARGSORT(VALUES, INDICES)
     REAL(KIND=REAL64),   INTENT(INOUT), DIMENSION(:)            :: VALUES
-    INTEGER(KIND=INT64), INTENT(INOUT), DIMENSION(SIZE(VALUES)) :: INDICES
+    INTEGER(KIND=INT32), INTENT(INOUT), DIMENSION(SIZE(VALUES)) :: INDICES
     ! Local variables.
     REAL(KIND=REAL64)   :: TEMP_VAL
-    INTEGER(KIND=INT64) :: I, BEFORE, AFTER, TEMP_IND
+    INTEGER(KIND=INT32) :: I, BEFORE, AFTER, TEMP_IND
     ! Return for the base case.
     IF (SIZE(VALUES) .LE. 1) RETURN
     ! Put the smallest value at the front of the list.
@@ -545,4 +634,4 @@ CONTAINS
   END SUBROUTINE INSERTION_ARGSORT
   ! ------------------------------------------------------------------
 
-END MODULE BALL_TREE
+END MODULE INT_BALL_TREE

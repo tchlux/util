@@ -55,3 +55,10 @@ if __name__ == "__main__":
         license='MIT',
     )
 
+
+# When using Homebrew to install this library, the following
+# additional packages may be required to make cv2 import correctly:
+# 
+#   brew install gtk+
+#   brew install linuxbrew/xorg/libsm
+# 

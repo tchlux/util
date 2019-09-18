@@ -39,10 +39,11 @@ class Approximator:
         # vertices of a regular simplex.
         if (self.classifier):
             from util.data import regular_simplex
-            from util.system import sorted_unique
-            self.class_map = sorted_unique(y)
-            values = regular_simplex(len(self.class_map))
-            y = np.array([values[self.class_map.index(v)] for v in y])
+            from util.system import sorted_unique, hash
+            categories = [hash(v) for v in sorted_unique(y)]
+            values = regular_simplex(len(categories))
+            self.class_map = dict(zip(categories,values))
+            y = np.array([self.class_map[hash(v)] for v in y])
         if (type(y) == list): y = np.array(y)
         if (type(y) != np.ndarray):
             raise(UnexpectedType("Provided 'y' should be a 1D or 2D numpy array."))

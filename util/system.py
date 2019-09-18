@@ -1,9 +1,10 @@
-# Generate hash values using a near-zero probability of conflich
+# Generate hash values using a near-zero probability of conflict
 # hashing mechanism that can handle non-hashable types. Does this
-# by hashing the raw bytes (from pickl) with sha256.
+# by hashing the raw bytes (from pickle) with sha256.
 def hash(something):
     import hashlib, pickle
     return hashlib.sha256(pickle.dumps(something)).hexdigest()
+
 
 # Generate a sorted unique set of values from an iterable, if the
 # values are not hashable, use a hashing function to sort them.
@@ -12,13 +13,13 @@ def sorted_unique(iterable):
         # Try returning sorted unique values using hash to find unique.
         return sorted(set(iterable))
     except TypeError: 
-        # Try sorting by values (assuming comparison with hash).
+        # Get the set of unique hashes and associated values.
         ids = {hash(v):v for v in iterable}
-        return sorted(ids[h] for h in sorted(ids))
-    except:
-        # Sort by hashes.
-        ids = {hash(v):v for v in iterable}
-        return [ids[h] for h in sorted(ids)]
+        # Try sorting the values directly, if that's not possible
+        # then sort the values by their hash.
+        try:    return sorted(ids.values())
+        except: return [ids[h] for h in sorted(ids)]
+
 
 # Save "data" in a file titled "file_name" using pickle.
 def save(data, file_name="_save.pkl"):
