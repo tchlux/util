@@ -16,8 +16,8 @@ class InvalidRange(Exception):
 # Return a randomized "range" using the appropriate technique based on
 # the size of the range being generated. If the memory footprint is
 # small (<= 32K int's) then a random sample is created and returned.
-# If the memory footprint would be prohibitively large, a Linear
-# Congruential Generator is used to efficiently generate the sequence.
+# If the memory footprint would be large, a Linear Congruential
+# Generator is used to efficiently generate the sequence.
 # 
 # Parameters are similar to the builtin `range` with:
 #   start -- int, default of 0.
@@ -27,9 +27,9 @@ class InvalidRange(Exception):
 # 
 # Usage (and implied parameter ordering):
 #   random_range(a)             --> range(0, a, 1)[:a]
-#   random_range(a, b)          --> range(a, b, 1)[:b-a]
+#   random_range(a, b) [a < b]  --> range(a, b, 1)[:b-a]
 #   random_range(a, b, c)       --> range(a, b, c)[:(b-a)//c]
-#   random_range(a, b, c, d)    --> range(a, b, c)[:d]
+#   random_range(a, b, c, d)    --> range(a, b, c)[:min(d, (b-a)//c)]
 #   random_range(a, d) [d <= a] --> range(0, a, 1)[:d]
 # 
 # If the size of the range is large, a Linear Congruential Generator is used.
@@ -46,7 +46,7 @@ def random_range(start, stop=None, step=None, count=float('inf')):
     if (stop == None): start, stop = 0, start
     if (step == None): step = 1
     # Compute the number of numbers in this range, update count accordingly.
-    num_steps = (stop - start) // step
+    num_steps = int((stop - start) // step)
     count = min(count, num_steps)
     # Check for a usage error.
     if (num_steps == 0) or (count <= 0): raise(InvalidRange(start, stop, step, count))
@@ -56,10 +56,12 @@ def random_range(start, stop=None, step=None, count=float('inf')):
         for value in sample(range(start,stop,step), count): yield value
         return
     # Use the LCG for the cases where the above is too memory intensive.
+    # Enforce that all numbers are python integers (no worry of overflow).
+    start, stop, step = map(int, (start, stop, step))
     # Use a mapping to convert a standard range into the desired range.
     mapping = lambda i: (i*step) + start
     # Seed range with a random integer to start.
-    value = randint(0,num_steps)
+    value = int(randint(0,num_steps))
     # 
     # Construct an offset, multiplier, and modulus for a linear
     # congruential generator. These generators are cyclic and
@@ -69,9 +71,9 @@ def random_range(start, stop=None, step=None, count=float('inf')):
     #   2) ["multiplier" - 1] is divisible by all prime factors of "modulus".
     #   3) ["multiplier" - 1] is divisible by 4 if "modulus" is divisible by 4.
     # 
-    offset = randint(0,num_steps) * 2 + 1                 # Pick a random odd-valued offset.
-    multiplier = 4*(num_steps + randint(0,num_steps)) + 1 # Pick a multiplier 1 greater than a multiple of 4.
-    modulus = 2**ceil(log2(num_steps))                    # Pick a modulus just big enough to generate all numbers (power of 2).
+    offset = int(randint(0,num_steps)) * 2 + 1                 # Pick a random odd-valued offset.
+    multiplier = 4*(num_steps + int(randint(0,num_steps))) + 1 # Pick a multiplier 1 greater than a multiple of 4.
+    modulus = int(2**ceil(log2(num_steps)))                    # Pick a modulus just big enough to generate all numbers (power of 2).
     # Track how many random numbers have been returned.
     found = 0
     while found < count:
@@ -117,7 +119,6 @@ def pairs(length, count=None):
     print(" "*40, end="\r", flush=True)
 
 
-
 # Generate "num_points" random points in "dimension" that have uniform
 # probability over the unit ball scaled by "radius" (length of points
 # are in range [0, "radius"]).
@@ -147,3 +148,49 @@ def latin(num_points, dimension):
     return cell_width * (random.random((dimension,num_points)) + cells).T
 
 
+# Given an "n", construct the 1D Chebyshev-Guass-Lobatto nodes
+# (equally spaced on a unit semicircle).
+def chebyshev(n, d=1, sample=None):
+    from numpy import array, cos, pi
+    x = []
+    for k in range(1,n+1):
+        x.append(cos( (2*k - 1) / (2*n) * pi ))
+    # Reormalize the points to be in the range [0,1].
+    x = (array(x) + 1) / 2
+    # Create a tensor product to fill the desired dimension.
+    return mesh(x, multiplier=d, sample=sample)
+
+
+# Create a tensor mesh of "len(nodes) * multiplier" dimension of all
+# lists provided inside of "nodes". If "sample" is provided, then a
+# random sample of size "sample" is drawn from the mesh.
+def mesh(*nodes, multiplier=1, sample=None):
+    from numpy import vstack, meshgrid
+    if sample:
+        from numpy import prod
+        mesh_size = prod(list(map(len,nodes))) ** multiplier
+        # Only continue if the sample does *not* include the whole grid.
+        if (sample < mesh_size):
+            from numpy import zeros
+            # Expand out the full set of nodes (along each component).
+            nodes *= multiplier
+            # Compute the total mesh size (and track the size of each component).
+            sizes = list(map(len, nodes))
+            # Randomly draw points from the mesh.
+            points = zeros((sample, len(sizes)), dtype=float)
+            for i,index in enumerate(random_range(mesh_size, count=sample)):
+                smaller_prod = mesh_size
+                # Decode the index into a set of indices for each component.
+                for s in range(len(sizes)):
+                    smaller_prod = int(smaller_prod // sizes[s])
+                    curr_ind = int(index // smaller_prod )
+                    # Handle the special case where remaining sizes are 1.
+                    if (smaller_prod == 1):
+                        curr_ind = min(curr_ind, sizes[s]-1)
+                    # Subtract out the effect of the chosen index.
+                    index -= curr_ind * smaller_prod
+                    points[i,s] = nodes[s][curr_ind]
+            # Return the randomly selected mesh points.
+            return points
+    # Default operation, return the full tensor product of "nodes".
+    return vstack([_.flatten() for _ in meshgrid(*(nodes * multiplier))]).T
