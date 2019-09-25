@@ -3,7 +3,9 @@ from multiprocessing import cpu_count, get_context, current_process
 # Imports that are used by the processes.
 from queue import Empty
 import sys, os
-from dill import dumps, loads
+# Try to import "dill" module for better serialization, otherwise use pickle.
+try:                        from dill   import dumps, loads
+except ModuleNotFoundError: from pickle import dumps, loads
 
 # Make sure new processes started are minimal (not complete copies)
 MAX_PROCS = cpu_count()
@@ -172,6 +174,18 @@ def map(func, iterable, max_waiting_jobs=1, max_waiting_returns=1,
         if not save_logs: clear_logs()
     # Return all results in a generator object.
     return return_generator()
+
+# Given an iteratible, split it into as many chunks as their are
+# processes. This is not particularly efficient, as it uses python
+# lists, but it is convenient!
+def split(iterable, count=MAX_PROCS):
+    list_version = list(iterable)
+    # Fill the chunks by walking through the iterable.
+    chunks = [[]] * count
+    for i,v in enumerate(iterable):
+        chunks[i%count].append( v )
+    # Return the list of lists that are chunks.
+    return chunks
 
 # Kill all active "map" processes.
 def killall():
