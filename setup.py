@@ -48,7 +48,7 @@ if __name__ == "__main__":
         download_url = 'https://github.com/{git_username}/{package}/archive/{version}.tar.gz'.format(
             git_username=git_username, package=package, version=version),
         description = description,
-        scripts=["scripts/compile"],
+        scripts=["util/setup"],
         keywords = keywords,
         python_requires = '>=3.6',
         license='MIT',
