@@ -1,10 +1,1 @@
 recursive-include util *
-recursive-include development *
-include MANIFEST.in
-include readme.md
-include setup.py
-include push_update.py
-recursive-include scripts *
-include package_name.txt
-include setup.cfg
-include LICENSE.txt
