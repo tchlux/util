@@ -11,3 +11,4 @@
 | 1.0.11<br>September 2019 | Bug fixes and rebuilds, still failing to install. |
 | 1.0.12<br>September 2019 | Bug fixes and rebuilds, still failing to install. |
 | 1.0.13<br>September 2019 | Bug fixes and rebuilds, still failing to install. |
+| 1.0.14<br>September 2019 | Bug fixes and rebuilds, still failing to install. |
