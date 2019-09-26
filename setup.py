@@ -23,6 +23,7 @@ def read(f_name, empty_lines=False):
 package_about = ""
 package_name = read("package_name.txt")[0]
 package_about = os.path.join(os.path.dirname(os.path.abspath(__file__)),package_name,"about")
+package_requires = os.path.join(package_about, "requirements.txt")
 
 if __name__ == "__main__":
     #      Read in the package description files     
@@ -30,7 +31,12 @@ if __name__ == "__main__":
     package = package_name
     version =read("version.txt")[0]
     description = read("description.txt")[0]
-    requirements = read("requirements.txt")
+    requirements = ""
+    # Use "pip" to install requirements. This is more generally
+    # accurate than trying to parse out URL's from requirements.txt.
+    import pip
+    pip.main(["install", "-r", package_requires])
+    # 
     keywords = read("keywords.txt")
     classifiers = read("classifiers.txt")
     name, email, git_username = read("author.txt")
@@ -49,6 +55,7 @@ if __name__ == "__main__":
         download_url = 'https://github.com/{git_username}/{package}/archive/{version}.tar.gz'.format(
             git_username=git_username, package=package, version=version),
         description = description,
+        scripts=["scripts/compile"],
         keywords = keywords,
         python_requires = '>=3.6',
         license='MIT',

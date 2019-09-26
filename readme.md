@@ -20,7 +20,7 @@ to keep it organized and readable. Once things are thoroughly polished
   on PyPi):
 
 ```bash
-pip install https://github.com/tchlux/util/archive/1.0.6.zip
+pip install https://github.com/tchlux/util/archive/1.0.7.zip
 ```
 
   Current cutting edge, (possibly unstable) code available by:
