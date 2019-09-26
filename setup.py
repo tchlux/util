@@ -6,7 +6,7 @@ except:
     class DependencyError(Exception): pass
     raise(DependencyError("Missing python package 'setuptools'.\n  pip install --user setuptools"))
 
-import os
+import os, sys
 
 # Convenience function for reading information files
 def read(f_name, empty_lines=False):
@@ -35,12 +35,15 @@ if __name__ == "__main__":
     classifiers = read("classifiers.txt")
     name, email, git_username = read("author.txt")
 
-    # Translate the git requirements to proper requirements.
-    dependency_links = [r for r in requirements if "git+git:" in r[:8]]
-    for r in dependency_links:
-        try:    pkg_name = r.split("egg=")[1]
-        except: raise(DependencyError("GitHub repositories must specify '#egg=<package-name>' at the end."))
-        requirements[requirements.index(r)] = pkg_name + " @ git+https://" + r.split("://")[1]
+    sys.argv.append("--process-dependency-links")
+
+    # # Translate the git requirements to proper requirements.
+    # dependency_links = [r for r in requirements if "git+git:" in r[:8]]
+    # for r in dependency_links:
+    #     try:    pkg_name = r.split("egg=")[1]
+    #     except: raise(DependencyError("GitHub repositories must specify '#egg=<package-name>' at the end."))
+    #     requirements[requirements.index(r)] = pkg_name + " @ git+https://" + r.split("://")[1]
+
     # Call "setup" to formally set up this module.
     setup(
         author = name,
