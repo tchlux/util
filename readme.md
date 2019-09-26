@@ -1,13 +1,31 @@
-|             |                                                                        |
-|-------------|------------------------------------------------------------------------|
-|**TITLE:**   | util                                                                   |
-|**PURPOSE:** | A machine learning, optimization, and data science utilities package.  |
-|**AUTHOR:**  | Thomas C.H. Lux                                                        |
-|**EMAIL:**   | tchlux@vt.edu                                                          |
+<p align="center">
+  <h1 align="center">util</h1>
+</p>
+
+<p align="center">
+A machine learning, optimization, and data science utilities
+package. Almost all the useful code I write starts here.
+</p>
+
+This is a huge ongoing project that I use for all of my work. Pretty
+much every new algorithm I come up with will start here. I do my best
+to keep it organized and readable. Once things are thoroughly polished
+(and presumed useful), I turn them into their own python modules.
 
 ## INSTALLATION:
 
-    $ pip install git+https://github.com/tchlux/util.git
+  Latest stable and tested release available by (sorry `util` is taken
+  on PyPi):
+
+```bash
+pip install https://github.com/tchlux/util/archive/1.0.1.zip
+```
+
+  Current cutting edge, (possibly unstable) code available by:
+
+```bash
+pip install https://github.com/tchlux/util.git
+```
 
 ## ABOUT
 
