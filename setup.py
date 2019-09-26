@@ -31,16 +31,26 @@ if __name__ == "__main__":
     package = package_name
     version =read("version.txt")[0]
     description = read("description.txt")[0]
-    requirements = ""
-    # Use "pip" to install requirements. This is more generally
-    # accurate than trying to parse out URL's from requirements.txt.
-    import pip
-    pip.main(["install", "-r", package_requires])
-    # 
     keywords = read("keywords.txt")
     classifiers = read("classifiers.txt")
     name, email, git_username = read("author.txt")
-
+    requirements = read("requirements.txt")
+    # Handle the requirements.
+    has_external_packages = any("://" in r for r in requirements)
+    if has_external_packages:
+        # Use "pip" to install requirements. This is more generally
+        # accurate than trying to parse out URL's from requirements.txt.
+        try:
+            from pip._internal import pip_main
+            pip_main(["install", "-r", package_requires])        
+        except:
+            external_packages = "\n  ".join(r for r in requirements if "://" in r)
+            import warnings
+            class ExternalRequirements(Warning): pass
+            warnings.warn(ExternalRequirements(
+                f"Could not install some external requirements:\n  {external_packages}"))
+        # Remove the external requirments from the list.
+        requirements = [r for r in requirements if "://" not in r]
     # Call "setup" to formally set up this module.
     setup(
         author = name,
