@@ -39,7 +39,7 @@ if __name__ == "__main__":
         author = name,
         author_email = email,
         name=package,
-        packages=find_packages(exclude=[]),
+        packages=[package_name],
         include_package_data=True,
         install_requires=requirements,
         version=version,
