@@ -41,7 +41,7 @@ if __name__ == "__main__":
         # Use "pip" to install requirements. This is more generally
         # accurate than trying to parse out URL's from requirements.txt.
         try:
-            from pip._internal import pip_main
+            from pip._internal import main as pip_main
             pip_main(["install", "-r", package_requires])        
         except:
             external_packages = "\n  ".join(r for r in requirements if "://" in r)
