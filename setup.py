@@ -23,7 +23,6 @@ def read(f_name, empty_lines=False):
 package_about = ""
 package_name = read("package_name.txt")[0]
 package_about = os.path.join(os.path.dirname(os.path.abspath(__file__)),package_name,"about")
-package_requires = os.path.join(package_about, "requirements.txt")
 
 if __name__ == "__main__":
     #      Read in the package description files     
@@ -35,22 +34,6 @@ if __name__ == "__main__":
     classifiers = read("classifiers.txt")
     name, email, git_username = read("author.txt")
     requirements = read("requirements.txt")
-    # Handle the requirements.
-    has_external_packages = any("://" in r for r in requirements)
-    if has_external_packages:
-        # Use "pip" to install requirements. This is more generally
-        # accurate than trying to parse out URL's from requirements.txt.
-        try:
-            from pip._internal import main as pip_main
-            pip_main(["install", "-r", package_requires])        
-        except:
-            external_packages = "\n  ".join(r for r in requirements if "://" in r)
-            import warnings
-            class ExternalRequirements(Warning): pass
-            warnings.warn(ExternalRequirements(
-                f"Could not install some external requirements:\n  {external_packages}"))
-        # Remove the external requirments from the list.
-        requirements = [r for r in requirements if "://" not in r]
     # Call "setup" to formally set up this module.
     setup(
         author = name,
@@ -78,4 +61,7 @@ if __name__ == "__main__":
 # 
 #   pip install https://github.com/tchlux/packager/archive/1.0.0.zip
 # 
+# Include external requirements in a `requirements.txt` file like:
+#  
+#   packager @ https://github.com/tchlux/packager/archive/1.0.0.zip @ 1.0.0
 # 

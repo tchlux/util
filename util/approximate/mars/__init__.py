@@ -14,10 +14,10 @@ MARS_MODEL_FLAG = 1
 
 # Was using the fortran, but found a bug... Using Py-Earth instead
 
-""" In order to download and install py-earth:
-git clone git://github.com/scikit-learn-contrib/py-earth.git
-cd py-earth
-sudo python setup.py install
+INSTALL_MESSAGE = """Failed to import `pyearth`. Download and install with:
+  git clone git://github.com/scikit-learn-contrib/py-earth.git
+  cd py-earth
+  sudo python setup.py install
 """
 
 # Wrapper class for using the open source MARS, py-earth
@@ -28,7 +28,8 @@ class MARS(Approximator):
         import warnings
         warnings.filterwarnings("ignore", category=FutureWarning)
         # Import the Earth package.
-        from pyearth import Earth
+        try:    from pyearth import Earth
+        except: raise(INSTALL_MESSAGE)
         self.Earth = Earth
         self.model = None
         self.max_bases = max_bases
