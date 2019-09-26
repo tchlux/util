@@ -7,6 +7,8 @@ A machine learning, optimization, and data science utilities
 package. Almost all the useful code I write starts here.
 </p>
 
+<hr>
+
 This is a huge ongoing project that I use for all of my work. Pretty
 much every new algorithm I come up with will start here. I do my best
 to keep it organized and readable. Once things are thoroughly polished
