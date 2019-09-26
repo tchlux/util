@@ -35,10 +35,12 @@ if __name__ == "__main__":
     classifiers = read("classifiers.txt")
     name, email, git_username = read("author.txt")
 
-    sys.argv.append("--process-dependency-links")
 
     # # Translate the git requirements to proper requirements.
-    # dependency_links = [r for r in requirements if "git+git:" in r[:8]]
+    # for i in range(len(requirements)):
+    #     if ("://" in requirements[i]):
+    #         requirements[i] = 
+    # dependency_links = [r for r in requirements if "://" in r[:]]
     # for r in dependency_links:
     #     try:    pkg_name = r.split("egg=")[1]
     #     except: raise(DependencyError("GitHub repositories must specify '#egg=<package-name>' at the end."))
