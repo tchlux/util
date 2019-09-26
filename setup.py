@@ -35,17 +35,6 @@ if __name__ == "__main__":
     classifiers = read("classifiers.txt")
     name, email, git_username = read("author.txt")
 
-
-    # # Translate the git requirements to proper requirements.
-    # for i in range(len(requirements)):
-    #     if ("://" in requirements[i]):
-    #         requirements[i] = 
-    # dependency_links = [r for r in requirements if "://" in r[:]]
-    # for r in dependency_links:
-    #     try:    pkg_name = r.split("egg=")[1]
-    #     except: raise(DependencyError("GitHub repositories must specify '#egg=<package-name>' at the end."))
-    #     requirements[requirements.index(r)] = pkg_name + " @ git+https://" + r.split("://")[1]
-
     # Call "setup" to formally set up this module.
     setup(
         author = name,
