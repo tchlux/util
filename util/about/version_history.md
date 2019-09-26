@@ -7,3 +7,4 @@
 | 1.0.7<br>September 2019 | Using pip directly to install. |
 | 1.0.8<br>September 2019 | Using pip directly to install. |
 | 1.0.9<br>September 2019 | Using pip directly to install. |
+| 1.0.10<br>September 2019 | Removed problematic requirements. |
