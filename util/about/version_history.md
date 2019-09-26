@@ -5,3 +5,4 @@
 | 1.0.4<br>September 2019 | Trying new setup.py |
 | 1.0.6<br>September 2019 | pip 19 adhering requirements |
 | 1.0.7<br>September 2019 | Using pip directly to install. |
+| 1.0.8<br>September 2019 | Using pip directly to install. |
