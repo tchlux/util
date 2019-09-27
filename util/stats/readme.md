@@ -53,9 +53,11 @@ Use `sklearn` to compute the principle components of a matrix of row-vectors. Re
 
 Compute the metric principle components of a set of points with associated values and a given metric. Scale all vectors between points by the magnitude difference between associated values. Use `sklearn` to compute the principle components of these metric between vectors. Return the vectors and their magnitudes.
 
-## [`util.stats.modes`](modes.py)
-
 ## [`util.stats.plotting`](plotting.py)
+
+#### [`def plot_percentiles`](plotting.py#L71)
+
+Given a `Plot` object (from [`util.plot`](../plot#user-content-utilapproximate)), 
 
 ## [`util.stats.rank`](rank.py)
 
