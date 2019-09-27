@@ -31,29 +31,29 @@ pip install git+https://github.com/tchlux/util.git
 
 ## CONTENTS
 
-### [util.approximate](util/approximate)
+### [util.approximate](util/approximate#user-content-utilapproximate)
 
-### [util.data](util/data)
+### [util.data](util/data#user-content-utildata)
 
-### [util.decorators](util/decorators)
+### [util.decorators](util/decorators#user-content-utildecorators)
 
-### [util.math](util/math)
+### [util.math](util/math#user-content-utilmath)
 
-### [util.misc](util/misc)
+### [util.misc](util/misc#user-content-utilmisc)
 
-### [util.optimize](util/optimize)
+### [util.optimize](util/optimize#user-content-utiloptimize)
 
-### [util.pairs](util/pairs)
+### [util.pairs](util/pairs#user-content-utilpairs)
 
-### [util.parallel](util/parallel)
+### [util.parallel](util/parallel#user-content-utilparallel)
 
-### [util.plot](util/plot)
+### [util.plot](util/plot#user-content-utilplot)
 
-### [util.points](util/points)
+### [util.points](util/points#user-content-utilpoints)
 
-### [util.random](util/random)
+### [util.random](util/random#user-content-utilrandom)
 
-### [util.stats](util/stats)
+### [util.stats](util/stats#user-content-utilstats)
 
-### [util.system](util/system)
+### [util.system](util/system#user-content-utilsystem)
 
