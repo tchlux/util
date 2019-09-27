@@ -9,3 +9,4 @@
 | 1.0.10<br>September 2019 | Removed problematic requirements. |
 | 1.0.11<br>September 2019 | Bug fixes and rebuilds, still failing to install. |
 | 1.0.16<br>September 2019 | Updated readme, tested install, stable. |
+| 1.0.17<br>September 2019 | Updated import structure to encourage compilation on <br> install. Needs testing. |
