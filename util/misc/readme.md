@@ -1,4 +1,4 @@
-# `util.misc`
+<h1 align="center"><code>util.misc</code></h1>
 
 The [island of misfit toys](https://www.youtube.com/watch?v=Gr6GbKciNCY). One day these functions will find a deserving home, until now they wait here.
 
