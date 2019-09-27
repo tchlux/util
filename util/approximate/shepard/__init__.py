@@ -8,6 +8,11 @@ from util.approximate import WeightedApproximator
 CWD = os.path.dirname(os.path.abspath(__file__))
 DISPLAY_WAIT_SEC = 3.
 
+# Get the source fortran code module
+path_to_src = os.path.join(CWD,"weight.f90")
+# Compile the fortran source (with OpenMP for acceleration)
+shepmod = fmodpy.fimport(path_to_src, output_directory=CWD, omp=True)
+
 # =================
 #      Shepard     
 # =================
@@ -17,15 +22,6 @@ DISPLAY_WAIT_SEC = 3.
 class Shepard(WeightedApproximator):
     points = None
     dots = None
-
-    # Get fortran function for calculating mesh
-    def __init__(self):
-        # Get the source fortran code module
-        path_to_src = os.path.join(CWD,"weight.f90")
-        # Compile the fortran source (with OpenMP for acceleration)
-        self.shepard = fmodpy.fimport(path_to_src, output_directory=CWD,
-                                      f_compiler_options=["-fPIC", "-O3","-fopenmp"],
-                                      module_link_args=["-lgfortran","-fopenmp"])
 
     # Given points, pre-calculate the inner products of all pairs.
     def _fit(self, points):
@@ -44,6 +40,6 @@ class Shepard(WeightedApproximator):
                 start = time.time()
                 print(f" {100.*i/len(points):.2f}%", end="\r", flush=True)
             # Calculate the support at this point
-            weights[i,:] = self.shepard.weight(self.points, pt.copy())
+            weights[i,:] = shepmod.weight(self.points, pt.copy())
         return indices, weights
 

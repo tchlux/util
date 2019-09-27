@@ -6,7 +6,7 @@ except:
     class DependencyError(Exception): pass
     raise(DependencyError("Missing python package 'setuptools'.\n  pip install --user setuptools"))
 
-import os, sys
+import os
 
 # Convenience function for reading information files
 def read(f_name, empty_lines=False):
@@ -39,7 +39,7 @@ if __name__ == "__main__":
         author = name,
         author_email = email,
         name=package,
-        packages=[package_name],
+        packages=[package],
         include_package_data=True,
         install_requires=requirements,
         version=version,
@@ -48,13 +48,22 @@ if __name__ == "__main__":
         download_url = 'https://github.com/{git_username}/{package}/archive/{version}.tar.gz'.format(
             git_username=git_username, package=package, version=version),
         description = description,
-        scripts=["util/setup.py"],
+        # scripts=[os.path.join(package,"setup.py")],
         keywords = keywords,
         python_requires = '>=3.6',
         license='MIT',
         classifiers=classifiers
     )
-
+    # Attempt to import the module, in case compilation must be
+    # done. It is in a try block with an empty catch-all except. THIS
+    # IS BAD PRACTICE, but it is possible that the issues are more
+    # easily fixed after install. Consider modifying this block for
+    # each project to be less all-encompassing.
+    try:
+        # Import the setup file.
+        import importlib
+        importlib.import_module(package+".setup")
+    except: pass
 
 # 
 # Install specific versions of a package with something like:

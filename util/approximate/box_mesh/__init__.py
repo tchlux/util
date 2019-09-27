@@ -6,20 +6,20 @@ from util.approximate import WeightedApproximator
 
 # This directory
 CWD = os.path.dirname(os.path.abspath(__file__))
+meshes = fmodpy.fimport(os.path.join(CWD,"meshes.f90"),
+                        output_directory=CWD, autocompile_extra_files=True)
+
 
 # ======================
 #      BoxMesh Mesh     
 # ======================
 class BoxMesh(WeightedApproximator):
-    meshes = fmodpy.fimport(
-        os.path.join(CWD,"meshes.f90"), output_directory=CWD, autocompile_extra_files=True)
-    
     # Initialize with the option to do an oder 1 or order 2 mesh.
     def __init__(self, order=1, **kwargs):
         if (order == 1):
-            self.eval_mesh = self.meshes.eval_order_1_box_mesh
+            self.eval_mesh = meshes.eval_order_1_box_mesh
         elif (order == 2):
-            self.eval_mesh = self.meshes.eval_order_2_box_mesh
+            self.eval_mesh = meshes.eval_order_2_box_mesh
         else:
             class UnsupportedOrder(Exception): pass
             raise(UnsupportedOrder(f"The provided order '{order}' is not supported. Only 1 and 2 are available."))
@@ -36,7 +36,7 @@ class BoxMesh(WeightedApproximator):
         self.points = np.asarray(points[indices].T, order="F")
         self.box_sizes = np.ones((self.points.shape[0]*2,self.points.shape[1]),
                                   dtype=np.float64, order="F") * -1
-        self.meshes.build_ibm(self.points, self.box_sizes)
+        meshes.build_ibm(self.points, self.box_sizes)
 
     # Generate a prediction for a new point
     def _predict(self, xs):

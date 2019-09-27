@@ -1,4 +1,12 @@
 
+# Compile and build the fekete point generation code.
+import os, fmodpy
+CWD = os.path.dirname(os.path.abspath(__file__))
+fp_mod = fmodpy.fimport(os.path.join(CWD,"fekete.f90"),
+                        module_link_args=["-lblas","-llapack"],
+                        output_directory=CWD)
+
+
 # Given an "n", construct the 1D Chebyshev-Guass-Lobatto nodes
 # (equally spaced on a unit semicircle).
 def chebyshev(n, d=1, sample=None):
@@ -81,20 +89,16 @@ def polynomial_indices(degree=1, dimension=1):
     return ( np.asfortranarray(np.array(degrees, dtype=int)),
              np.asfortranarray(np.array(indices, dtype=int).T) )
 
+
 # Construct Fekete points over the unit box. This operation will
 # destroy the contents of "vmt" (Vandermonde matrix transpose).
 def fekete_indices(vmt):
     import numpy as np
-    try:
-        import fekete as fp
-    except:
-        import fmodpy
-        fp = fmodpy.fimport("fekete.f90", module_link_args=["-lblas","-llapack"])
     # If the system is not overdetermined, then all points should be kept.
     if (vmt.shape[1] <= vmt.shape[0]): return np.arange(vmt.shape[1])
     # Otherwise, identify which indices should be kept by performing a
     # QR with column pivoting (and track which columns are first).
-    to_keep, info = fp.fekete_indices(vmt)
+    to_keep, info = fp_mod.fekete_indices(vmt)
     if (info != 0):
         import warnings
         warning.warn(f"FEKETE POINT QR ERROR:  {info}")
@@ -104,11 +108,6 @@ def fekete_indices(vmt):
 # Construct Fekete points over the unit hypercube.
 def fekete_points(num_points, dimension, min_per_dim=3,
                   max_func_ratio=1, max_point_ratio=2):
-    try:
-        import util.points.fekete as fp
-    except:
-        import fmodpy
-        fp = fmodpy.fimport("fekete.f90", module_link_args=["-lblas","-llapack"])
     from math import log, ceil
     import numpy as np
     assert(dimension >= 1)
@@ -152,7 +151,7 @@ def fekete_points(num_points, dimension, min_per_dim=3,
     vmt = np.zeros((len(degrees), len(points)), dtype=float, order='f')
     points = np.asfortranarray(points.T) # <- this should require no copy
     # Construct the Vandermonde matrix (transpose).
-    fp.evaluate_vandermonde(points, degrees, indices+1, vmt)
+    fp_mod.evaluate_vandermonde(points, degrees, indices+1, vmt)
     f_indices = fekete_indices(vmt)
     del vmt
     to_keep = f_indices[:num_points]

@@ -1,7 +1,6 @@
 # Makes available all custom algorithms that I have worked with
 import os
 import numpy as np
-import fmodpy
 from util.approximate import WeightedApproximator
 from util.math import SMALL
 

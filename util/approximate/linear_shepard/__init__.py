@@ -6,6 +6,12 @@ from util.approximate import Approximator
 
 # This directory
 CWD = os.path.dirname(os.path.abspath(__file__))
+# Import the source Fortran code.
+lshep_mod = fmodpy.fimport(
+    os.path.join(CWD,"linear_shepard.f95"),
+    module_link_args=["-lblas","-llapack","-lgfortran"], 
+    output_directory=CWD, autocompile_extra_files=True)
+
 
 # =======================
 #      LSHEP Wrapper     
@@ -18,12 +24,6 @@ class LSHEP(Approximator):
     #            this number (growing the radius of influence of all
     #            points) until desired model smoothness is obtained.
     def __init__(self, radius=2):
-        self.linear_shepard = fmodpy.fimport(
-            os.path.join(CWD,"linear_shepard.f95"),
-            module_link_args=["-lblas","-llapack","-lgfortran"], 
-            output_directory=CWD, autocompile_extra_files=True)
-        self.lshep = self.linear_shepard.lshep
-        self.lshepval = self.linear_shepard.lshepval
         self.ierrors = {}
         self.radius = radius
         self.x = self.f = self.a = self.rw = None
@@ -41,8 +41,8 @@ class LSHEP(Approximator):
             self.a.append( np.ones(shape=self.x.shape, order="F") )
             self.rw.append( np.ones(shape=(self.x.shape[1],), order="F") )
             # In-place update of self.a and self.rw
-            self.lshep(self.x.shape[0], self.x.shape[1],
-                       self.x, self.f[i], self.a[i], self.rw[i], **kwargs)
+            lshep_mod.lshep(self.x.shape[0], self.x.shape[1],
+                            self.x, self.f[i], self.a[i], self.rw[i], **kwargs)
             # Multiply in the radius modifier.
             self.rw[-1] *= self.radius
 
@@ -60,8 +60,8 @@ class LSHEP(Approximator):
             for (f, a, rw) in zip(self.f, self.a, self.rw):
                 x_pt = np.array(np.reshape(x_pt,(self.x.shape[0],)), order="F")
                 ierr = 0
-                resp = self.lshepval(x_pt, self.x.shape[0], self.x.shape[1], 
-                                     self.x, f, a, rw, ierr)
+                resp = lshep_mod.lshepval(x_pt, self.x.shape[0], self.x.shape[1], 
+                                          self.x, f, a, rw, ierr)
                 self.ierrors[ierr] = self.ierrors.get(ierr, 0) + 1
                 row.append(resp)
             response.append(row)
