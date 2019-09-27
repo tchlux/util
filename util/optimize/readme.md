@@ -1,6 +1,6 @@
 # util.optimize
 
-Function "minimize" uses a meta-heuristic optimization algorithm to solve a global optimization problem given an arbitrary function.
+Numerous optimization utilities for both gradient-free and gradient-based minimization of arbitrary functions.
 
 ##### [`class Tracker`](https://github.com/tchlux/util/blob/master/util/optimize/__init__.py#L23)
 

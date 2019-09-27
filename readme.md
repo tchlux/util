@@ -50,6 +50,8 @@ or class.
 
 #### [`util.optimize`](util/optimize#user-content-utiloptimize)
 
+Numerous optimization utilities for both gradient-free and gradient-based minimization of arbitrary functions.
+
 #### [`util.pairs`](util/pairs#user-content-utilpairs)
 
 #### [`util.parallel`](util/parallel#user-content-utilparallel)
