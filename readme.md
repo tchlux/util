@@ -60,6 +60,8 @@ Numerous optimization utilities for both gradient-free and gradient-based minimi
 
 #### [`util.math`](util/math#user-content-utilmath)
 
+Miscellaneous mathematics-related functions. The most notable codes are a [`Fraction`](util/math/fraction.py#L24) rational number implementation in pure python with unlimited precision, and codes that identify and construct [`Fekete`](util/math/points.py#L106) points.
+
 #### [`util.stats`](util/stats#user-content-utilstats)
 
 #### [`util.pairs`](util/pairs#user-content-utilpairs)
