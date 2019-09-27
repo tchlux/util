@@ -38,29 +38,29 @@ web-accessible documentation for this code. The most up-to-date
 documentation will always be in the comment block preceding a function
 or class.
 
-#### [util.approximate](util/approximate#user-content-utilapproximate)
+#### [`util.approximate`](util/approximate#user-content-utilapproximate)
 
-#### [util.data](util/data#user-content-utildata)
+#### [`util.data`](util/data#user-content-utildata)
 
-#### [util.decorators](util/decorators#user-content-utildecorators)
+#### [`util.decorators`](util/decorators#user-content-utildecorators)
 
-#### [util.math](util/math#user-content-utilmath)
+#### [`util.math`](util/math#user-content-utilmath)
 
-#### [util.misc](util/misc#user-content-utilmisc)
+#### [`util.misc`](util/misc#user-content-utilmisc)
 
-#### [util.optimize](util/optimize#user-content-utiloptimize)
+#### [`util.optimize`](util/optimize#user-content-utiloptimize)
 
-#### [util.pairs](util/pairs#user-content-utilpairs)
+#### [`util.pairs`](util/pairs#user-content-utilpairs)
 
-#### [util.parallel](util/parallel#user-content-utilparallel)
+#### [`util.parallel`](util/parallel#user-content-utilparallel)
 
-#### [util.plot](util/plot#user-content-utilplot)
+#### [`util.plot`](util/plot#user-content-utilplot)
 
-#### [util.points](util/points#user-content-utilpoints)
+#### [`util.points`](util/points#user-content-utilpoints)
 
-#### [util.random](util/random#user-content-utilrandom)
+#### [`util.random`](util/random#user-content-utilrandom)
 
-#### [util.stats](util/stats#user-content-utilstats)
+#### [`util.stats`](util/stats#user-content-utilstats)
 
-#### [util.system](util/system#user-content-utilsystem)
+#### [`util.system`](util/system#user-content-utilsystem)
 
