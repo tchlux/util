@@ -61,5 +61,25 @@ Given a `Plot` object (from [`util.plot`](../plot#user-content-utilapproximate))
 
 ## [`util.stats.rank`](rank.py)
 
+#### [`def insert_sorted`](rank.py#L6)
+
+Insert a value into a sorted list of tuples (defaults to looking at the last element of the tuple). Maintains sorted order after insert.
+
+#### [`def product`](rank.py#L22)
+
+Compute the product of all values in an iterable.
+
+#### [`def rank_probability`](rank.py#L51)
+
+Given a target list of numbers (empirical distribution `A`) and a list of lists of numbers (empirical distributions `B1`, `B2`, ...), determine the probability that items from the target list will have rank `k` when selecting randomly (assuming order doesn't matter). AKA, return the probability that a random draw from (`A`, `B1`, `B2`, ... ) leaves the value from `A` in position `k`.
+
+#### [`def performance_profile`](rank.py#L135)
+
+Returns the proportion of items from a list are less than or equal to a value.
+
+#### [`def data_profile`](rank.py#L143)
+
+Computes the data profiles for a given set of performances. This is the likelihood that the performance is within some factor of the best possible performance.
+
 ## [`util.stats.samples`](samples.py)
 

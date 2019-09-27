@@ -8,8 +8,8 @@ from itertools import combinations
 #       for sorting
 # Post: A binary search over the indexable is performed and "value" is
 #       inserted in a sorted order left of anything with equal key,
-#       "key" defaults to sorting by the last element of "value"
-def insert_sorted(indexable, value, key=lambda i:i[-1]):
+#       "key" defaults to sorting by direct element value comparison.
+def insert_sorted(indexable, value, key=lambda i:i):
     low = 0
     high = len(indexable)
     index = (low + high) // 2
