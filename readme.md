@@ -50,6 +50,8 @@ Numerous optimization utilities for both gradient-free and gradient-based minimi
 
 #### [`util.stats`](util/stats#user-content-utilstats)
 
+All sorts of useful statistics, mostly nonparametric. Compute [effect](util/stats/difference.py#L78), fit [CDF's](util/stats/distributions.py#L119), compute [metric principle components](util/stats/metric_pca.py#L50), [rank probability](util/stats/rank.py#L51), or quantify [sample statistics](util/stats/samples.py#L46).
+
 #### [`util.random`](util/random#user-content-utilrandom)
 
 #### [`util.parallel`](util/parallel#user-content-utilparallel)
