@@ -26,7 +26,7 @@ pip install https://github.com/tchlux/util/archive/1.0.16.zip
   Current cutting edge, (possibly unstable) code available by:
 
 ```bash
-pip install https://github.com/tchlux/util.git
+pip install git+https://github.com/tchlux/util.git
 ```
 
 ## ABOUT

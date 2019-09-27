@@ -1,7 +1,7 @@
 import numpy as np
 from util.approximate import WeightedApproximator
 from util.math import is_none, abs_diff
-from util.approximate.nearest_neighbor.bt import BallTree
+from balltree import BallTree
 # from sklearn.neighbors import BallTree
 
 # Construct an approximation algorithm that only returns the average
