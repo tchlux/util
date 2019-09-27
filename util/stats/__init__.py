@@ -1,16 +1,3 @@
-import os
-from util.math import abs_diff, SMALL
-from util.random import pairs
-
-# Import "numpy" by modifying the system path to remove conflicts.
-import sys
-_ = []
-for i in range(len(sys.path)-1,-1,-1):
-    if "util/util" in sys.path[i]: _ = [sys.path.pop(i)] + _
-import numpy as np
-sys.path = _ + sys.path
-
-
 # Import all of the submodules so that users can access all from "util.stats".
 from util.stats.rank          import *
 from util.stats.ks            import *
@@ -34,6 +21,7 @@ def pdf_fit_func(*args, **kwargs):
 
 # ../../development/testing/test_stats.py 
 if __name__ == "__main__":
+    import numpy as np
     from util.random import cdf
     np.random.seed(1)
     data = cdf()

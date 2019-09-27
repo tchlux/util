@@ -30,7 +30,7 @@ pip install git+https://github.com/tchlux/util.git
 util@https://github.com/tchlux/util/archive/1.0.17.zip
 ```
 
-## MODULES
+## DOCUMENTATION
 
 The following list links to each module within the `util` package. This serves as the web-accessible documentation for the code. If this documentation seems wrong, the most up-to-date documentation is in the comment block preceding a function or class.
 
@@ -60,7 +60,7 @@ Numerous optimization utilities for both gradient-free and gradient-based minimi
 
 #### [`util.math`](util/math#user-content-utilmath)
 
-Miscellaneous mathematics-related functions. The most notable codes are a [`Fraction`](util/math/fraction.py#L24) rational number implementation in pure python with unlimited precision, and codes that identify and construct [`Fekete`](util/math/points.py#L106) points.
+Miscellaneous mathematics-related functions. The most notable codes are a [`Fraction`](util/math/fraction.py#L24) rational number implementation in pure python with unlimited precision, and codes that identify and construct [Fekete points](util/math/points.py#L106).
 
 #### [`util.stats`](util/stats#user-content-utilstats)
 
