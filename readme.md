@@ -31,7 +31,7 @@ pip install git+https://github.com/tchlux/util.git
 
 ## CONTENTS
 
-### [util.approximate](util/util/approximate/readme.md)
+### [util.approximate](util/approximate/readme.md)
 
 Classes for many different approximation algorithms. Contains wrappers for converting pure approximators (numeric outputs) to classifiers.
 
