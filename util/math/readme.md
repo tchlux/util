@@ -64,9 +64,12 @@ Return the sorted list of indices that should be used to pick Fekete points from
 
 Given a number of points and dimension, construct and return Fekete points over the unit cube. Uses a polynomial basis to construct the Vandermonde matrix.
 
-## [`util.math.weakly_admissable_meshes`](weakly_admissable_meshes.py)
+## [`util.math.weakly_admissible_meshes`](weakly_admissible_meshes.py)
 
-#### [`def polar_wam`](weakly_admissable_meshes.py#L3)
+#### [`def polar_wam`](weakly_admissible_meshes.py#L3)
 
-#### [`def box_wam`](weakly_admissable_meshes.py#L19)
+A polar weakly admissible mesh, generated using Chebyshev nodes equally distributed around the unit circle.
 
+#### [`def box_wam`](weakly_admissible_meshes.py#L19)
+
+A box weakly admissible mesh, generated using a tensor product of Chebyshev nodes.

@@ -1,6 +1,6 @@
 import numpy as np
 
-# Given "n" points and "d" dimensions, generate a weakly admissable
+# Given "n" points and "d" dimensions, generate a weakly admissible
 # mesh. WARNING: Forced to dimension = 2.
 def polar_wam(n, dimension=2):
     # Initialize points only containing the center.
@@ -16,7 +16,7 @@ def polar_wam(n, dimension=2):
     # Convet the points into a row-vector matrix and shift into the unit box.
     return (np.array(points) + 1) / 2
 
-# Given "n" points and "d" dimensions, generate a weakly admissable
+# Given "n" points and "d" dimensions, generate a weakly admissible
 # mesh. WARNING: Forced to dimension = 2.
 def box_wam(n, dimension=2):
     # Initialize points only containing the center.
