@@ -10,10 +10,10 @@ This class is designed to wrap an objective function and automatically track the
 
 Minimize arbitrary objective function given an initial solution and optionally given bounds, max computation time, minimum number of steps, or a minimum improvement stopping criteria.
 
-<hr><code><a href="https://github.com/tchlux/util/blob/master/util/optimize/newton.py#L1">util.optimize.zero</a></code></h4>
+<h5><code><a href="https://github.com/tchlux/util/blob/master/util/optimize/newton.py#L1">util.optimize.zero</a></code></h4>
 
 An implementation of the Newton secant method for one-dimensional optimization.
 
-<hr><code><a href="https://github.com/tchlux/util/blob/master/util/optimize/gradient_based.py">util.optimize.gradient_based</a></code></h4>
+<h5><code><a href="https://github.com/tchlux/util/blob/master/util/optimize/gradient_based.py">util.optimize.gradient_based</a></code></h4>
 
 Implementations of the common gradient based optimization algorithms, `SGD` (stochastic gradient descent), `ADAGRAD` (adaptive gradient descent), `ADAM` (adaptive moment estimation), and `L_BFGS` (Limited memory Broyden-Fletcher-Goldfarb-Shanno, through scipy).
