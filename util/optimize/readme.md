@@ -1,4 +1,4 @@
-# `util.optimize`
+<h1 align="center"><code>util.optimize</code></h1>
 
 Numerous optimization utilities for both gradient-free and gradient-based minimization of arbitrary functions.
 
