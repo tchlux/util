@@ -57,7 +57,7 @@ Compute the metric principle components of a set of points with associated value
 
 #### [`def plot_percentiles`](plotting.py#L71)
 
-Given a `Plot` object (from [`util.plot`](../plot#user-content-utilapproximate)), 
+Given a `Plot` object (from [`util.plot`](../plot#user-content-utilapproximate)), add in functions for a "percentile cloud" (shaded regions darker in middle) for stacked y values associated with each x value.
 
 ## [`util.stats.rank`](rank.py)
 
