@@ -10,6 +10,10 @@ This class is designed to wrap an objective function and automatically track the
 
 Minimize arbitrary objective function given an initial solution and optionally given bounds, max computation time, minimum number of steps, or a minimum improvement stopping criteria. Supports optimization with any gradient-free optimization method.
 
+#### [`def zero`](newton.py#L1)
+
+An implementation of the Newton secant method for one-dimensional optimization.
+
 #### [`util.optimize.gradient_free`](gradient_free.py)
 
 Implementations of common gradient free methods of optimization [`Adaptive Normal`](adaptive_normal.py#L3) (quasi simulated annealing), [`AMPGO`](ampgo.py#L4) (adaptive memory programming for gradient-free optimization, `L-BFGS` over a surrogate with tunneling), [`DiRect`](direct.py#L77) (divided rectangles), and [`random`](random.py#L3) (pure random search).
@@ -17,7 +21,3 @@ Implementations of common gradient free methods of optimization [`Adaptive Norma
 #### [`util.optimize.gradient_based`](gradient_based.py)
 
 Implementations of the common gradient based optimization algorithms, [`SGD`](gradient_based.py#L18) (stochastic gradient descent), [`ADAGRAD`](gradient_based.py#L39) (adaptive gradient descent), [`ADAM`](gradient_based.py#L63) (adaptive moment estimation), and [`L_BFGS`](gradient_based.py#L7) (Limited memory Broyden-Fletcher-Goldfarb-Shanno, through scipy).
-
-#### [`util.optimize.zero`](newton.py#L1)
-
-An implementation of the Newton secant method for one-dimensional optimization.

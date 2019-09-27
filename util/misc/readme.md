@@ -33,12 +33,12 @@ Given a matrix (as a `numpy.ndarray`) that has either shape 2 (`(H,W)` gray scal
 
 ## [`util.misc.image`](image.py)
 
-#### [`random_transformation`](image.py#L58)
+#### [`def random_transformation`](image.py#L58)
 
 Apply a random transformation to in image in terms of *perspective* (left to right looking angle), *rotation* (rotation about center point), and *scale* (zoom with alpha fill). Ranges selected subjectively mimic real-world transformations.
 
 ## [`util.misc.paper`](paper.py)
 
-#### [`latex_table`](paper.py#L39)
+#### [`def latex_table`](paper.py#L39)
 
 Generate the text for a latex table block from a two dimensional python list. Emphasize numeric column values based on their sorted index by providing "wrap_" keyword arguments.
