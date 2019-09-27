@@ -34,13 +34,15 @@ util@https://github.com/tchlux/util/archive/1.0.17.zip
 
 The following list links to each module within the `util` package. This serves as the web-accessible documentation for the code. If this documentation seems wrong, the most up-to-date documentation is in the comment block preceding a function or class.
 
+### Big Modules
+
 #### [`util.approximate`](util/approximate#user-content-utilapproximate)
 
 #### [`util.data`](util/data#user-content-utildata)
 
 #### [`util.plot`](util/plot#user-content-utilplot)
 
-----------------------------------------------------------------------
+### Medium Modules
 
 #### [`util.optimize`](util/optimize#user-content-utiloptimize)
 
@@ -54,7 +56,7 @@ Numerous optimization utilities for both gradient-free and gradient-based minimi
 
 #### [`util.decorators`](util/decorators#user-content-utildecorators)
 
-----------------------------------------------------------------------
+### Small Modules
 
 #### [`util.math`](util/math#user-content-utilmath)
 
