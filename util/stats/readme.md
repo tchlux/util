@@ -31,6 +31,18 @@ Fit a PDF (probability density function) to given data. Offers `fit` of `None` (
 
 ## [`util.stats.ks`](ks.py)
 
+#### [`def ks_diff`](ks.py#L7)
+
+Compute the [Kolmogorov-Smirnov](https://en.wikipedia.org/wiki/Kolmogorov–Smirnov_test) statistic between two provided functions, mathematically known as the max-norm difference. Has options for the method of computing the statistic, usually relies on optimization.
+
+#### [`def ks_p_value`](ks.py#L54)
+
+Given a KS statistic and the sample sizes of the two distributions, return the largest confidence with which the two distributions an be said to be the same. More technically, this is the largest confidence for which the null hypothesis (two distributions are same) cannot be refuted.
+
+#### [`normal_confidence`](ks.py#L87)
+
+Return the "confidence" that the provided distribution is normal. Uses the KS statistic and the `ks_p_value` function to compute value.
+
 ## [`util.stats.metric_pca`](metric_pca.py)
 
 ## [`util.stats.modes`](modes.py)
