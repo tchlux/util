@@ -50,7 +50,7 @@ def is_none(v): return type(v) == type(None)
 # 
 # Example:
 #   > choose(10,7)
-#    120
+#   120
 # 
 # Notes:
 #   Raises generic exception for negative input integers.
