@@ -38,29 +38,37 @@ The following list links to each module within the `util` package. This serves a
 
 #### [`util.data`](util/data#user-content-utildata)
 
-#### [`util.decorators`](util/decorators#user-content-utildecorators)
+#### [`util.plot`](util/plot#user-content-utilplot)
 
-#### [`util.math`](util/math#user-content-utilmath)
-
-#### [`util.misc`](util/misc#user-content-utilmisc)
-
-Extensive data splitting for validation, Apriori tree, image transformation, and latex table generation. The stuff that doesn't fit anywhere else ... yet.
+----------------------------------------------------------------------
 
 #### [`util.optimize`](util/optimize#user-content-utiloptimize)
 
 Numerous optimization utilities for both gradient-free and gradient-based minimization of arbitrary functions.
 
-#### [`util.pairs`](util/pairs#user-content-utilpairs)
+#### [`util.random`](util/random#user-content-utilrandom)
 
 #### [`util.parallel`](util/parallel#user-content-utilparallel)
 
-#### [`util.plot`](util/plot#user-content-utilplot)
+#### [`util.system`](util/system#user-content-utilsystem)
 
-#### [`util.points`](util/points#user-content-utilpoints)
+#### [`util.decorators`](util/decorators#user-content-utildecorators)
 
-#### [`util.random`](util/random#user-content-utilrandom)
+----------------------------------------------------------------------
+
+#### [`util.math`](util/math#user-content-utilmath)
 
 #### [`util.stats`](util/stats#user-content-utilstats)
 
-#### [`util.system`](util/system#user-content-utilsystem)
+#### [`util.pairs`](util/pairs#user-content-utilpairs)
+
+#### [`util.misc`](util/misc#user-content-utilmisc)
+
+Extensive data splitting for validation, Apriori tree, image transformation, and latex table generation. The stuff that doesn't fit anywhere else ... yet.
+
+
+
+
+
+
 
