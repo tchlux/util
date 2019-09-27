@@ -1,18 +1,36 @@
 <h1 align="center"><code>util.math</code></h1>
 
-#### [`def flatten`](__init__.py#L10)
-
-#### [`def transpose`](__init__.py#L13)
-
 #### [`def is_numeric`](__init__.py#L16)
+
+`True` if the given object supports multiplication by `int`, `float`, and addition / subtraction.
 
 #### [`def abs_diff`](__init__.py#L23)
 
-#### [`def primes`](__init__.py#L31)
+Function for performing absolute difference between numbers (or vectors). Falls back to equality for things that don't support difference, absolute value, or sums.
 
-#### [`def is_none`](__init__.py#L43)
+#### [`def is_prime`](__init__.py#L33)
 
-#### [`def choose`](__init__.py#L46)
+Return `True` if `n` is prime, `False` otherwise.
+
+#### [`def primes`](__init__.py#L39)
+
+Return a list of tuples of all unique prime factors and multiplicities of `n`.
+
+#### [`def primes_up_to`](__init__.py#L53)
+
+Return all prime numbers up to `n`.
+
+#### [`def choose`](__init__.py#L63)
+
+Compute the value `n choose k` using python integers, no overflow.
+
+#### [`def flatten`](__init__.py#L10)
+
+Given a python list of lists, flatten into a single python list.
+
+#### [`def transpose`](__init__.py#L13)
+
+Given a python list of lists, transpose the lists.
 
 ## [`util.math.fraction`](fraction.py)
 

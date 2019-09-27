@@ -20,7 +20,9 @@ def is_numeric(obj):
         return True
     except: return False
 
-# Function for performing absolute difference between numbers (or vectors).
+# Function for performing absolute difference between numbers (or
+# vectors). Falls back to equality for things that don't support
+# difference, absolute value, or sums.
 def abs_diff(v1, v2):
     if hasattr(v1, "__iter__"):
         try: return sum(abs(v1 - v2))
@@ -28,20 +30,35 @@ def abs_diff(v1, v2):
     try:    return abs(v1 - v2)
     except: return int(v1 == v2)
 
+# Return True if a number is prime, False otherwise.
+def is_prime(n):
+    for i in range(2,int(n**(1/2))+1):
+        if (not (n%i)): return False
+    return True
+
 # Return all unique prime factors of a number in sorted order.
-def primes(num):
+def primes(n):
     factors = {}
     candidate = 2
-    while candidate**2 <= num:
-        while (num % candidate) == 0:
+    while candidate**2 <= n:
+        while (n % candidate) == 0:
             factors[candidate] = factors.get(candidate,0) + 1
-            num //= candidate
+            n //= candidate
         candidate += 1
-    if num > 1: factors[num] = factors.get(num,0) + 1
+    # Store the last remainder if no more primes factors were found.
+    if (n > 1): factors[n] = factors.get(n,0) + 1
+    # Sort all prime factors by their index.
     return sorted((k,factors[k]) for k in factors)
 
-# Check if a variable equals none
-def is_none(v): return type(v) == type(None)
+# Return all primes up to a given number.
+def primes_up_to(n):
+    if   (n <= 0): return []
+    elif (n == 1): return [1]
+    elif (n == 2): return [1,2]
+    prime_numbers = [1,2]
+    for i in range(3, n+1):
+        if is_prime(i): prime_numbers.append( i )
+    return prime_numbers
 
 # Function for calculating (n choose k), more efficiently than
 # using the raw factorials (takes advantage of cancellation).
