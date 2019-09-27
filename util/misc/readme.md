@@ -30,3 +30,15 @@ Construct this class and use the [`mine_items`](apriori.py#L132) method to const
 #### [`def matrix_to_img`](display.py#L9)
 
 Given a matrix (as a `numpy.ndarray`) that has either shape 2 (`(H,W)` gray scale) or shape 3 (`(H,W,3)` color in RGB), convert that matrix to an image with [`PIL`](https://pillow.readthedocs.io/en/stable/). For shape 2 signed matrices, use a color mapping for negative, neutral, and positive colors.
+
+## [`util.misc.image`](image.py)
+
+#### [`random_transformation`](image.py#L58)
+
+Apply a random transformation to in image in terms of *perspective* (left to right looking angle), *rotation* (rotation about center point), and *scale* (zoom with alpha fill). Ranges selected subjectively mimic real-world transformations.
+
+## [`util.misc.paper`](paper.py)
+
+#### [`latex_table`](paper.py#L39)
+
+Generate the text for a latex table block from a two dimensional python list. Emphasize numeric column values based on their sorted index by providing "wrap_" keyword arguments.
