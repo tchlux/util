@@ -83,3 +83,8 @@ Computes the data profiles for a given set of performances. This is the likeliho
 
 ## [`util.stats.samples`](samples.py)
 
+#### [`def samples`](samples.py#L46)
+
+Given optionally a sample size, max error, and confidence, compute whichever of these values was not provided and return it. If all three parameters are given, then return `True` or `False` to determine if that sample meets that criteria.
+
+This estimate is provided distribution free, using only combinatorics. It will not be as strong of an estimate as could be made with a parametric form.
