@@ -1,5 +1,4 @@
-
-# Approximate
+# util.approximate
 
 A module built to provide uniform access to many useful approximation
 techniques. All techniques are written in their regression form,
