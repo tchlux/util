@@ -8,9 +8,9 @@ class FailedCompilation(Warning): pass
 
 # --------------------------------------------------------------------
 try:
-    import util.points
+    import util.math
 except:
-    warnings.warn(FailedCompilation("The `util.points` Fekete module failed to compile. Check `fmodpy` configuration and attempt `import util.points`."))
+    warnings.warn(FailedCompilation("The `util.math` Fekete module failed to compile. Check `fmodpy` configuration and attempt `import util.math`."))
 
 # --------------------------------------------------------------------
 try:

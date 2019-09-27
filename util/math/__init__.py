@@ -1,5 +1,7 @@
 # Make the "Fraction" class available here.
 from util.math.fraction import Fraction
+from util.math.points import mesh, chebyshev, polynomials, \
+    polynomial_indices, fekete_indices, fekete_points
 
 # Useful for checking near-equal cases when roundoff error is involved.
 SMALL = 2**(-26)
