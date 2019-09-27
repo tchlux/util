@@ -1,9 +1,22 @@
 <h1 align="center"><code>util.math</code></h1>
 
+#### [`def flatten`](__init__.py#L10)
+
+#### [`def transpose`](__init__.py#L13)
+
+#### [`def is_numeric`](__init__.py#L16)
+
+#### [`def abs_diff`](__init__.py#L23)
+
+#### [`def primes`](__init__.py#L31)
+
+#### [`def is_none`](__init__.py#L43)
+
+#### [`def choose`](__init__.py#L46)
 
 ## [`util.math.fraction`](fraction.py)
 
-#### [`Fraction`](fraction.py#L24)
+#### [`class Fraction`](fraction.py#L24)
 
 ## [`util.math.points`](points.py)
 
