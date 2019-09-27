@@ -18,4 +18,4 @@ This class is designed to iterate over training and testing data constructed by 
   - `num`   - The numeric identifier of the test file.
 
 
-### [`util.misc.apriori`](util/misc/apriori.py)
+### [`util.misc.apriori`](apriori.py)
