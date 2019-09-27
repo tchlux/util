@@ -32,6 +32,12 @@ pip install git+https://github.com/tchlux/util.git
 
 ## MODULES
 
+The following list links to the `readme.md` files contained within
+each module of the `util` package. This repository serves as the
+web-accessible documentation for this code. The most up-to-date
+documentation will always be in the comment block preceding a function
+or class.
+
 #### [util.approximate](util/approximate#user-content-utilapproximate)
 
 #### [util.data](util/data#user-content-utildata)
