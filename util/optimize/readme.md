@@ -10,6 +10,8 @@ This class is designed to wrap an objective function and automatically track the
 
 Minimize arbitrary objective function given an initial solution and optionally given bounds, max computation time, minimum number of steps, or a minimum improvement stopping criteria. Supports optimization with any gradient-free optimization method.
 
+### [`Code linked?`](https://www.google.com)
+
 <h5><code><a href="https://github.com/tchlux/util/blob/master/util/optimize/gradient_free.py">util.optimize.gradient_free</a></code></h4>
 
 Implementations of common gradient free methods of optimization <code><a href="https://github.com/tchlux/util/blob/master/util/optimize/adaptive_normal.py#L3">Adaptive Normal</a></code> (quasi simulated annealing), <code><a href="https://github.com/tchlux/util/blob/master/util/optimize/ampgo.py#L4">AMPGO</a></code> (adaptive memory programming for gradient-free optimization, `L-BFGS` over a surrogate with tunneling), <code><a href="https://github.com/tchlux/util/blob/master/util/optimize/direct.py#L77">DiRect</a></code> (divided rectangles), and <code><a href="https://github.com/tchlux/util/blob/master/util/optimize/random.py#L3">random</a></code> (pure random search).
