@@ -29,11 +29,9 @@ pip install https://github.com/tchlux/util/archive/1.0.16.zip
 pip install git+https://github.com/tchlux/util.git
 ```
 
-## ABOUT
+## CONTENTS
 
-Contains various useful utilities.
-
-### util.approximate
+### [util.approximate](util/approximate/readme.md)
 
 Classes for many different approximation algorithms. Contains wrappers for converting pure approximators (numeric outputs) to classifiers.
 
