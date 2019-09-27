@@ -2,24 +2,22 @@
 
 Function "minimize" uses a meta-heuristic optimization algorithm to solve a global optimization problem given an arbitrary function.
 
-<h5><code><a href="https://github.com/tchlux/util/blob/master/util/optimize/__init__.py#L23"><font color="black">class Tracker</font></a></code></h4>
+##### [`class Tracker`](https://github.com/tchlux/util/blob/master/util/optimize/__init__.py#L23)
 
 This class is designed to wrap an objective function and automatically track the amount of time spent optimizing, number of evaluations, objective function values, and improvement rates. It's primary purpose is to provide the `Tracker.check` method (to be used as if an objective function) and the `Tracker.done` method which returns `True` or `False` based on initialization stopping criteria. Finally, the `Tracker` provides visualizations and printouts of improvement in performance.
 
-<h5><code><a href="https://github.com/tchlux/util/blob/master/util/optimize/__init__.py#L124">def minimize</a></code></h4>
+##### [`def minimize`](https://github.com/tchlux/util/blob/master/util/optimize/__init__.py#L124)</h4>
 
 Minimize arbitrary objective function given an initial solution and optionally given bounds, max computation time, minimum number of steps, or a minimum improvement stopping criteria. Supports optimization with any gradient-free optimization method.
 
-### [`Code linked?`](https://www.google.com)
+##### [`util.optimize.gradient_free`](https://github.com/tchlux/util/blob/master/util/optimize/gradient_free.py)
 
-<h5><code><a href="https://github.com/tchlux/util/blob/master/util/optimize/gradient_free.py">util.optimize.gradient_free</a></code></h4>
+Implementations of common gradient free methods of optimization [`Adaptive Normal`](https://github.com/tchlux/util/blob/master/util/optimize/adaptive_normal.py#L3) (quasi simulated annealing), [`AMPGO`](https://github.com/tchlux/util/blob/master/util/optimize/ampgo.py#L4) (adaptive memory programming for gradient-free optimization, `L-BFGS` over a surrogate with tunneling), [`DiRect`](https://github.com/tchlux/util/blob/master/util/optimize/direct.py#L77) (divided rectangles), and [`random`](https://github.com/tchlux/util/blob/master/util/optimize/random.py#L3) (pure random search).
 
-Implementations of common gradient free methods of optimization <code><a href="https://github.com/tchlux/util/blob/master/util/optimize/adaptive_normal.py#L3">Adaptive Normal</a></code> (quasi simulated annealing), <code><a href="https://github.com/tchlux/util/blob/master/util/optimize/ampgo.py#L4">AMPGO</a></code> (adaptive memory programming for gradient-free optimization, `L-BFGS` over a surrogate with tunneling), <code><a href="https://github.com/tchlux/util/blob/master/util/optimize/direct.py#L77">DiRect</a></code> (divided rectangles), and <code><a href="https://github.com/tchlux/util/blob/master/util/optimize/random.py#L3">random</a></code> (pure random search).
+##### [`util.optimize.gradient_based`](https://github.com/tchlux/util/blob/master/util/optimize/gradient_based.py)
 
-<h5><code><a href="https://github.com/tchlux/util/blob/master/util/optimize/gradient_based.py">util.optimize.gradient_based</a></code></h4>
+Implementations of the common gradient based optimization algorithms, [`SGD`](https://github.com/tchlux/util/blob/master/util/optimize/gradient_based.py#L18) (stochastic gradient descent), [`ADAGRAD`](https://github.com/tchlux/util/blob/master/util/optimize/gradient_based.py#L39) (adaptive gradient descent), [`ADAM`](https://github.com/tchlux/util/blob/master/util/optimize/gradient_based.py#L63) (adaptive moment estimation), and [`L_BFGS`](https://github.com/tchlux/util/blob/master/util/optimize/gradient_based.py#L7) (Limited memory Broyden-Fletcher-Goldfarb-Shanno, through scipy).
 
-Implementations of the common gradient based optimization algorithms, <code><a href="https://github.com/tchlux/util/blob/master/util/optimize/gradient_based.py#L18">SGD</a></code> (stochastic gradient descent), <code><a href="https://github.com/tchlux/util/blob/master/util/optimize/gradient_based.py#L39">ADAGRAD</a></code> (adaptive gradient descent), <code><a href="https://github.com/tchlux/util/blob/master/util/optimize/gradient_based.py#L63">ADAM</a></code> (adaptive moment estimation), and <code><a href="https://github.com/tchlux/util/blob/master/util/optimize/gradient_based.py#L7">L_BFGS</a></code> (Limited memory Broyden-Fletcher-Goldfarb-Shanno, through scipy).
-
-<h5><code><a href="https://github.com/tchlux/util/blob/master/util/optimize/newton.py#L1">util.optimize.zero</a></code></h4>
+##### [`util.optimize.zero`](https://github.com/tchlux/util/blob/master/util/optimize/newton.py#L1)
 
 An implementation of the Newton secant method for one-dimensional optimization.
