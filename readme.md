@@ -44,6 +44,8 @@ The following list links to each module within the `util` package. This serves a
 
 #### [`util.misc`](util/misc#user-content-utilmisc)
 
+Extensive data splitting for validation, Apriori tree, image transformation, and latex table generation. The stuff that doesn't fit anywhere else ... yet.
+
 #### [`util.optimize`](util/optimize#user-content-utiloptimize)
 
 Numerous optimization utilities for both gradient-free and gradient-based minimization of arbitrary functions.
