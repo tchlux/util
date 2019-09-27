@@ -10,10 +10,6 @@ This class is designed to wrap an objective function and automatically track the
 
 Minimize arbitrary objective function given an initial solution and optionally given bounds, max computation time, minimum number of steps, or a minimum improvement stopping criteria.
 
-<h5><code><a href="https://github.com/tchlux/util/blob/master/util/optimize/newton.py#L1">util.optimize.zero</a></code></h4>
-
-An implementation of the Newton secant method for one-dimensional optimization.
-
 <h5><code><a href="https://github.com/tchlux/util/blob/master/util/optimize/gradient_free.py">util.optimize.gradient_free</a></code></h4>
 
 Implementations of common gradient free methods of optimization <code><a href="https://github.com/tchlux/util/blob/master/util/optimize/adaptive_normal.py#L3">Adaptive Normal</a></code> (quasi simulated annealing), <code><a href="https://github.com/tchlux/util/blob/master/util/optimize/ampgo.py#L4">AMPGO</a></code> (adaptive memory programming for gradient-free optimization, `L-BFGS` over a surrogate with tunneling), <code><a href="https://github.com/tchlux/util/blob/master/util/optimize/direct.py#L77">DiRect</a></code> (divided rectangles), and <code><a href="https://github.com/tchlux/util/blob/master/util/optimize/random.py#L3">random</a></code> (pure random search).
@@ -21,3 +17,7 @@ Implementations of common gradient free methods of optimization <code><a href="h
 <h5><code><a href="https://github.com/tchlux/util/blob/master/util/optimize/gradient_based.py">util.optimize.gradient_based</a></code></h4>
 
 Implementations of the common gradient based optimization algorithms, <code><a href="https://github.com/tchlux/util/blob/master/util/optimize/gradient_based.py#L18">SGD</a></code> (stochastic gradient descent), <code><a href="https://github.com/tchlux/util/blob/master/util/optimize/gradient_based.py#L39">ADAGRAD</a></code> (adaptive gradient descent), <code><a href="https://github.com/tchlux/util/blob/master/util/optimize/gradient_based.py#L63">ADAM</a></code> (adaptive moment estimation), and <code><a href="https://github.com/tchlux/util/blob/master/util/optimize/gradient_based.py#L7">L_BFGS</a></code> (Limited memory Broyden-Fletcher-Goldfarb-Shanno, through scipy).
+
+<h5><code><a href="https://github.com/tchlux/util/blob/master/util/optimize/newton.py#L1">util.optimize.zero</a></code></h4>
+
+An implementation of the Newton secant method for one-dimensional optimization.
