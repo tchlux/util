@@ -68,7 +68,7 @@ Miscellaneous mathematics-related functions. The most notable codes are a [`Frac
 
 #### [`util.misc`](util/misc#user-content-utilmisc)
 
-Extensive data splitting for validation, Apriori tree, image transformation, and latex table generation. The stuff that doesn't fit anywhere else ... yet.
+Extensive [data splitting for validation](util/misc/multi_dim_analysis.py#L152), [Apriori tree](util/misc/apriori.py#L17), [image transformation](util/misc/image.py#L58), and [latex table generation](util/misc/paper.py#L39). The stuff that doesn't fit anywhere else ... yet.
 
 
 
