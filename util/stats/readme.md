@@ -49,7 +49,7 @@ Return the "confidence" that the provided distribution is normal. Uses the KS st
 
 Use `sklearn` to compute the principle components of a matrix of row-vectors. Return the components and their magnitudes.
 
-#### [`def mpca`](metric_pca.py#L79)
+#### [`def mpca`](metric_pca.py#L50)
 
 Compute the metric principle components of a set of points with associated values and a given metric. Scale all vectors between points by the magnitude difference between associated values. Use `sklearn` to compute the principle components of these metric between vectors. Return the vectors and their magnitudes.
 
