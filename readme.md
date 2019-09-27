@@ -7,10 +7,7 @@ A machine learning, optimization, and data science utilities
 package.
 </p>
 
-This is a huge ongoing project that I use for all of my work. Pretty
-much every new algorithm I implement will start here. I do my best
-to keep it organized and readable. Once things are thoroughly polished
-(and presumed generally useful), I turn them into their own python
+This is a huge ongoing project that I use for all of my work. Pretty much every new algorithm I implement will start here. I do my best to keep it organized and readable. Once things are thoroughly polished (and presumed generally useful), I turn them into their own python
 modules.
 
 ## INSTALLATION:
@@ -36,11 +33,7 @@ util@https://github.com/tchlux/util/archive/1.0.17.zip
 
 ## MODULES
 
-The following list links to the `readme.md` files contained within
-each module of the `util` package. This repository serves as the
-web-accessible documentation for this code. The most up-to-date
-documentation will always be in the comment block preceding a function
-or class.
+The following list links to the `readme.md` files contained within each module of the `util` package. This repository serves as the web-accessible documentation for this code. If this documentation seems wrong, the most up-to-date documentation is in the comment block preceding a function or class.
 
 #### [`util.approximate`](util/approximate#user-content-utilapproximate)
 
