@@ -1,8 +1,8 @@
-# util.misc
+# `util.misc`
 
 The [island of misfit toys](https://www.youtube.com/watch?v=Gr6GbKciNCY). One day these functions will find a deserving home, until now they wait here.
 
-### [`util.misc.multi_dim_analysis`](multi_dim_analysis.py)
+## [`util.misc.multi_dim_analysis`](multi_dim_analysis.py)
 
 ##### [`make_test_data`](multi_dim_analysis.py#L152)
 
@@ -18,4 +18,4 @@ This class is designed to iterate over training and testing data constructed by 
   - `num`   - The numeric identifier of the test file.
 
 
-### [`util.misc.apriori`](apriori.py)
+## [`util.misc.apriori`](apriori.py)

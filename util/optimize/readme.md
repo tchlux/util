@@ -1,4 +1,4 @@
-# util.optimize
+# `util.optimize`
 
 Numerous optimization utilities for both gradient-free and gradient-based minimization of arbitrary functions.
 
