@@ -2,7 +2,7 @@
 
 Function "minimize" uses a meta-heuristic optimization algorithm to solve a global optimization problem given an arbitrary function.
 
-#### (class Tracker)[https://github.com/tchlux/util/blob/master/util/optimize/__init__.py#L23]
+#### [class Tracker](https://github.com/tchlux/util/blob/master/util/optimize/__init__.py#L23)
 
 
 <h4><code><a href="https://github.com/tchlux/util/blob/master/util/optimize/__init__.py#L23">class Tracker</a></code></h4>
