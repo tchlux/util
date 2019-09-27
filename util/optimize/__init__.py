@@ -4,10 +4,8 @@ import numpy as np
 # Algorithm for one-dimensional optimization.
 from util.optimize.newton import Secant as zero
 # Algorithms for multi-dimensional optimization.
-from util.optimize.ampgo import AMPGO
-from util.optimize.adaptive_normal import AdaptiveNormal
-from util.optimize.direct import DiRect
-from util.optimize.random import Random
+from util.optimize.gradient_free import AMPGO, AdaptiveNormal, DiRect, Random
+from util.optimize.gradient_based import L_BFGS, SGD, ADAGRAD, ADAM
 
 # Optimization default settings.
 DEFAULT_SEARCH_SIZE = 2.0**(10)
@@ -15,7 +13,6 @@ DEFAULT_MAX_TIME_SEC = 2.0**(-1)
 DEFAULT_MIN_STEPS = 10
 DEFAULT_MAX_STEPS = 10000
 DEFAULT_MIN_IMPROVEMENT = 0.0
-
 
 # Tracker settings.
 CHECKPOINT_FILE = "optimization_checkpoint.py"
