@@ -8,7 +8,7 @@ This class is designed to wrap an objective function and automatically track the
 
 <h5><code><a href="https://github.com/tchlux/util/blob/master/util/optimize/__init__.py#L124">def minimize</a></code></h4>
 
-Minimize arbitrary objective function given an initial solution and optionally given bounds, max computation time, minimum number of steps, or a minimum improvement stopping criteria.
+Minimize arbitrary objective function given an initial solution and optionally given bounds, max computation time, minimum number of steps, or a minimum improvement stopping criteria. Supports optimization with any gradient-free optimization method.
 
 <h5><code><a href="https://github.com/tchlux/util/blob/master/util/optimize/gradient_free.py">util.optimize.gradient_free</a></code></h4>
 
