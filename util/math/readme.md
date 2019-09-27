@@ -36,19 +36,33 @@ Given a python list of lists, transpose the lists.
 
 #### [`class Fraction`](fraction.py#L24)
 
+This is a rational number representation that supports all the standard operators. It uses python integers (no overflow) under the hood and has a `float` fallback for interactions with numbers that are not `Fraction` or `int` typed.
+
 ## [`util.math.points`](points.py)
 
 #### [`def chebyshev`](points.py#L9)
 
+The classical optimally-spaced points in one dimension over an interval for polynomial interpolation.
+
 #### [`def mesh`](points.py#L22)
+
+Create a full tensor product of all provided input lists. If a `sample` number is provided, then a random sample is drawn from the full tensor product.
 
 #### [`def polynomials`](points.py#L62)
 
+Construct the list of all polynomial functions in a given dimension up to a specified degree. I.e. in three dimensions, up to degree two would return `[x, y, z, xx, yy, zz, xy, xz, yz]`.
+
 #### [`def polynomial_indices`](points.py#L75)
+
+Similar to `polynomials`, but returns the list of degrees and the list of indices from vectors used by polynomials up to the selected degree in the given dimension.
 
 #### [`def fekete_indices`](points.py#L91)
 
+Return the sorted list of indices that should be used to pick Fekete points from a set. This is computed by QR column pivoting.
+
 #### [`def fekete_points`](points.py#L106)
+
+Given a number of points and dimension, construct and return Fekete points over the unit cube. Uses a polynomial basis to construct the Vandermonde matrix.
 
 ## [`util.math.weakly_admissable_meshes`](weakly_admissable_meshes.py)
 
