@@ -1,5 +1,7 @@
 <h1 align="center"><code>util.math</code></h1>
 
+Miscellaneous mathematics-related functions. The most notable codes are a `Fraction` rational number implementation in pure python with unlimited precision, and codes that identify and construct [`Fekete`](points.py#L106) points.
+
 #### [`def is_numeric`](__init__.py#L16)
 
 `True` if the given object supports multiplication by `int`, `float`, and addition / subtraction.
