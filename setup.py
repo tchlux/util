@@ -72,5 +72,5 @@ if __name__ == "__main__":
 # 
 # Include external requirements in a `requirements.txt` file like:
 #  
-#   packager @ https://github.com/tchlux/packager/archive/1.0.0.zip @ 1.0.0
+#   packager @ https://github.com/tchlux/packager/archive/1.0.0.zip
 # 

@@ -8,7 +8,7 @@ package.
 </p>
 
 This is a huge ongoing project that I use for all of my work. Pretty
-much every new algorithm I come up with will start here. I do my best
+much every new algorithm I implement will start here. I do my best
 to keep it organized and readable. Once things are thoroughly polished
 (and presumed generally useful), I turn them into their own python
 modules.
@@ -19,13 +19,19 @@ modules.
   on PyPi):
 
 ```bash
-pip install https://github.com/tchlux/util/archive/1.0.16.zip
+pip install https://github.com/tchlux/util/archive/1.0.17.zip
 ```
 
   Current cutting edge, (possibly unstable) code available by:
 
 ```bash
 pip install git+https://github.com/tchlux/util.git
+```
+
+  Include in a `requirements.txt` file as:
+
+```
+util@https://github.com/tchlux/util/archive/1.0.17.zip
 ```
 
 ## MODULES
