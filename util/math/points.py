@@ -1,4 +1,3 @@
-
 # Compile and build the fekete point generation code.
 import os, fmodpy
 CWD = os.path.dirname(os.path.abspath(__file__))
@@ -88,7 +87,6 @@ def polynomial_indices(degree=1, dimension=1):
             indices.append( list(group) + [-1] * (degree - deg) )
     return ( np.asfortranarray(np.array(degrees, dtype=int)),
              np.asfortranarray(np.array(indices, dtype=int).T) )
-
 
 # Construct Fekete points over the unit box. This operation will
 # destroy the contents of "vmt" (Vandermonde matrix transpose).
