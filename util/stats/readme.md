@@ -39,11 +39,19 @@ Compute the [Kolmogorov-Smirnov](https://en.wikipedia.org/wiki/Kolmogorov–Smir
 
 Given a KS statistic and the sample sizes of the two distributions, return the largest confidence with which the two distributions an be said to be the same. More technically, this is the largest confidence for which the null hypothesis (two distributions are same) cannot be refuted.
 
-#### [`normal_confidence`](ks.py#L87)
+#### [`def normal_confidence`](ks.py#L87)
 
 Return the "confidence" that the provided distribution is normal. Uses the KS statistic and the `ks_p_value` function to compute value.
 
 ## [`util.stats.metric_pca`](metric_pca.py)
+
+#### [`def pca`](metric_pca.py#L79)
+
+Use `sklearn` to compute the principle components of a matrix of row-vectors. Return the components and their magnitudes.
+
+#### [`def mpca`](metric_pca.py#L79)
+
+Compute the metric principle components of a set of points with associated values and a given metric. Scale all vectors between points by the magnitude difference between associated values. Use `sklearn` to compute the principle components of these metric between vectors. Return the vectors and their magnitudes.
 
 ## [`util.stats.modes`](modes.py)
 
