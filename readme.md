@@ -4,7 +4,7 @@
 
 <p align="center">
 A machine learning, optimization, and data science utilities
-package. Almost all the useful code I write starts here.
+package.
 </p>
 
 This is a huge ongoing project that I use for all of my work. Pretty
