@@ -12,8 +12,8 @@ modules.
 
 ## INSTALLATION:
 
-  Latest stable and tested release available by (sorry `util` is taken
-  on PyPi):
+  Latest stable and tested release available by (sorry, `util` is taken
+  on PyPi `:P`):
 
 ```bash
 pip install https://github.com/tchlux/util/archive/1.0.17.zip
