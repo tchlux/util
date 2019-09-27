@@ -32,7 +32,7 @@ util@https://github.com/tchlux/util/archive/1.0.17.zip
 
 ## MODULES
 
-The following list links to the `readme.md` files contained within each module of the `util` package. This repository serves as the web-accessible documentation for this code. If this documentation seems wrong, the most up-to-date documentation is in the comment block preceding a function or class.
+The following list links to each module within the `util` package. This serves as the web-accessible documentation for the code. If this documentation seems wrong, the most up-to-date documentation is in the comment block preceding a function or class.
 
 #### [`util.approximate`](util/approximate#user-content-utilapproximate)
 
