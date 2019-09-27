@@ -13,6 +13,22 @@ Compute the effect between two sequences. Use the following:
 
 ## [`util.stats.distributions`](distributions.py)
 
+#### [`class Distribution`](distributions.py#L7)
+
+A class for handling standard operators over distributions. It supports addition with another distribution, subtraction from another distribution (KS statistic), and multiplication by a constant.
+
+#### [`def gauss_smooth`](distributions.py#L68)
+
+Produce a new function that uses a normal distribution to weight nearby function values. Only works for 1-dimensional distributions.
+
+#### [`def cdf_fit`](distributions.py#L119)
+
+Fit a CDF (cumulative distribution function) to given data. Offers `fit` of `None` (piecewise constant), `linear` (interpolation), and `cubic` (interpolation) options.
+
+#### [`def pdf_fit`](distributions.py#L280)
+
+Fit a PDF (probability density function) to given data. Offers `fit` of `None` (piecewise constant), `linear` (interpolation), and `cubic` (interpolation) options. By default, it uses Gaussian smoothing over the CDF.
+
 ## [`util.stats.ks`](ks.py)
 
 ## [`util.stats.metric_pca`](metric_pca.py)
