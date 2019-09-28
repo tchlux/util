@@ -52,6 +52,12 @@ Numerous optimization utilities for both gradient-free and gradient-based minimi
 
 All sorts of useful statistics, mostly nonparametric. Compute [effect](util/stats/difference.py#L78), fit [CDF's](util/stats/distributions.py#L119), compute [metric principle components](util/stats/metric_pca.py#L50), [rank probability](util/stats/rank.py#L51), or quantify [sample statistics](util/stats/samples.py#L46).
 
+#### [`util.math`](util/math#user-content-utilmath)
+
+Miscellaneous mathematics-related functions. The most notable codes are a [`Fraction`](util/math/fraction.py#L24) rational number implementation in pure python with unlimited precision, and codes that identify and construct [Fekete points](util/math/points.py#L106).
+
+## Small Modules
+
 #### [`util.random`](util/random#user-content-utilrandom)
 
 #### [`util.parallel`](util/parallel#user-content-utilparallel)
@@ -59,12 +65,6 @@ All sorts of useful statistics, mostly nonparametric. Compute [effect](util/stat
 #### [`util.system`](util/system#user-content-utilsystem)
 
 #### [`util.decorators`](util/decorators#user-content-utildecorators)
-
-## Small Modules
-
-#### [`util.math`](util/math#user-content-utilmath)
-
-Miscellaneous mathematics-related functions. The most notable codes are a [`Fraction`](util/math/fraction.py#L24) rational number implementation in pure python with unlimited precision, and codes that identify and construct [Fekete points](util/math/points.py#L106).
 
 #### [`util.misc`](util/misc#user-content-utilmisc)
 
