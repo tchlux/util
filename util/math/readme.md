@@ -75,3 +75,6 @@ A polar weakly admissible mesh, generated using Chebyshev nodes equally distribu
 #### [`def box_wam`](weakly_admissible_meshes.py#L19)
 
 A box weakly admissible mesh, generated using a tensor product of Chebyshev nodes.
+
+## [`util.math.pairs`](pairs.py)
+
