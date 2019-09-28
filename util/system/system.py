@@ -201,9 +201,9 @@ except ModuleNotFoundError:
         msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, file_size(f))
 
 
-# Class for ensuring that all file operations are atomic, treat
-# initialization like a standard call to 'open' that happens to be
-# atomic, must be used in a "with" block.
+# Class for ensuring that all file operations are atomic. Treat
+# initialization like a standard call to `open` that happens to be
+# atomic, must be used in a `with` block.
 class AtomicOpen:
     # First acquire a lock for the file, then open the file with
     # arguments provided by user. Attempts to inherit most of the file
@@ -233,7 +233,7 @@ class AtomicOpen:
 
 
 # Class for timing operations. Initialize to start, call to check, use
-# the "start" and "stop" attributes / functions to observe / set.
+# the `start` and `stop` methods / attributes to set / observe values.
 class Timer:
     #-----------------------------------------------------------------
     #                            Private
