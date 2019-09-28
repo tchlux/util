@@ -68,6 +68,8 @@ Provides a parallelized implementation of the builtin Python [`map`](util/parall
 
 #### [`util.system`](util/system#user-content-utilsystem)
 
+Function [`run`](util/system/system.py#L146) is a (python+OS)-safe interface to command-line execution that cleanly handles errors. Class [`AtomicOpen`](util/system/system.py#L181) provides an atomic file operation class that uses system locking mechanisms to enforce atomic operations on files. Also provides a robust [`hash`](util/system/system.py#L1) function, easy-to-use [`save`](util/system/system.py#L24) / [`load`](util/system/system.py#L36) functions, and a [`Timer`](util/system/system.py#L235) object.
+
 #### [`util.decorators`](util/decorators#user-content-utildecorators)
 
 #### [`util.misc`](util/misc#user-content-utilmisc)
