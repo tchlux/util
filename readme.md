@@ -72,7 +72,7 @@ Function [`run`](util/system/system.py#L146) is a (python+OS)-safe interface to 
 
 #### [`util.decorators`](util/decorators#user-content-utildecorators)
 
-Miscellaneous useful function decorators (the `@<decorator>` on lines before `def` in code). Alias a function with [`same_as`](util/decorators/decorators.py#L24), [`cache`](util/decorators/decorators.py#L71) function calls, [`capture`](util/decorators/decorators.py#L423) outputs, and run functions in the [`background`](util/decorators/decorators.py#526).
+Miscellaneous useful function decorators (the `@<decorator>` on lines before `def` in code). Alias a function with [`same_as`](util/decorators/decorators.py#L24), [`cache`](util/decorators/decorators.py#L71) function calls, [`capture`](util/decorators/decorators.py#L423) standard outputs, and run functions in the [`background`](util/decorators/decorators.py#526).
 
 #### [`util.misc`](util/misc#user-content-utilmisc)
 
