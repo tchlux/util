@@ -160,9 +160,6 @@ def same_as(to_copy, mention_usage=False):
     return decorator_handler
 
 
-#      Class for building a plotly plot     
-# ==========================================
-# 
 # Class that serves as an interface to the standard "data & layout"
 # containers that need to be managed in order to produce Plotly plots.
 # This class uses the offline modes of plotly to produce local HTML

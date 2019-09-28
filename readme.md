@@ -50,7 +50,7 @@ Miscellaneous mathematics-related functions. The most notable codes are a [`Frac
 
 #### [`util.optimize`](util/optimize#user-content-utiloptimize)
 
-Numerous optimization utilities for both gradient-free ([`Adaptive Normal`](util/optimize/adaptive_normal.py#L3), [`DiRect`](util/optimize/direct.py#L77), [`random`](util/optimize/random.py#L3)) and gradient-based ([`SGD`](util/optimize/gradient_based.py#L18), [`ADAM`](util/optimize/gradient_based.py#L63), [`L_BFGS`](util/optimize/gradient_based.py#L7)) minimization of arbitrary functions.
+Numerous optimization utilities for both gradient-free ([`AdaptiveNormal`](util/optimize/adaptive_normal.py#L3), [`DiRect`](util/optimize/direct.py#L77), [`random`](util/optimize/random.py#L3)) and gradient-based ([`SGD`](util/optimize/gradient_based.py#L18), [`ADAM`](util/optimize/gradient_based.py#L63), [`L_BFGS`](util/optimize/gradient_based.py#L7)) minimization of arbitrary functions.
 
 #### [`util.stats`](util/stats#user-content-utilstats)
 
