@@ -66,8 +66,6 @@ All sorts of useful statistics, mostly nonparametric. Compute [effect](util/stat
 
 Miscellaneous mathematics-related functions. The most notable codes are a [`Fraction`](util/math/fraction.py#L24) rational number implementation in pure python with unlimited precision, and codes that identify and construct [Fekete points](util/math/points.py#L106).
 
-#### [`util.pairs`](util/pairs#user-content-utilpairs)
-
 #### [`util.misc`](util/misc#user-content-utilmisc)
 
 Extensive [data splitting for validation](util/misc/multi_dim_analysis.py#L152), [Apriori tree](util/misc/apriori.py#L17), [image transformation](util/misc/image.py#L58), and [latex table generation](util/misc/paper.py#L39). The stuff that doesn't fit anywhere else ... yet.
