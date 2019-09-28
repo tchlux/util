@@ -66,16 +66,6 @@ Return the sorted list of indices that should be used to pick Fekete points from
 
 Given a number of points and dimension, construct and return Fekete points over the unit cube. Uses a polynomial basis to construct the Vandermonde matrix.
 
-## [`util.math.weakly_admissible_meshes`](weakly_admissible_meshes.py)
-
-#### [`def polar_wam`](weakly_admissible_meshes.py#L3)
-
-A polar weakly admissible mesh, generated using Chebyshev nodes equally distributed around the unit circle.
-
-#### [`def box_wam`](weakly_admissible_meshes.py#L19)
-
-A box weakly admissible mesh, generated using a tensor product of Chebyshev nodes.
-
 ## [`util.math.pairs`](pairs.py)
 
 #### [`def pair_to_index`](pairs.py#L3)
@@ -93,3 +83,13 @@ Compute the number of original elements when given the number of pairs.
 #### [`def pairwise_distance`](pairs.py#L37)
 
 Compute the distance between all pairs of elements in a single list, or the distance of all combined pairs between two lists.
+
+## [`util.math.weakly_admissible_meshes`](weakly_admissible_meshes.py)
+
+#### [`def polar_wam`](weakly_admissible_meshes.py#L3)
+
+A polar weakly admissible mesh, generated using Chebyshev nodes equally distributed around the unit circle.
+
+#### [`def box_wam`](weakly_admissible_meshes.py#L19)
+
+A box weakly admissible mesh, generated using a tensor product of Chebyshev nodes.
