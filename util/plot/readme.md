@@ -1,6 +1,6 @@
 <h1 align="center"><code>util.plot</code></h1>
 
-Provides an extensive interface to HTML plotting through *plotly*. Simplifies the usage of *offline* python plotly plotting. Produce plots without ever interacting directly with the dictionary objects that plotly expects. This module currently supports 2D and 3D scatter plots with numerical axes, histograms, subplots (with varying numbers of plots in each row), animations, box-plots, and plot annotations.
+Provides an extensive interface to `HTML` plotting through `plotly`. Simplifies the usage of *offline* python `plotly` plotting. Produce plots without ever interacting directly with the dictionary objects that plotly expects. This module currently supports 2D and 3D scatter plots with numerical axes, histograms, subplots (with varying numbers of plots in each row), animations, box-plots, and plot annotations.
 
 #### [`class Plot`](plot.py#L163)
 
