@@ -64,6 +64,8 @@ Functions for generating useful random sequences ([ranges](util/random/random.py
 
 #### [`util.parallel`](util/parallel#user-content-utilparallel)
 
+Provides a parallelized implementation of the builtin Python [`map`](util/parallel/parallel.py#L84) function for easy drop-in parallelization.
+
 #### [`util.system`](util/system#user-content-utilsystem)
 
 #### [`util.decorators`](util/decorators#user-content-utildecorators)

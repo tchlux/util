@@ -81,8 +81,8 @@ def consumer(func, iterable, return_queue, redirect):
     if redirect: sys.stdout.close()
     
 
-# A parallel OUT-OF-ORDER implementation of the builtin 'map' function
-# in Python. Provided a function and an iterable that is *not* a
+# A parallel implementation of the builtin `map` function in
+# Python. Provided a function and an iterable that is *not* a
 # generator, use all the cores on the current system to map "func" to
 # all elements of "iterable".
 # 
@@ -175,7 +175,7 @@ def map(func, iterable, max_waiting_jobs=1, max_waiting_returns=1,
     # Return all results in a generator object.
     return return_generator()
 
-# Given an iteratible, split it into as many chunks as their are
+# Given an iterable, split it into as many chunks as there are
 # processes. This is not particularly efficient, as it uses python
 # lists, but it is convenient!
 def split(iterable, count=MAX_PROCS):
