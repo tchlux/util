@@ -8,7 +8,7 @@ The object that is used to store relevant data for the creation of a single data
 
 ##### [`def Plot.color`](plot.py#L410)
 
-Interface to the automatic palatte-based color scheme for this plot. This method produces an rgb string compatible with standard plotly "rgba(%i,%i,%i,%f)"%(<red>,<green>,<blue>,<alpha>). Also accepts indices for color numbers (`[0,1,...]`).
+Interface to the automatic palatte-based color scheme for this plot. This method produces an rgb string compatible with standard plotly `"rgba(%i,%i,%i,%f)"%(<red>,<green>,<blue>,<alpha>)`. Also accepts indices for color numbers (`[0,1,...]`).
 
 ##### [`def Plot.add`](plot.py#L717)
 
