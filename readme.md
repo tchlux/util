@@ -44,17 +44,17 @@ The following list links to each module within the `util` package. This serves a
 
 ## Medium Modules
 
+#### [`util.math`](util/math#user-content-utilmath)
+
+Miscellaneous mathematics-related functions. The most notable codes are a [`Fraction`](util/math/fraction.py#L24) rational number implementation in pure python with unlimited precision, and codes that identify and construct [Fekete points](util/math/points.py#L106).
+
 #### [`util.optimize`](util/optimize#user-content-utiloptimize)
 
-Numerous optimization utilities for both gradient-free and gradient-based minimization of arbitrary functions.
+Numerous optimization utilities for both gradient-free ([`Adaptive Normal`](util/optimize/adaptive_normal.py#L3), [`DiRect`](util/optimize/direct.py#L77), [`random`](util/optimize/random.py#L3)) and gradient-based ([`SGD`](util/optimize/gradient_based.py#L18), [`ADAM`](util/optimize/gradient_based.py#L63), [`L_BFGS`](util/optimize/gradient_based.py#L7)) minimization of arbitrary functions.
 
 #### [`util.stats`](util/stats#user-content-utilstats)
 
 All sorts of useful statistics, mostly nonparametric. Compute [effect](util/stats/difference.py#L78), fit [CDF's](util/stats/distributions.py#L119), compute [metric principle components](util/stats/metric_pca.py#L50), [rank probability](util/stats/rank.py#L51), or quantify [sample statistics](util/stats/samples.py#L46).
-
-#### [`util.math`](util/math#user-content-utilmath)
-
-Miscellaneous mathematics-related functions. The most notable codes are a [`Fraction`](util/math/fraction.py#L24) rational number implementation in pure python with unlimited precision, and codes that identify and construct [Fekete points](util/math/points.py#L106).
 
 ## Small Modules
 
