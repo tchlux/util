@@ -1,6 +1,6 @@
 <h1 align="center"><code>util.optimize</code></h1>
 
-Numerous optimization utilities for both gradient-free and gradient-based minimization of arbitrary functions.
+Numerous optimization utilities for both gradient-free ([`Adaptive Normal`](adaptive_normal.py#L3), [`DiRect`](direct.py#L77), [`random`](random.py#L3)) and gradient-based ([`SGD`](gradient_based.py#L18), [`ADAM`](gradient_based.py#L63), [`L_BFGS`](gradient_based.py#L7)) minimization of arbitrary functions.
 
 #### [`class Tracker`](__init__.py#L23)
 

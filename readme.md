@@ -60,6 +60,8 @@ All sorts of useful statistics, mostly nonparametric. Compute [effect](util/stat
 
 #### [`util.random`](util/random#user-content-utilrandom)
 
+Functions for generating useful random sequences ([ranges](util/random/random.py#L16), [distributions](util/random/random.py#L88), [pairs](util/random/random.py#L107), [Latin designs](util/random/random.py#L138)).
+
 #### [`util.parallel`](util/parallel#user-content-utilparallel)
 
 #### [`util.system`](util/system#user-content-utilsystem)

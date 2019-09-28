@@ -1,6 +1,6 @@
 <h1 align="center"><code>util.stats</code></h1>
 
-Contains useful statistical functions for data analysis.
+All sorts of useful statistics, mostly nonparametric. Compute [effect](difference.py#L78), fit [CDF's](distributions.py#L119), compute [metric principle components](metric_pca.py#L50), [rank probability](rank.py#L51), or quantify [sample statistics](samples.py#L46).
 
 ## [`util.stats.difference`](difference.py)
 
