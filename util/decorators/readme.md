@@ -1,11 +1,29 @@
-# util.decorators
+<h1 align="center"><code>util.decorators</code></h1>
 
-Decorator function "same_as" makes the signature and documentation of a function copy another.
+#### [`def same_as`](decorators.py#L24)
 
-Decorator function "cache" generates a unique file name for (input,output) pairs from a function and stores the pair in a serialized file for faster re-execution.
+Decorator that copies the documentation and arguemnts of another function (specified as input).
 
-Decorator function "stability_lock" uses a cache of (input,output) pairs to check if a function maintains the same behaviors after modifications are made.
+#### [`def cache`](decorators.py#L71)
 
-Decorator function "timeout" uses a system call to cancel a python function (must respond to global interpreter lock) after a certain amount of time has elapsed.
+Cache (input, output) pairs and use cached values for faster re-execution. Inputs and outputs must be `pickle`-able (or `dill`-able).
 
-Decorator function "type_check" performs (unpythonic) type checking of function inputs before executing a function.
+#### [`stability_lock`](decorators.py#L131)
+
+Use a cache of (input,output) pairs to check if a function maintains the same behaviors after modifications are made.
+
+#### [`def timeout`](decorators.py#235)
+
+Use a system call to cancel a python function (must respond to global interpreter lock) after a certain amount of time has elapsed.
+
+#### [`def type_check`](decorators.py#L296)
+
+Perform (unpythonic) type checking of function inputs before executing a function.
+
+#### [`def capture`](decorators.py#L423)
+
+Capture all outputs to standard output and standard error for decorated function and store them in attributes `.sdtout` and `.stderr`.
+
+#### [def background](decorators.py#526)
+
+Make calls to the decorated function run asynchronously (in the background) and immediately return a `Result` object. Get the actual returned value with a blocking access to `Result.result`.
