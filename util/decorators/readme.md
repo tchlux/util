@@ -1,5 +1,7 @@
 <h1 align="center"><code>util.decorators</code></h1>
 
+Miscellaneous useful function decorators (the `@<decorator>` on lines before `def` in code). Alias a function with [`same_as`](decorators.py#L24), [`cache`](decorators.py#L71) function calls, [`capture`](decorators.py#L423) outputs, and run functions in the [`background`](decorators.py#526).
+
 #### [`def same_as`](decorators.py#L24)
 
 Decorator that copies the documentation and arguemnts of another function (specified as input).
