@@ -1,16 +1,16 @@
 <h1 align="center"><code>util.system</code></h1>
 
-Function [`run`]() is a (python+OS)-safe interface to command-line execution that cleanly handles errors. Class [`AtomicOpen`]() provides an atomic file operation class that uses system locking mechanisms to enforce atomic operations on files.
+Function [`run`]() is a (python+OS)-safe interface to command-line execution that cleanly handles errors. Class [`AtomicOpen`]() provides an atomic file operation class that uses system locking mechanisms to enforce atomic operations on files. Also provides a robust [`hash`](system.py#L1) function, easy-to-use [`save`](system.py#L24) / [`load`](system.py#L36) functions, and a [`Timer`]() object.
 
-#### [`class AtomicOpen`](system.py)
+#### [`class AtomicOpen`](system.py#L181)
 
 Class for ensuring that all file operations are atomic. Treat initialization like a standard call to `open` that happens to be atomic, must be used in a `with` block.
 
-#### [`class Timer`](system.py)
+#### [`class Timer`](system.py#L235)
 
 Class for timing operations. Initialize to start, call to check, use the `start` and `stop` methods / attributes to set / observe values.
 
-#### [`def run`](system.py)
+#### [`def run`](system.py#L146)
 
 Executing a blocking shell command with a subprocess. On completion provided the return code, stdout as a list of strings, and stderr as a list of strings. This works cross-platform, on Python2.7, and on Python3.x.
 
@@ -26,15 +26,15 @@ Save any python object to a file (with `pickle` or `dill`).
 
 Load python object from file created with `save`.
 
-#### [`def disassemble`](system.py)
+#### [`def disassemble`](system.py#L59)
 
 Break a file into chunks of smaller sizes (byte-wise).
 
-#### [`def assemble`](system.py)
+#### [`def assemble`](system.py#L94)
 
 Undo the `disassemble` operation, reassembling a file (byte-wise) in the correct order.
 
-#### [`def pause`](system.py)
+#### [`def pause`](system.py#L50)
 
 Pause execution until the user presses `<Enter>`.
 
