@@ -106,7 +106,7 @@ def cdf(nodes=9, **kwargs):
 
 # Generate "count" random indices of pairs that are within "length" bounds.
 def pairs(length, count=None):
-    from util.pairs import index_to_pair
+    from util.math import index_to_pair
     # Compute the hard maximum in the number of pairs.
     max_pairs = length*(length - 1) // 2
     # Initialize count if it wasn't provided.
