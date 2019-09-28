@@ -8,7 +8,7 @@ Decorator that copies the documentation and arguemnts of another function (speci
 
 Cache (input, output) pairs and use cached values for faster re-execution. Inputs and outputs must be `pickle`-able (or `dill`-able).
 
-#### [`stability_lock`](decorators.py#L131)
+#### [`def stability_lock`](decorators.py#L131)
 
 Use a cache of (input,output) pairs to check if a function maintains the same behaviors after modifications are made.
 
@@ -24,6 +24,6 @@ Perform (unpythonic) type checking of function inputs before executing a functio
 
 Capture all outputs to standard output and standard error for decorated function and store them in attributes `.sdtout` and `.stderr`.
 
-#### [def background](decorators.py#526)
+#### [`def background`](decorators.py#526)
 
 Make calls to the decorated function run asynchronously (in the background) and immediately return a `Result` object. Get the actual returned value with a blocking access to `Result.result`.
