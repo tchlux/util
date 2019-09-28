@@ -2,6 +2,8 @@
 from util.math.fraction import Fraction
 from util.math.points import mesh, chebyshev, polynomials, \
     polynomial_indices, fekete_indices, fekete_points
+from util.math.pairs import pair_to_index, index_to_pair, \
+    num_from_pairs, pairwise_distance
 
 # Useful for checking near-equal cases when roundoff error is involved.
 SMALL = 2**(-26)

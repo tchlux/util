@@ -77,7 +77,7 @@ def categorical_diff(pdf_1, pdf_2):
 
 # Compute the effect between two sequences. Use the following:
 #    number vs. number     -- Correlation coefficient between the two sequences.
-#    category vs. number   -- "method" 1-norm difference between full distribution
+#    category vs. number   -- "method" L1-norm difference between full distribution
 #                             and conditional distributions for categories.
 #    category vs. category -- "method" total difference between full distribution
 #                             of other sequence given value of one sequence.
