@@ -2,35 +2,35 @@
 
 Miscellaneous mathematics-related functions. The most notable codes are a [`Fraction`](fraction.py#L24) rational number implementation in pure python with unlimited precision, and codes that identify and construct [`Fekete`](points.py#L106) points.
 
-#### [`def is_numeric`](__init__.py#L16)
+#### [`def is_numeric`](__init__.py#L18)
 
 `True` if the given object supports multiplication by `int`, `float`, and addition / subtraction.
 
-#### [`def abs_diff`](__init__.py#L23)
+#### [`def abs_diff`](__init__.py#L25)
 
 Function for performing absolute difference between numbers (or vectors). Falls back to equality for things that don't support difference, absolute value, or sums.
 
-#### [`def is_prime`](__init__.py#L33)
+#### [`def is_prime`](__init__.py#L35)
 
 Return `True` if `n` is prime, `False` otherwise.
 
-#### [`def primes`](__init__.py#L39)
+#### [`def primes`](__init__.py#L41)
 
 Return a list of tuples of all unique prime factors and multiplicities of `n`.
 
-#### [`def primes_up_to`](__init__.py#L53)
+#### [`def primes_up_to`](__init__.py#L55)
 
 Return all prime numbers up to `n`.
 
-#### [`def choose`](__init__.py#L63)
+#### [`def choose`](__init__.py#L65)
 
 Compute the value `n choose k` using python integers, no overflow.
 
-#### [`def flatten`](__init__.py#L10)
+#### [`def flatten`](__init__.py#L12)
 
 Given a python list of lists, flatten into a single python list.
 
-#### [`def transpose`](__init__.py#L13)
+#### [`def transpose`](__init__.py#L15)
 
 Given a python list of lists, transpose the lists.
 
