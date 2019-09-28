@@ -1,5 +1,7 @@
 <h1 align="center"><code>util.random</code></h1>
 
+Functions for generating useful random sequences ([ranges](random.py#L16), [distributions](random.py#L88), [pairs](random.py#L107), [Latin designs](random.py#L138)).
+
 #### [`def random_range`](random.py#L16)
 
 Behaves exactly like a standard Python `range` except that it has been randomly shuffled. Uses memory-efficient shuffling technique (linear congruential generator) for large number ranges (>32K integers) to provide a `O(1)` memory footprint.
