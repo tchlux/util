@@ -1,6 +1,6 @@
 <h1 align="center"><code>util.system</code></h1>
 
-Function [`run`]() is a (python+OS)-safe interface to command-line execution that cleanly handles errors. Class [`AtomicOpen`]() provides an atomic file operation class that uses system locking mechanisms to enforce atomic operations on files. Also provides a robust [`hash`](system.py#L1) function, easy-to-use [`save`](system.py#L24) / [`load`](system.py#L36) functions, and a [`Timer`]() object.
+Function [`run`](system.py#L146) is a (python+OS)-safe interface to command-line execution that cleanly handles errors. Class [`AtomicOpen`](system.py#L181) provides an atomic file operation class that uses system locking mechanisms to enforce atomic operations on files. Also provides a robust [`hash`](system.py#L1) function, easy-to-use [`save`](system.py#L24) / [`load`](system.py#L36) functions, and a [`Timer`](system.py#L235) object.
 
 #### [`class AtomicOpen`](system.py#L181)
 
