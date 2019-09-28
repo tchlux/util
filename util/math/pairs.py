@@ -34,7 +34,8 @@ def num_from_pairs(num_pairs):
 # Define a custom error for passing arrays of the wrong shape to pairwise.
 class ShapeError(Exception): pass
 
-# Compute the distance between pairs, return a matrix.
+# Compute the distance between all pairs of elements in a single list,
+# or the distance of all combined pairs between two lists.
 def pairwise_distance(x1, x2=None):
     # Define an error for having the wrong array shape.
     if (len(x1.shape) != 2): raise(ShapeError("Only 2D NumPy arrays are allowed."))

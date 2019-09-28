@@ -78,3 +78,18 @@ A box weakly admissible mesh, generated using a tensor product of Chebyshev node
 
 ## [`util.math.pairs`](pairs.py)
 
+#### [`def pair_to_index`](pairs.py#L3)
+
+Map a pair of numbers to an index with `[0,0] -> 0`, `[1,0] -> 1`, ...
+
+#### [`def index_to_pair`](pairs.py#L10)
+
+Map an index to a pair of numbers with `0 -> [0,0]`, `1 -> [1,0]`, ...
+
+#### [`def num_from_pairs`](pairs.py#L18)
+
+Compute the number of original elements when given the number of pairs.
+
+#### [`def pairwise_distance`](pairs.py#L37)
+
+Compute the distance between all pairs of elements in a single list, or the distance of all combined pairs between two lists.
