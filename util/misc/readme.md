@@ -25,17 +25,19 @@ This class is designed to iterate over training and testing data constructed by 
 Construct this class and use the [`mine_items`](apriori.py#L132) method to construct item sets. Item sets are increasing size sets of frequently occurring values in the given data. See the [example](apriori.py#L180) in code.
 
 
-## [`util.misc.display`](display.py)
-
-#### [`def matrix_to_img`](display.py#L9)
-
-Given a matrix (as a `numpy.ndarray`) that has either shape 2 (`(H,W)` gray scale) or shape 3 (`(H,W,3)` color in RGB), convert that matrix to an image with [`PIL`](https://pillow.readthedocs.io/en/stable/). For shape 2 signed matrices, use a color mapping for negative, neutral, and positive colors.
-
 ## [`util.misc.image`](image.py)
 
-#### [`def random_transformation`](image.py#L58)
+#### [`def random_transformation`](image.py#L49)
 
 Apply a random transformation to in image in terms of *perspective* (left to right looking angle), *rotation* (rotation about center point), and *scale* (zoom with alpha fill). Ranges selected subjectively mimic real-world transformations.
+
+#### [`def show_img`](image.py#L77)
+
+Given a vector and a shape, use [`PIL`](https://pillow.readthedocs.io/en/stable/) to render the vector as an image.
+
+#### [`def matrix_to_img`](image.py#L124)
+
+Given a matrix (as a `numpy.ndarray`) that has either shape 2 (`(H,W)` gray scale) or shape 3 (`(H,W,3)` color in RGB), convert that matrix to an image with [`PIL`](https://pillow.readthedocs.io/en/stable/). For shape 2 signed matrices, use a color mapping for negative, neutral, and positive colors.
 
 ## [`util.misc.paper`](paper.py)
 
