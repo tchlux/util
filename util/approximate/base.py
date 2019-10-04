@@ -1,6 +1,6 @@
 import numpy as np
 from util.system import hash
-from util.math import is_none, is_numeric
+from util.math import is_numeric
 from util.approximate import class_name
 
 # Exceptions for raising useful messages to users.
@@ -31,7 +31,7 @@ class Approximator:
 
     # Fit a 2D x and a 2D y with this model.
     def fit(self, x, y, classifier=None, *args, **kwargs):
-        if (not is_none(classifier)): self.classifier = classifier
+        if (classifier is not None): self.classifier = classifier
         elif (not is_numeric(y[0])):  self.classifier = True
         if ((type(x) != np.ndarray) or (len(x.shape) != 2)):
             raise(UnexpectedType("Provided 'x' should be a 2D numpy array."))
@@ -100,11 +100,11 @@ class WeightedApproximator(Approximator):
 
     # Fit a 2D x and a 2D y with this model.
     def fit(self, x, y=None, classifier=None, **kwargs):
-        if (not is_none(classifier)):                     self.classifier = classifier
-        elif (not is_none(y)) and (not is_numeric(y[0])): self.classifier = True
+        if (classifier is not None):                     self.classifier = classifier
+        elif (y is not None) and (not is_numeric(y[0])): self.classifier = True
         if ((type(x) != np.ndarray) or (len(x.shape) != 2)):
             raise(UnexpectedType("Provided 'x' should be a 2D numpy array."))
-        if (not is_none(y)):
+        if (y is not None):
             if (not hasattr(y, "__len__")):
                 raise(MissingOperator("Provided 'y' to fit must have defined '__len__' operator."))
             elif (not hasattr(y, "__getitem__")):
@@ -126,7 +126,7 @@ class WeightedApproximator(Approximator):
             x = np.reshape(x, (1,len(x)))
         indices, weights = self._predict(x.copy(), *args, **kwargs)
         # Return the indices and weights if no y values were provided.
-        if (is_none(self.y)): 
+        if (self.y is None): 
             response = [(ids,wts) for (ids,wts) in zip(indices, weights)]
         else:
             # Collect response values via weighted sums of self.y values

@@ -65,11 +65,21 @@ def test_data():
     assert(tuple(c[:,-1]) == tuple(range(5)) + (None,)*5)
 
     # Verify the addition of in place addition of new columns AND rows.
-    b = a[:].copy()
+    b = a[:]
     b['3'] = range(len(b))
     c = a[:]
     c += b
     assert(tuple(c['3']) == tuple([None]*len(b) + list(range(len(c)-len(b)))))
+
+    # Verify in-place addition of a data set with *some* duplicate
+    # column names, but the same number of rows (adds columns).
+    b = a[:,1:].copy()
+    c = a[:,:-1].copy()
+    c.names = range(3,3+c.shape[1])
+    b += c
+    assert(b.shape == (5,4))
+    assert(tuple(b.names) == tuple(map(str,range(1,5))))
+    assert(len(list(b[:,-1] == c[:,-1])) == b.shape[0])
 
     # Verify slicing-based singleton value assignment
     b = a[:-2].copy()
@@ -263,9 +273,17 @@ def test_data():
     assert('a' in a[0])
     assert(1.2 in a[0])
 
+    # Verify that "in" works on Data.
+    assert(not ([1, "a"] in a))
+    assert(not ([3, "a"] in a[:,:2]))
+    assert([1, "a"] in a[:,:2])
+
     # Verify that "equality" works for rows.
-    assert(a[0] == [1,'a',1.2])
+    assert(a[0] == (1,'a',1.2))
     assert(not all(a[0] != a[0][:]))
+
+    # Verify that "equality" works for Data objects.
+    assert(tuple(a == [1,'a',1.2]) == (0,))
 
     # Verify that "addition" with sequences works correctly (left and right).
     b = a[:]

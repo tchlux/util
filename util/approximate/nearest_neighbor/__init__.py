@@ -1,6 +1,6 @@
 import numpy as np
 from util.approximate import WeightedApproximator
-from util.math import is_none, abs_diff
+from util.math import abs_diff
 from balltree import BallTree
 # from sklearn.neighbors import BallTree
 
@@ -21,7 +21,7 @@ class Average(WeightedApproximator):
 
 # Class for computing an interpolation between the nearest n neighbors
 class NearestNeighbor(WeightedApproximator):
-    def __init__(self, k=None, method=Average, **auto_kwargs):
+    def __init__(self, k=1, method=Average, **auto_kwargs):
         self.points = None
         self.method = method
         self.num_neighbors = k
@@ -29,18 +29,18 @@ class NearestNeighbor(WeightedApproximator):
 
     # Use fortran code to compute the boxes for the given data
     def _fit(self, control_points, k=None, display=True, **kwargs):
-        if (not is_none(k)): self.num_neighbors=k
+        if (k is not None): self.num_neighbors=k
         # Process and store local information
         self.points = control_points.copy()
         self.tree = BallTree(self.points)
         # Update the associated 'y' values if they exist (since points
         # were shuffled on the construction of the tree).
-        if (not is_none(self.y)):
+        if (self.y is not None):
             self.y = self.y[self.tree.index_mapping]
         # Automatically select the value for "k" if appropriate and
         # the response values are available for the points.
-        if is_none(self.num_neighbors):
-            if (not is_none(self.y)):
+        if (self.num_neighbors is None):
+            if (self.y is not None):
                 self.auto_kwargs.update(kwargs)
                 # If "mean" was not provided, pick based on problem type.
                 if "mean" not in self.auto_kwargs:
@@ -95,7 +95,7 @@ def auto(points, values, metric=abs_diff, max_k=None, samples=100,
     from util.random import random_range
     # Make the maximum value for "k" the nearest power of 2 that
     # contains less than or equal to half of the provided data.
-    if is_none(max_k):
+    if (max_k is None):
         from math import floor, log2
         max_k = 2**floor(log2(len(points)//2))
     # Compute up to 'max_k' nearest neighbors about selected points.
@@ -135,6 +135,17 @@ def auto(points, values, metric=abs_diff, max_k=None, samples=100,
 if __name__ == "__main__":
 
     np.random.seed(0)
+
+    pts = np.random.random(size=(10000,5))
+    values = np.random.random(size=(10000,))
+    test = np.random.random(size=(1000,5))
+    print("Fitting model..", flush=True)
+    m = NearestNeighbor()
+    m.fit(pts, values)
+    print("Evaluating model..", flush=True)
+    m(test)
+    print("done")
+    exit()
 
     TEST_AUTO = False
     if TEST_AUTO:

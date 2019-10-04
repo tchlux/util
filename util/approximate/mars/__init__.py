@@ -17,7 +17,7 @@ MARS_MODEL_FLAG = 1
 INSTALL_MESSAGE = """Failed to import `pyearth`. Download and install with:
   git clone git://github.com/scikit-learn-contrib/py-earth.git
   cd py-earth
-  sudo python setup.py install
+  sudo python setup.py install --cythonize
 """
 
 # Wrapper class for using the open source MARS, py-earth
@@ -27,9 +27,11 @@ class MARS(Approximator):
         # Disable the future warnings that MARS gives.
         import warnings
         warnings.filterwarnings("ignore", category=FutureWarning)
+        # Warning about sklearn not working.
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
         # Import the Earth package.
         try:    from pyearth import Earth
-        except: raise(INSTALL_MESSAGE)
+        except: raise(Exception(INSTALL_MESSAGE))
         self.Earth = Earth
         self.model = None
         self.max_bases = max_bases

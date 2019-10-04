@@ -11,7 +11,7 @@ from util.approximate.wrappers import unique, condition
 
 # Weighted approximators (define predictions as convex weighted sums).
 from util.approximate.nearest_neighbor import NearestNeighbor
-from util.approximate.delaunay import Delaunay, qHullDelaunay
+from util.approximate.delaunay import Delaunay, DelaunayP1, qHullDelaunay
 from util.approximate.voronoi import Voronoi
 from util.approximate.box_mesh import BoxMesh
 from util.approximate.modified_shepard import ShepMod
@@ -21,7 +21,7 @@ from util.approximate.linear_shepard import LSHEP
 # Regression techniques.
 from util.approximate.mars import MARS
 from util.approximate.neural_network import NeuralNetwork
-from util.approximate.support_vector_machine import SVR
+from util.approximate.support_vector_machine import SVR, SVR_RBF
 
 # Rename nearest neighbor.
 KNN = NearestNeighbor

@@ -47,14 +47,14 @@ def _half_confidence(num_samples, max_error):
 # estimate to the underlying distribution with confidence bounded error.
 def samples(size=None, error=None, confidence=None, at=None):
     # Determine what to calculate based on what was provided.
-    from util.math import is_none, choose, Fraction
-    if   is_none(size):       to_calculate = "samples"
-    elif is_none(error):      to_calculate = "error"
-    elif is_none(confidence): to_calculate = "confidence"
-    else:                     to_calculate = "verify"
+    from util.math import choose, Fraction
+    if   (size is None):       to_calculate = "samples"
+    elif (error is None):      to_calculate = "error"
+    elif (confidence is None): to_calculate = "confidence"
+    else:                      to_calculate = "verify"
     # Default evaluation point is at (1/2), where the error is greatest.
-    if is_none(at): at = Fraction(1, 2)
-    else:           at = Fraction(at)
+    if (at is None): at = Fraction(1, 2)
+    else:            at = Fraction(at)
     # Set the default values for other things that were not provided.
     if type(error) == type(None):      error      = Fraction(10, 100)
     if type(confidence) == type(None): confidence = Fraction(95, 100)
@@ -64,7 +64,7 @@ def samples(size=None, error=None, confidence=None, at=None):
     # If the user provided something with a length, use that number.
     if hasattr(size, "__len__"): size = len(size)
     # \sum_{i=0}^n choose(n, i) * ( at^i (1-at)^(n-i) )
-    if not is_none(size):
+    if (size is not None):
         # Compute the probability of any given observed EDF value.
         prob = lambda i: choose(size, i) * (at**i * (1-at)**(size-i))
         # If we are calculating the confidence or verifying, compute confidence.
@@ -87,7 +87,7 @@ def samples(size=None, error=None, confidence=None, at=None):
             error = Fraction()
             contained = Fraction()
             # Sort the percentiles by their distance from "at".
-            i_p = sorted(enumerate(Fraction(i,size,_normalize=False)
+            i_p = sorted(enumerate(Fraction(i,size,reduce=False)
                                    for i in range(size+1)),
                          key=lambda ip: abs(ip[1]-at))
             # Cycle through percentiles, starting closest to "at" and moving out.

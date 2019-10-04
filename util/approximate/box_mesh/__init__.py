@@ -7,7 +7,7 @@ from util.approximate import WeightedApproximator
 # This directory
 CWD = os.path.dirname(os.path.abspath(__file__))
 meshes = fmodpy.fimport(os.path.join(CWD,"meshes.f90"),
-                        output_directory=CWD, autocompile_extra_files=True)
+                        output_directory=CWD, omp=True)
 
 
 # ======================
@@ -26,17 +26,21 @@ class BoxMesh(WeightedApproximator):
 
     # Fit a set of points
     def _fit(self, points):
-        from util.math import is_none
         # Sort points by their distance from the center of the data.
-        center = (np.max(points, axis=0) - np.min(points, axis=0)) / 2
-        dists = np.linalg.norm(points - center, axis=1)
-        indices = np.argsort(dists)
-        if not is_none(self.y): self.y = [self.y[i] for i in indices]
-        # Get points in a specific order.
-        self.points = np.asarray(points[indices].T, order="F")
+        center = (np.max(points, axis=0) + np.min(points, axis=0)) / 2
+        sq_sums = np.sum(points**2, axis=1)
+        sq_dists = np.sum(center**2) + sq_sums - 2*np.matmul(points, center)
+        indices = np.argsort(sq_dists)
+        # Reorder the square sums.
+        sq_sums = sq_sums[indices]
+        if (self.y is not None): self.y = [self.y[i] for i in indices]
+        # Get points in a fortran compatible format.
+        self.points = np.asfortranarray(points[indices].T)
+        # Initialize the box sizes to be undefined (-1).
         self.box_sizes = np.ones((self.points.shape[0]*2,self.points.shape[1]),
                                   dtype=np.float64, order="F") * -1
-        meshes.build_ibm(self.points, self.box_sizes)
+        # Build the iterative box mesh from the points.
+        meshes.build_ibm(self.points, sq_sums, self.box_sizes)
 
     # Generate a prediction for a new point
     def _predict(self, xs):
@@ -61,11 +65,27 @@ if __name__ == "__main__":
     from util.approximate.testing import test_plot
     model = BoxMesh(order=1)
 
-    p,x,y = test_plot(model, N=100, random=False)
+    # # Test case that breaks the iterative box mesh design.
+    # x = np.array([[0.68, 0.44, 0.61],
+    #               [0.62, 0.4,  0.66],
+    #               [0.69, 0.55, 0.73]])
+    # print("x:")
+    # print(x)
+    # z = np.array([0.68, 0.35, 0.75])
+    # print()
+    # print("z:")
+    # print(z)
+    # model.fit(x)
+    # i, w = model(z)
+    # print()
+    # print("i: ",i)
+    # print("w: ",w)
+    # exit()
+
+    p,x,y = test_plot(model, N=3, random=True)
     p.plot(show=False)
     x = model.points.T
-    print(x)
-
+    print("x:",x.shape)
 
     # ==============================================
     #      Display the boxes that were computed     
@@ -78,6 +98,16 @@ if __name__ == "__main__":
     max_y = np.max(x[:,1]) + .1
     # Get the box edges (about the centers).
     boxes = model.box_sizes.T
+
+    # print()
+    # print("centers:")
+    # print(x)
+    # print()
+    # print("boxes:")
+    # print(boxes)
+    # print()
+    # exit()
+
     p.add("Points", *x.T)
     p.add("Boundary", [min_x, max_x, max_x, min_x, min_x],
                       [min_y, min_y, max_y, max_y, min_y],
@@ -98,8 +128,10 @@ if __name__ == "__main__":
         box = (pt + shifts)
         p.add(f"Box {i+1}", *(box.T), color=p.color(i+1), mode="lines", group=i)
         p.add("", [pt[0]], [pt[1]], color=p.color(i+1), group=i, show_in_legend=False)
+
     # for i,(pt,bounds) in enumerate(zip(x, boxes)):
     #     p.add("", [pt[0]], [pt[1]], color=p.color(i), show_in_legend=False)
+
     p.show(append=True)
     exit()
 

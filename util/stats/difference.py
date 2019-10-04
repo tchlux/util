@@ -1,4 +1,4 @@
-from util.stats import *
+
 
 # ====================================================
 #      Measuring the Difference Between Sequences     
@@ -95,6 +95,7 @@ def categorical_diff(pdf_1, pdf_2):
 #             to compute effect, if Falsd use the e-pdf L1 difference.
 # 
 def effect(seq_1, seq_2, method="mean", use_ks=False):
+    import numpy as np
     from util.system import hash, sorted_unique
     from util.math import is_numeric
     # Check for equally lengthed sequences.

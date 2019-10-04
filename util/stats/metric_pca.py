@@ -1,4 +1,5 @@
-from util.stats import *
+import numpy as np
+from util.math import abs_diff
 
 # =============================================
 #      Metric Principle Component Analysis     
@@ -7,6 +8,7 @@ from util.stats import *
 # Generate vector between scaled by metric difference. Give the metric
 # the indices of "vectors" in the provided matrix.
 def gen_random_metric_diff(matrix, index_metric, power=2, count=None):
+    from util.random import pairs
     # Iterate over random pairs, skip those with no difference.
     for (p1, p2) in pairs(len(matrix), count):
         metric_diff = index_metric(p1, p2)
@@ -78,11 +80,10 @@ def mpca(points, values, metric=abs_diff, num_components=None,
 
 # Compute the principle components using sklearn.
 def pca(points, num_components=None, display=True):
-    from util.math import is_none
     from sklearn.decomposition import PCA        
     pca = PCA(n_components=num_components)
-    if is_none(num_components): num_components = min(*points.shape)
-    else:       num_components = min(num_components, *points.shape)
+    if (num_components is None): num_components = min(*points.shape)
+    else: num_components = min(num_components, *points.shape)
     if display: print(f"Computing {num_components} principle components..",end="\r", flush=True)
     pca.fit(points)
     if display: print( "                                                          ",end="\r", flush=True)

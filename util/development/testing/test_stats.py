@@ -1,3 +1,4 @@
+import numpy as np
 from util.stats import *
 
 # ====================================================================
@@ -343,17 +344,15 @@ def _test_samples(display=True, test_correctness=False):
     from util.plot import Plot
 
     if display:
-        for size in tuple(range(2,42))+(128, 129, 256, 257):
+        for size in tuple(range(2,43,5))+(128, 129, 256, 257):
             p = Plot(f"Error at x with {size} samples")
             for confidence in (Fraction(9,10), Fraction(185,200),
                                Fraction(95,100), Fraction(97,100),
                                Fraction(99,100)):
-                f = lambda x: samples(size=size, confidence=confidence, at=x[0])
+                f = lambda x: samples(size=size, confidence=confidence, at=x)
                 p.add_func(f"{confidence} confidence", f, [0, 1])
             p.show(append=True, show=(size==2))
         exit()
-
-
 
     if display:
         print()

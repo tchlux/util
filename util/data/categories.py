@@ -1,4 +1,4 @@
-from util.data import *
+import numpy as np
 
 # Given "d" categories that need to be converted into real space,
 # generate a regular simplex in (d-1)-dimensional space. (all points
@@ -6,7 +6,6 @@ from util.data import *
 # guarantees that all points are not placed on a sub-dimensional
 # manifold (as opposed to "one-hot" encoding).
 def regular_simplex(num_categories):
-    import numpy as np
     class InvalidNumberOfCategories(Exception): pass
     # Special cases for one and two categories
     if num_categories < 1:
@@ -37,7 +36,6 @@ def regular_simplex(num_categories):
 # Given a point, determine the affine combination of categories in the
 # defining regular simplex that produces the point.
 def category_ratio(point):
-    import numpy as np
     categories = regular_simplex(len(point)+1)
     # Add the "constant" column to the matrix of categories
     categories = np.hstack((categories, np.ones((len(point)+1,1))))

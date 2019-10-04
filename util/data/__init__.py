@@ -26,8 +26,6 @@ is_none = lambda v: type(v) == type(None)
 # from future import print_function
 
 from util.data.data import Data
-from util.data.image import show_img
 from util.data.video import IndexedVideo
-# from util.data.categories import *
-# from util.data.read import *
+from util.data.categories import regular_simplex, category_ratio
 # from util.data.test import *

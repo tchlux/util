@@ -93,7 +93,7 @@ def cache(max_files=10, cache_dir=None, file_prefix=None):
     try:    import dill as pickle
     except: import pickle
     # Check to see if a cache directory was provided
-    if (type(cache_dir) == type(None)): cache_dir = os.curdir
+    if (type(cache_dir) == type(None)): cache_dir = os.path.abspath(os.curdir)
     if (not os.path.exists(cache_dir)): os.mkdir(cache_dir)
     # Create a function that takes one argument, a function to be
     # decorated. This will be called by python when decorating.

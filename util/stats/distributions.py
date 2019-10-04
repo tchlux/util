@@ -68,6 +68,7 @@ class Distribution():
 # Construct a version of a function that has been smoothed with a gaussian.
 def gauss_smooth(func, stdev=1., n=100):
     # We must incorporate some smoothing.
+    import numpy as np
     from scipy.stats import norm
     # Construct a set of gaussian weights (to apply nearby on the function).
     eval_pts = np.linspace(-5 * stdev, 5 * stdev, n)
@@ -95,6 +96,7 @@ def gauss_smooth(func, stdev=1., n=100):
 # Given a list of numbers, generate two lists, one of the CDF x points
 # and one of the CDF y points (for fitting).
 def cdf_points(data):
+    import numpy as np
     from util.math import SMALL
     # Sort the data (without changing it) and get the min and max
     data = np.array(sorted(data))

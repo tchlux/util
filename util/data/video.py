@@ -1,9 +1,9 @@
-from util.data import *
+import cv2
+import numpy as np
+
 
 # Define a class for reading a video file without actually storing it in memory.
 class IndexedVideo:
-    import cv2
-    import numpy as np
     class FailedSet(Exception): pass
     class FailedRead(Exception): pass
     class BadIndex(Exception): pass
@@ -14,22 +14,26 @@ class IndexedVideo:
         self.flatten = flatten
         self.float = use_float
         # Store the video using an OpenCV video capture object (with its attributes)
-        self.vid = self.cv2.VideoCapture(video_file_name)
-        self.frames = int(self.vid.get(self.cv2.CAP_PROP_FRAME_COUNT))
-        self.width  = int(self.vid.get(self.cv2.CAP_PROP_FRAME_WIDTH))
-        self.height = int(self.vid.get(self.cv2.CAP_PROP_FRAME_HEIGHT))
-        self.fps    = int(self.vid.get(self.cv2.CAP_PROP_FPS))
+        self.vid = cv2.VideoCapture(video_file_name)
+        self.width  = int(self.vid.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.height = int(self.vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.fps    = int(self.vid.get(cv2.CAP_PROP_FPS))
         # Find the last available index in the video using the "set"
-        # method. This must be done because of a bug in OpenCV.
-        self.length = self.frames-1
-        for i in range(-1, -self.frames, -1):
-            # If the index is successfully accessed, break.
-            try:   
-                img = self[i]
-                self.length = self.frames + i
-                break
-            # Otherwise, ignore the failed read operation.
-            except self.FailedRead: pass
+        # method. This must be done because of a bug in OpenCV. The
+        # total number of frames is often over-estimated by descriptors.
+        frames = int(self.vid.get(cv2.CAP_PROP_FRAME_COUNT))
+
+        i = step = frames // 2
+        while (step > 0):
+            # Try reading an image at this index to see if it works.
+            try:
+                img = self[i+step]
+                i += step
+            except self.FailedRead:
+                pass
+            step //= 2
+        # Set the length of this video.
+        self.length = i + 1
         # Use the first image to get the full shape of this video.
         self.shape = (self.length,) + self[0].shape
         self.file_name = video_file_name
@@ -46,13 +50,13 @@ class IndexedVideo:
         if (index < 0):
             while (index < 0): index += self.length
         # Move the capture to the correct frame of the video.
-        success = self.vid.set(self.cv2.CAP_PROP_POS_FRAMES, index)
+        success = self.vid.set(cv2.CAP_PROP_POS_FRAMES, index)
         if not success: raise(self.FailedSet(f"Failed to set to video frame {index}."))
         # Get the image at that frame.
         success, image = self.vid.read()
         if not success: raise(self.FailedRead(f"Failed to read video frame {index}."))
         # Flatten / float the image if that setting is enabled.
         if self.flatten: image = image.flatten()
-        if self.float:   image = self.np.asarray(image, dtype=float)
+        if self.float:   image = np.asarray(image, dtype=float)
         # Return the image at that frame.
         return image

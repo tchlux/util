@@ -1,5 +1,5 @@
 import numpy as np
-from util.math import abs_diff, is_none
+from util.math import abs_diff
 
 MAX_DIM = None
 MAX_SAMPLES = None
@@ -31,7 +31,7 @@ def unique(weighted_approximator):
             self.unique_indices = np.array(sorted(
                 self.unique_points[pt][0] for pt in self.unique_points))
             # Average the response value for the points that are identical.
-            if (not is_none(values)):
+            if (values is not None):
                 self.original_values = values
                 to_add = set(self.unique_points)
                 avg_values = []
@@ -52,7 +52,7 @@ def unique(weighted_approximator):
             if ((type(points) != np.ndarray) or (0 >= len(points.shape) < 2)):
                 raise(UnexpectedType("Provided 'points' should be a 1D or 2D numpy array."))
             # If values were provided, return usual prediction.
-            elif not is_none(self.original_values):
+            elif (self.original_values is not None):
                 return super().predict(points)
             # Otherwise we are getting the points and indices in original data.
             single_response = len(points.shape) == 1
@@ -96,8 +96,8 @@ def condition(approximator, metric=abs_diff, method=DEFAULT_CONDITIONER,
         # and approximation conditioning based on the selected method.
         def fit(self, x, y, *args, num_comps=None, **kwargs):
             # Set the number of components appropriately.
-            if is_none(num_comps): num_comps = min(x.shape)
-            if not is_none(dim):   num_comps = min(dim, num_comps)
+            if (num_comps is None): num_comps = min(x.shape)
+            if (dim is not None):   num_comps = min(dim, num_comps)
             # Compute the components and the values.
             if method == "PCA":
                 # Compute the principle components as the new axes.

@@ -13,6 +13,10 @@ lshep_mod = fmodpy.fimport(
     output_directory=CWD, autocompile_extra_files=True)
 
 
+class TooFewDataPoints(Exception):
+    def __init__(self, d, n):
+        super().__init__(f"Only {n} points were provided but {d+2} are needed to define a modified shepard interpolant.")
+
 # =======================
 #      LSHEP Wrapper     
 # =======================
@@ -32,6 +36,10 @@ class LSHEP(Approximator):
     def _fit(self, control_points, values, **kwargs):
         # Local operations
         self.x = np.asfortranarray(control_points.T)
+        # Raise an error if too few points are used for a fit.
+        if (self.x.shape[1] <= self.x.shape[0]+1):
+            raise(TooFewDataPoints(*self.x.shape))
+        # Initialize containers.
         self.f = []
         self.a = []
         self.rw = []

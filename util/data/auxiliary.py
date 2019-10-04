@@ -10,7 +10,7 @@ class Descriptor:
         # Store the parent data object of this descriptor.
         self.data = data
         # Store the provided data (or make a new set)
-        if (type(values) == type(None)): values = []
+        if (values is None): values = []
         self.values = values
         # Initialize the type.
         self.type = types
@@ -73,7 +73,7 @@ class Column:
     index = 0
     def __init__(self, data, column, indices=None):
         # Generate indices if they were not provided
-        if (type(indices) == type(None)): indices = list(range(len(data)))
+        if (indices is None): indices = list(range(len(data)))
         # Store the parent data and the column number 
         self.data = data
         self.column = column
@@ -135,23 +135,23 @@ class Column:
                     raise(self.data.BadValue(f"Length '{len(other)}' does not have the same number of elements as this Column, {len(self)}."))
                 # Return pairwise comparison for equal-length objects.
                 for (v1, v2) in zip(self, other):
-                    if (type(v1) == type(None)) or (type(v2) == type(None)): yield None
-                    else:                                                    yield getattr(v1, op_name)(v2)
+                    if ((v1 is None) or (v2 is None)): yield None
+                    else:                              yield getattr(v1, op_name)(v2)
             else:
                 # Otherwise return singleton comparison.
                 for v in self:
-                    if (type(v) == type(None)): yield None
-                    else:                       yield getattr(v, op_name)(other)
+                    if (v is None): yield None
+                    else:           yield getattr(v, op_name)(other)
         # Without a length, it must be a singleton comparison.
         else:
             for v in self:
-                if (type(v) == type(None)): yield None
-                else:                       yield getattr(v, op_name)(other)
+                if (v is None): yield None
+                else:           yield getattr(v, op_name)(other)
 
     # Custom equality operator.
     def _custom_equality(self, other, equality=True):
         # Try to convert given group to an iterable type for comparison.
-        if ((type(other) == self.data.types[self.column]) or (type(other) == type(None))):
+        if ((type(other) == self.data.types[self.column]) or (other is None)):
             # Return indices where single value equals column values.
             for i,v in enumerate(self):
                 if (equality and (v == other)):       yield i
@@ -243,7 +243,7 @@ class Row:
         if (len(idx) > 1): raise(self.data.BadAssignment(f"{type(self)} object can only assign one position at a time."))
         i = idx[0]
         # Assign the type of the column of data if it is unassigned.
-        if type(value) == type(None): pass
+        if (value is None): pass
         elif self.data.types[i] == type(None):
             self.data.types[i] = type(value)
         elif (self.data.types[i] != type(value)):
@@ -282,18 +282,18 @@ class Row:
             if (len(other) != len(self)):
                 # Otherwise return singleton comparison.
                 for v in self:
-                    if (type(v) == type(None)): yield None
-                    else:                       yield getattr(v, op_name)(other)
+                    if (v is None): yield None
+                    else:           yield getattr(v, op_name)(other)
             # Return pairwise comparison for equal-length objects.
             else:
                 for (v1, v2) in zip(self, other):
-                    if (type(v1) == type(None)) or (type(v2) == type(None)): yield None
-                    else:                                                    yield getattr(v1, op_name)(v2)
+                    if (v1 is None) or (v2 is None): yield None
+                    else:                            yield getattr(v1, op_name)(v2)
         # Without a length, it must be a singleton comparison.
         else:
             for v in self:
-                if (type(v) == type(None)): yield None
-                else:                       yield getattr(v, op_name)(other)
+                if (v is None): yield None
+                else:           yield getattr(v, op_name)(other)
 
     # Inequality operator.
     def __ne__(self, other): return self._gen_operator(other, "__ne__")

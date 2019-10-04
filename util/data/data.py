@@ -4,6 +4,8 @@ from util.data.categories import regular_simplex
 from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES, \
     SEPARATORS, FILE_SAMPLE_SIZE, MISSING_SAMPLE_SIZE
 
+# TODO:  Check for duplicate column names, handle duplicate column
+#        names? Do names *have* to be Python strings?
 # TODO:  Make access of a single row (in slicing) return a Row object.
 # TODO:  Make "save" and "load" to CSV support having iterables of
 #        readable types. Expand them out to columns with particular
@@ -41,6 +43,8 @@ from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES, \
 #        lazy-evaluated 'IndexedCSV' object.
 # TODO:  Implement 'CachedData' whose underlying '.data' object caches
 #        groups of rows to keep the memory footprint low.
+# TODO:  Support in-place addition with *some* duplicate solumns
+#        and the same number of rows?
 
 
 # ======================================================
@@ -87,15 +91,14 @@ class Data:
     @property
     def names(self): return self._names
     @names.setter
-    def names(self, values): self._names = Data.Descriptor(self, values)
+    def names(self, values): self._names = Data.Descriptor(self, list(map(str,values)))
     @property
     def types(self): return self._types
     @types.setter
     def types(self, values): self._types = Data.Descriptor(self, values)
     # Return True if empty.
     @property
-    def empty(self):
-        return ((type(self.names) == type(None)) or (type(self.types) == type(None)))
+    def empty(self): return ((self.names is None) or (self.types is None))
     # Declare the "start" property / function to re-initialized when called.
     @property
     def shape(self):
@@ -128,37 +131,32 @@ class Data:
     #      Overwritten list Methods     
     # ==================================
 
-    # Overwrite the "len" operator.
-    def __len__(self):
-        if (self.view): return len(self._row_indices)
-        else:           return len(self.data)
-
     def __init__(self, data=None, names=None, types=None, rows=None, cols=None):
         import time
         start = time.time()
+        # Initialize the contents of this Data to be an empty list.
+        self.data = []
         # Verify the length of the types and names
-        if ((type(types) != type(None)) and
-            (type(names) != type(None)) and
+        if ((types is not None) and
+            (names is not None) and
             (len(types) != len(names))):
             raise(Data.NameTypeMismatch(f"Length of provided names {len(names)} does not match length of provided types {len(types)}."))
         # Get the names (must be strings)
-        if (type(names) != type(None)):
+        if (names is not None):
             if any(type(n) != str for n in names):
                 raise(Data.BadSpecifiedName(f"An entry of provided names was not of {str} class."))
             self.names = names
             # Construct default types for each column if names were not provided.
-            if (type(types) == type(None)): types = [type(None)] * len(names)
+            if (types is None): types = [type(None)] * len(names)
         # Store the types if provided
-        if (type(types) != type(None)):
+        if (types is not None):
             if any(type(t) != type for t in types):
                 raise(Data.BadSpecifiedType(f"An entry of provided types was not of {type(type)} class."))
             self.types  = types
             # Construct default names for each column if names were not provided.
-            if (type(self.names) == type(None)): self.names = [str(i) for i in range(len(types))]
-        # Initialize the contents of this Data to be an empty list.
-        self.data = []
+            if (self.names is None): self.names = [str(i) for i in range(len(types))]
         # Check if this is a view or a full data object.
-        self.view = (type(rows) != type(None)) or (type(cols) != type(None))
+        self.view = ((rows is not None) or (cols is not None))
         # If this is a "view" object, store a pointer.
         if self.view:
             if (type(None) in map(type,(data,rows,cols))):
@@ -167,7 +165,7 @@ class Data:
             self._row_indices = rows
             self._col_indices = cols
         # If provided, build this data as a deep copy of provided data.
-        elif type(data) != type(None):
+        elif (data is not None):
             for i,row in enumerate(data):
                 # Update user on progress if too much time has elapsed..
                 if (time.time() - start) > self.max_wait:
@@ -222,8 +220,7 @@ class Data:
                         raise(Data.UnknownName(f"This data does not have a column named '{index[1]}'."))
                     num_index = col_names.index(index[1])
                 # Otherwise, retreive the exact numerical column index.
-                else:
-                    num_index = self.names.index(index)
+                else: num_index = self.names.index(index[1])
             # Handle an integer index.
             elif (type(index[1]) == int):
                 if (not (-self.shape[1] <= index[1] < self.shape[1])):
@@ -315,10 +312,12 @@ class Data:
                 if (self.types[col] == type(None)):
                     self.types[col] = type(value)
                 # Ignore missing values.
-                elif (type(value) == type(None)): pass
+                elif (value is None): pass
                 # Check against the existing column type (for verification).
                 elif (type(value) != self.types[col]):
-                    raise(Data.BadAssignment(f"Provided value {value} of type {type(value)} does not match expected type {self.types[col]}."))
+                    message = f"Provided value {value} of type {type(value)} does not match expected type {self.types[col]}."
+                    if (self.view): message = "This Data is a view. " + message
+                    raise(Data.BadAssignment(message))
                 # Make the assignment
                 self.data[row][col] = value
         # Verify that the iterable has been exhausted.
@@ -363,7 +362,7 @@ class Data:
         else:
             from util.random import random_range
             sample = self[sorted(random_range(len(self),count=MISSING_SAMPLE_SIZE)),:]
-        is_none = lambda v: type(v) == type(None)
+        is_none = lambda v: (v is None)
         missing_rows = {r+1:sum(map(is_none,v)) for (r,v) in enumerate(sample) if (None in v)}
         # Print some info about missing values if they exist.
         if len(missing_rows) > 0:
@@ -437,7 +436,7 @@ class Data:
                     print(f" {100.*i/len(data):.2f}% in-place add", end="\r", flush=True)
                     start = time.time()
                 self.append(row)
-        # Add columns to this from the provided Data (if no columns conflict).
+        # Add columns to this from the provided Data (if number of rows is same).
         elif (len(self) == len(data)) and (set(self.names).isdisjoint(data.names)):
             for col in data.names: self[col] = data[col]
         # Otherwise if a subset of columns are matching, add rows (and new columns).
@@ -445,6 +444,7 @@ class Data:
             # First add rows for all the same-named columns.
             other_names = set(data.names)
             shared_names = [n for n in self.names if n in other_names]
+            my_col_indices = [self.names.index(n) for n in shared_names]
             for i,row in enumerate(data[:,shared_names]):
                 # Update user on progress if too much time has elapsed..
                 if (time.time() - start) > self.max_wait:
@@ -452,13 +452,10 @@ class Data:
                     start = time.time()
                 # Fill missing values with "None".
                 if (len(shared_names) < len(self.names)):
-                    # Construct a full row 
+                    # Construct a full row, start with None, fill
+                    # values from provided data row.
                     full_row = [None] * len(self.names)
-                    i = 0
-                    for j,n in enumerate(self.names):
-                        if (n in other_names):
-                            full_row[j] = row[i]
-                            i += 1
+                    for j,v in zip(my_col_indices,row): full_row[j] = v
                     row = full_row
                 self.append(row)
             # Second add new columns for all the new names.
@@ -476,22 +473,42 @@ class Data:
                     print(f" {100.*i/len(data):.2f}% in-place add (fill cols)", end="\r", flush=True)
                     start = time.time()
                 self[r-len(data),new_names] = data[r][new_names]
+        else: raise(Data.Unsupported("Not sure how to add given data, no shape or name precedents match."))
         # Return self
         return self
 
     # Define a convenience funciton for concatenating another
     # similarly typed and named data to self.
     def __add__(self, data):
-        self = self.copy()
-        self += data
-        return self
+        d = self.copy()
+        d += data
+        return d
+
+    # Check whether or not the values match a row in data.
+    def __contains__(self, row):
+        # If the row is the wrong length, then certainly not.
+        if (len(row) != self.shape[1]): return False
+        # Otherwise, all rows of this Data have to be checked.
+        for r in self:
+            if all(v1 == v2 for (v1,v2) in zip(r,row)): return True
+        return False
+
+    # Given a row, generate the list of indices in this data that equal the row.
+    def __eq__(self, row):
+        for i in range(len(self)):
+            if all(self[i] == row): yield i
+
+    # Overwrite the "len" operator.
+    def __len__(self):
+        if (self.view): return len(self._row_indices)
+        else:           return len(self.data)
 
     # Define the "append" operator using the insert operation. On a
     # list, the  "insert" operation takes about twice as long when
     # placing values at the end, but that speed is sacrificed to
     # remove the extra code.
     def append(self, index, value=None):
-        if type(value) == type(None): index, value = len(self), index
+        if (value is None): index, value = len(self), index
         # Call the standard append operator, adding the element to self
         return  self.insert(index, value)
 
@@ -504,13 +521,13 @@ class Data:
         try:    element = list(element)
         except: raise(Data.BadValue(f"Invalid element, failed conversion to list."))
         # Check length in case names already exist
-        if (type(self.names) != type(None)):
+        if (self.names is not None):
             if (len(element) != self.shape[1]):
                 raise(Data.BadElement(f"Only elements of length {self.shape[1]} can be added to this data."))
             # Try type casing the new element
             for i, (val, typ) in enumerate(zip(element, self.types)):
                 # Ignore 'None' type values.
-                if type(val) == type(None): pass
+                if (val is None): pass
                 elif (typ == type(None)):
                     # Update unassigned types with the new values' type
                     self.types[i] = type(val)
@@ -527,7 +544,7 @@ class Data:
         else:
             # Construct the expected "types" of this data
             self.types = [type(val) for val in element]
-        if (type(self.names) == type(None)):
+        if (self.names is None):
             # Construct default names for each column
             self.names = [str(i) for i in range(len(element))]
         # Call the standard insert operator, adding the element to self
@@ -670,23 +687,31 @@ class Data:
                 # Handling the "columns"
                 if (type(cols) == int):     cols = [self.col(cols)]
                 elif (type(cols) == slice): cols = [self.col(i) for i in range(self.shape[1])[cols]]
+                elif (type(cols) == str):
+                    if self.view: names = list(self.names)
+                    else:         names = self.names
+                    if (cols not in names):
+                        raise(Data.UnknownName(f"This data does not have a column named '{cols}'."))
+                    cols = [names.index(cols)]
                 elif is_iterable(cols):
-                    col_ids = list(cols)
+                    given_cols = list(cols)
                     cols = []
-                    for i,v in enumerate(col_ids):
+                    for i,v in enumerate(given_cols):
                         if (type(v) not in {str,int,bool}):
                             raise(Data.BadIndex(f"The provided column index of type {type(v)}, {v}, is not understood."))
                         elif (type(v) == str):
-                            if (v not in self.names):
+                            if self.view: names = list(self.names)
+                            else:         names = self.names
+                            if (v not in names):
                                 raise(Data.UnknownName(f"This data does not have a column named '{v}'."))
-                            i = self.names.index(v)
+                            idx = names.index(v)
                         # If it is an int, use that as the index.
-                        elif (type(v) == int): i = self.col(v)
+                        elif (type(v) == int): idx = self.col(v)
                         # If it is a boolean and it is False, skip this index.
                         elif (type(v) == bool) and (not v): continue
-                        elif (type(v) == bool) and v: i = self.col(i)
+                        elif (type(v) == bool) and v: idx = self.col(i)
                         # Append the column index
-                        cols.append( i )
+                        cols.append( idx )
                 else:
                     type_printout = sorted(map(str,set(map(type,cols))))
                     raise(Data.BadIndex(f"The provided column index, {index}, is not understood.\n It has types {type_printout}."))
@@ -805,7 +830,9 @@ class Data:
             raise(Data.Unsupported(f"Cannot load file with extension '{ext}'."))
         return self
 
-    # Convenience method for saving to a file
+    # Convenience method for saving to a file, offers automatic
+    # creation of output folders (given they are not present).
+    # WARNING: This method makes a temporary copy if `self.view`.
     def save(self, path, create=True):
         # Special case for being empty.
         if (self.empty): raise(Data.Empty("Cannot save empty data."))
@@ -827,13 +854,22 @@ class Data:
         if (ext == "pkl"):
             import pickle
             with file_opener(path, "wb") as f:
-                pickle.dump(self, f)
+                # Create a copy for the save operation if this is a view.
+                if (self.view):
+                    temp = self.copy()
+                    pickle.dump(temp, f)
+                    del temp
+                else: pickle.dump(self, f)
         elif (ext == "dill"):
             try:    import dill
             except: raise(Data.MissingModule("Failed to import 'dill' module. Is it installed?"))
             with file_opener(path, "wb") as f:
-                dill.dump(self, f)
-
+                # Create a copy for the save operation if this is a view.
+                if (self.view):
+                    temp = self.copy()
+                    dill.dump(temp, f)
+                    del temp
+                else: dill.dump(self, f)
         elif (ext in SEPARATORS):
             sep = SEPARATORS[ext]
             mode = "w" + ("t" if compressed else "")
@@ -842,7 +878,7 @@ class Data:
             with file_opener(path, mode) as f:
                 print(sep.join(map(fix,self.names)), file=f)
                 for row in self:
-                    print_row = map(fix,(str(v) if type(v) != type(None) else "" for v in row))
+                    print_row = map(fix,(str(v) if (v is not None) else "" for v in row))
                     print(sep.join(print_row), file=f)
         else:
             raise(Data.Unsupported(f"Cannot save {'compressed ' if compressed else ''}file with base extension '{ext}'."))
@@ -894,7 +930,7 @@ class Data:
         if   (type(columns) == str): columns = [columns]
         elif (type(columns) == int): columns = [self.names[columns]]
         # Initialize "columns" if it was not provided to be the whole Data.
-        if (type(columns) == type(None)): columns = list(range(len(self.names)))
+        if (columns is None):     columns = list(range(len(self.names)))
         if (type(types) == type): types = [types] * len(columns)
         elif (len(types) != len(columns)):
             raise(Data.BadSpecifiedType(f"{Data.retype} given {len(types)} types, epxected {len(columns)}."))
@@ -919,7 +955,7 @@ class Data:
             self.types[c] = new_t
             # Retype all non-missing elements in that column (in place)
             for i in range(len(self)):
-                if (type(self[i,c]) == type(None)): continue
+                if (self[i,c] is None): continue
                 try:
                     self[i,c] = new_t(self[i,c])
                 except ValueError:
@@ -931,14 +967,14 @@ class Data:
         start = time.time()
         # Special case for being empty.
         if (self.empty):
-            if (type(name) == type(None)): name = "0"
+            if (name is None): name = "0"
             self.names = []
             self.types = []
             idx = 0
         # Set the default index to add a column to be the end.
         if (idx == None): idx = self.shape[1]
         # Verify the name.
-        if (type(name) == type(None)):
+        if (name is None):
             num = 0
             while (str(num) in self.names): num += 1
             name = str(num)
@@ -968,7 +1004,7 @@ class Data:
             # Append the value to this row for normal operation.
             else: self[i].insert(idx, val)
             # Only add to missing values entry if it's not already there
-            if (type(val) == type(None)):  pass
+            if (val is None):  pass
             # Capture the new type (type must be right)
             elif (new_type == type(None)): new_type = type(val)
             # Error out otherwise.
@@ -1044,7 +1080,7 @@ class Data:
             real_row = []
             for (n,t,v) in zip(names, types, row):
                 # Check for the type of the elements of the row
-                if (type(v) == type(None)):
+                if (v is None):
                     if (t == str):
                         real_row += [None] * len(cat_mappings[n][0])
                     elif (real_values[n] == None):
@@ -1206,7 +1242,7 @@ class Data:
     def counts(self, columns=None):
         import time
         start = time.time()
-        if (type(columns) == type(None)): columns = self.names
+        if (columns is None): columns = self.names
         column_info = {n:{} for n in self.names}
         for i,row in enumerate(self):
             # Update user on progress if too much time has elapsed..
@@ -1348,7 +1384,7 @@ class Data:
             if (time.time() - start) > self.max_wait:
                 print(f" {100.*i/len(self):.2f}% unstack", end="\r", flush=True)
                 start = time.time()
-            not_none = lambda v: type(v) != type(None)
+            not_none = lambda v: (v is not None)
             # Retreive the column values in a dictionary.
             try:    values = {c:list(self[i,c]) for c in old_col_names if not_none(self[i,c])}
             except: raise(Data.BadData("Could not convert stack into list. {self[i]}"))
@@ -1472,7 +1508,7 @@ class Data:
         import numpy as np
         numeric = self.to_matrix()
         # Pick the filling model based on data size.
-        if (type(model) == type(None)):
+        if (model is None):
             # Use Voronoi if there are fewer than 10000 points.
             if (len(self) <= 5000):
                 from util.approximate import Voronoi, unique
@@ -1486,7 +1522,7 @@ class Data:
                 from util.approximate import NearestNeighbor
                 model = condition(unique(NearestNeighbor), dim=dim, samples=samples)()
         # Set the weights accordingly
-        if (type(weights) == type(None)):
+        if (weights is None):
             weights = np.ones(numeric.data.shape[1])
         elif (len(weights) != self.shape[1]):
             raise(Data.BadValue("Weights vector is length {len(weights)}, expected length {self.shape[1]}."))
@@ -1509,16 +1545,16 @@ class Data:
                     weights += [col_weights.pop(0)] * i
             weights = np.array(weights)
         # Get the indices of the known and unknown values in this row.
-        row_known = [i for i in range(len(row)) if (type(row[i]) != type(None))]
-        row_unknown = [i for i in range(len(row)) if (type(row[i]) == type(None))]
+        row_known = [i for i in range(len(row)) if (row[i] is not None)]
+        row_unknown = [i for i in range(len(row)) if (row[i] is None)]
         if len(row_unknown) == 0: raise(Data.BadValue("Provided row had no missing values."))
         # Get the numeric version of the provided row.
         numeric_row = numeric.to_real(row, fill=True)
         # Identify the indices of known values and unknown values.
         known_values = np.array([i for i in range(len(numeric_row))
-                                 if (type(numeric_row[i]) != type(None))])
+                                 if (numeric_row[i] is not None)])
         unknown_values = np.array([i for i in range(len(numeric_row))
-                                   if (type(numeric_row[i]) == type(None))])
+                                   if (numeric_row[i] is None)])
         # Get the part of the numeric row
         no_none_numeric_row = np.array([numeric_row[i] for i in known_values])
         # Normalize the numeric row (to debias numeric scale differences)
@@ -1559,7 +1595,7 @@ class Data:
         # Transfer the filled numeric row into the original row
         fill_row = numeric.real_to(fill_row, bias=bias)
         for i,val in enumerate(fill_row):
-            if type(row[i]) == type(None):
+            if (row[i] is None):
                 # Set the value in the row to be the predicted fill value.
                 row[i] = val
             else:
@@ -1595,7 +1631,7 @@ class Data:
         # Get the numeric representation of self.
         numeric = self.to_matrix()
         # Pick the filling model based on data size.
-        if (type(model) == type(None)):
+        if (model is None):
             from util.approximate import unique, condition
             samples = min(numeric.data.shape[0], 10000)
             dim = min(numeric.data.shape[1], 1000)
@@ -1603,7 +1639,7 @@ class Data:
             from util.approximate import NearestNeighbor
             model = condition(unique(NearestNeighbor), dim=dim, samples=samples)()
         # Set the weights accordingly
-        if (type(weights) == type(None)):
+        if (weights is None):
             weights = np.ones(numeric.data.shape[1])
         elif (len(weights) != self.shape[1]):
             raise(Data.BadValue("Weights vector is length {len(weights)}, expected length {self.shape[1]}."))
@@ -1643,8 +1679,8 @@ class Data:
             (v if i in indices else None)
             for i,v in enumerate(self[0])])
         del(indices)
-        train_cols = np.array([i for (i,v) in enumerate(sample) if type(v) == type(None)])
-        test_cols =  np.array([i for (i,v) in enumerate(sample) if type(v) != type(None)])
+        train_cols = np.array([i for (i,v) in enumerate(sample) if (v is None)])
+        test_cols =  np.array([i for (i,v) in enumerate(sample) if (v is not None)])
         del(sample)
         # Cycle through and make predictions.
         for i,(train_rows, test_rows) in enumerate(
@@ -1686,9 +1722,9 @@ class Data:
     def effect(self, compare_with=None, method="mean", display=True, **kwargs):
         from itertools import combinations
         from util.stats import effect
-        if (type(compare_with) == type(None)): compare_with = set(self.names)
-        elif (type(compare_with) == list):     compare_with = set(compare_with)
-        else:                                  compare_with = {compare_with}
+        if (compare_with is None):         compare_with = set(self.names)
+        elif (type(compare_with) == list): compare_with = set(compare_with)
+        else:                              compare_with = {compare_with}
         # Print out the effect in column form (not matrix form).
         effs = []
         for (col_1, col_2) in combinations(self.names, 2):
@@ -1742,7 +1778,7 @@ class Data:
             print_to_file(self)
             return
         # Set the "max_display" to the default value for this class
-        if type(max_display) == type(None): max_display = self.max_display
+        if (max_display is None): max_display = self.max_display
         num_rows, num_cols = self.shape
         print_to_file(f"SUMMARY:")
         print_to_file()
@@ -1750,7 +1786,7 @@ class Data:
         num_numeric = sum(1 for t in self.types if t in {float,int})
         print_to_file(f"    {num_numeric} column{'s are' if num_numeric != 1 else ' is'} recognized as numeric, {num_cols-num_numeric} {'are' if (num_cols-num_numeric) != 1 else 'is'} categorical.")
         # Get some statistics on the missing values.
-        is_none = lambda v: type(v) == type(None)
+        is_none = lambda v: (v is None)
         missing_rows = {r:sum(map(is_none,v)) for (r,v) in enumerate(self) if (None in v)}
         if len(missing_rows) > 0:
             missing_cols = {c:sum(map(is_none,self[n])) for (c,n) in enumerate(self.names) if (None in self[n])}

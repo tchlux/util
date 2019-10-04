@@ -29,6 +29,7 @@ def ks_diff(test_func, true_func, method=100):
                            bounds=[(min_val,max_val)])[0]
         greatest_diff = abs(test_func(sol) - true_func(sol))
     else:
+        import numpy as np
         # METHOD 3:
         #  Generate a large set of x-points and find the difference
         #  between the functions at all of those points. Generate a
