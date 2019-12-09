@@ -77,7 +77,9 @@ class Fraction:
             numerator, denominator = -numerator, -denominator
         elif (numerator >= 0) and (denominator < 0):
             numerator, denominator = -numerator, -denominator
-        # Simplify the numerator and denomninator if appropriate.
+        # If this is indeterminate form, do not reduce!
+        if (numerator == 0 == denominator): reduce = False
+        # Simplify the numerator and denominator if appropriate.
         if reduce:
             divisor = gcd(numerator, denominator)
             numerator   //= divisor
@@ -157,7 +159,6 @@ class Fraction:
     # Compute a raised to the power b.
     # 
     # WARNING: Precision is lost if a root is taken (fractional power).
-    #          The number is converted to a float then converted back.
     def __pow__(a, b):
         # Handle the integer power case.
         if (type(b) == int):
@@ -243,10 +244,13 @@ if __name__ == "__main__":
     print("c = Fraction(float('inf')): ",Fraction(float('inf')))
     c = Fraction(float('inf'))
     print("Fraction(-float('inf')):    ",Fraction(-float('inf')))
-    print("10 / c:  ",Fraction(10) / c)
-    print("c / 10:  ",c / Fraction(10))
-    print("c * 100: ",c * Fraction(100))
-    print("-c:      ",-c)
+    print("10 / c:    ",Fraction(10) / c)
+    print("c / 10:    ",c / Fraction(10))
+    print("c * 100:   ",c * Fraction(100))
+    print("-c:        ",-c)
+    print("c - c:     ",c - c)
+    print("a * (c - c)", a*(c - c))
+    print("a / (c - c)", a/(c - c))
     print()
 
     print("d = Fraction(1,float('inf')): ",Fraction(1,float('inf')))

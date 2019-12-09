@@ -85,7 +85,7 @@ def random_transformation(img, p_range=PERSPECTIVE_RANGE,
 #   name -- The file name to save the temporary file as.
 # 
 def show_img(vec, shape=None, gray=False, clip=True, rotate=False,
-             fliplr=False, flipud=False, name=TEMP_IMG):
+             fliplr=False, flipud=False, name="show_img.png"):
     from PIL import Image
     vec = vec.copy()
     # Try and intelligently infer the shape. Assume square.
@@ -125,7 +125,7 @@ WHITE = np.array((255,255,255), dtype=np.uint8)
 #     Convert a matrix into an image for display
 # 
 def matrix_to_img(matrix, file_name=None, directory=".", rescale=False,
-                  pos_color=BLUE, mid_color=WHITE, neg_color=RED):
+                  pos_color=BLUE, mid_color=WHITE, neg_color=RED, show=True):
     # If no file name is given, use a temporary file and turn on "show".
     if (type(file_name) == type(None)):
         from tempfile import NamedTemporaryFile
@@ -172,4 +172,5 @@ def matrix_to_img(matrix, file_name=None, directory=".", rescale=False,
     print("saving image at",file_name+"..")
     img.save(file_name)
     if show: os.system(f"open {file_name}")
+    return img
 # ===============================================================

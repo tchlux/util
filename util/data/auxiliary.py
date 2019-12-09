@@ -70,7 +70,7 @@ class Descriptor:
 # Local mutable Column class (for column item assignment,
 # retrieval, and iteration over a column in a data object).
 class Column:
-    index = 0
+    _index = 0
     def __init__(self, data, column, indices=None):
         # Generate indices if they were not provided
         if (indices is None): indices = list(range(len(data)))
@@ -94,10 +94,11 @@ class Column:
         elif (hasattr(index, "__iter__")):
             # Convert provided index into a list of integers.
             indices = []
-            for i,v in index:
-                if (type(v) == bool) and v: indices.append(self.indices[i])
+            for i,v in enumerate(index):
+                if (type(v) == bool):
+                    if v: indices.append(self.indices[i])
                 elif (type(v) == int):      indices.append(self.indices[v])
-                else: raise(self.data.BadIndex(f"Data column index iterable contained type {type(i)}, expected {int} or {bool}."))
+                else: raise(self.data.BadIndex(f"Data column index iterable contained type {type(v)}, expected {int} or {bool}."))
         else:
             raise(self.data.BadIndex(f"Data column does not support indexing with type {type(index)}."))
         # Return a new column with modified indices.
@@ -107,13 +108,13 @@ class Column:
     # ----------------
     # Define this as an interator
     def __iter__(self):
-        self.index = 0
+        self._index = 0
         return self
     def __next__(self):
-        if (self.index >= len(self.indices)):
+        if (self._index >= len(self.indices)):
             raise(StopIteration)
-        self.index += 1
-        return self.data[self.indices[self.index-1], self.column]
+        self._index += 1
+        return self.data[self.indices[self._index-1], self.column]
 
     #    Descriptors
     # -----------------
@@ -128,9 +129,9 @@ class Column:
     def _gen_operator(self, other, op_name):
         # First check for length.
         if hasattr(other, "__len__"):
-            # If it is not a singleton, raise an error.
+            # If the "other" is not of the contained type.
             if (type(other) != self.data.types[self.column]):
-                # If the length doesn't match, check if it is a singleton.
+                # If the length doesn't match, raise error.
                 if (len(other) != len(self)):
                     raise(self.data.BadValue(f"Length '{len(other)}' does not have the same number of elements as this Column, {len(self)}."))
                 # Return pairwise comparison for equal-length objects.
@@ -153,19 +154,22 @@ class Column:
         # Try to convert given group to an iterable type for comparison.
         if ((type(other) == self.data.types[self.column]) or (other is None)):
             # Return indices where single value equals column values.
-            for i,v in enumerate(self):
-                if (equality and (v == other)):       yield i
-                elif (not equality) and (v != other): yield i
+            for v in self:
+                if (equality and (v == other)):       yield True
+                elif (not equality) and (v != other): yield True
+                else:                                 yield False
         elif (type(other) == type(self)):
             # Return indices where the two columns are equal (or not).
-            for i,(v1, v2) in enumerate(zip(self, other)):
-                if (equality and (v1 == v2)):       yield i
-                elif (not equality) and (v1 != v2): yield i
+            for (v1, v2) in zip(self, other):
+                if (equality and (v1 == v2)):       yield True
+                elif (not equality) and (v1 != v2): yield True
+                else:                               yield False
         elif (type(other) == set):
             # Iterate over rows, generating indices that match the equality.
-            for i,v in enumerate(self):
-                if (equality and (v in other)):             yield i
-                elif ((not equality) and (v not in other)): yield i
+            for v in self:
+                if (equality and (v in other)):             yield True
+                elif ((not equality) and (v not in other)): yield True
+                else:                                       yield False
         else:
             raise(self.data.BadData(f"There is no defined equality operator for the provided type {type(other)}, when it does not match expected type {self.data.types[self.column]}."))
 

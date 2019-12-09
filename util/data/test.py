@@ -1,4 +1,4 @@
-from util.data.data import Data
+from util.data.data import Data, flatten
 
 # Some tests for the data
 def test_data():
@@ -180,9 +180,9 @@ def test_data():
 
     # Verify the ability to construct real-valued arrays (and go back)
     numeric = a.to_matrix()
-    c = Data(map(numeric.real_to, numeric.data))
+    c = Data(map(numeric.from_real, numeric))
     assert(tuple(a[:-1]["1"]) == tuple(c["1"]))
-    
+
     # Verify conversion into numpy structured array (without "None")
     b = a.to_struct()
     assert(type(b) == np.ndarray)
@@ -251,6 +251,26 @@ def test_data():
     assert(tuple(a["0"]) == tuple(b["0"]))
     os.remove("a-test.csv.gz")
 
+    # Verify the behavior of the 'inflate' and 'deflate' functions.
+    b = a[:]
+    b['iter'] = [None] + [list(range(i)) for i in range(len(b)-1)]
+    _ = b.shape[1]
+    b.inflate("iter")
+    assert((b.shape[1] - _) == (len(b) - 3))
+    b.deflate("iter")
+    assert(b.shape[1] == _)
+    assert(b[0,-1] is None)
+    assert(b[1,-1] is None)
+
+    # Check the 'flatten' function to make sure it correctly flattens
+    # structures with nested, differential depth, and different types.
+    assert(tuple(flatten([(l for l in ((1,2,3)+tuple("abc"))),
+                          "def","ghi", ("jk",tuple("lmn"))])) ==
+           (1,2,3)+tuple('abcdefghijklmn'))
+
+    # TODO: Verify load of a large file (sample only)
+    # TODO: Verify load of a large compressed file (sample only)
+
     # Verify column equivalence / equality checker by element
     b = a[a["0"] == 1]
     assert(tuple(b["0"]) == tuple([1,1]))
@@ -273,7 +293,7 @@ def test_data():
     assert('a' in a[0])
     assert(1.2 in a[0])
 
-    # Verify that "in" works on Data.
+    # Verify that "in" works on Data and View.
     assert(not ([1, "a"] in a))
     assert(not ([3, "a"] in a[:,:2]))
     assert([1, "a"] in a[:,:2])
@@ -284,6 +304,14 @@ def test_data():
 
     # Verify that "equality" works for Data objects.
     assert(tuple(a == [1,'a',1.2]) == (0,))
+
+    # Verify that "equality" fails when the equality operator for
+    # elements of a row is NotImplemented.
+    b = a[:]
+    assert( len(list(b == (i for i in (1,2,3,4)))) == 0 )
+    assert( tuple(b[0] == (i for i in (1,2,3,4))) ==
+            (NotImplemented, NotImplemented, NotImplemented) )
+
 
     # Verify that "addition" with sequences works correctly (left and right).
     b = a[:]
@@ -347,6 +375,19 @@ def test_data():
     c = b.unique()
     assert(len(b) == len(c))
 
+    # Test the access of a single column by name in a view.
+    b = a[:,:-1]
+    assert( tuple(b[:,"0"]) == (1,2,3,1,-1) )
+
+    # Verify that the printed data set handles edge cases (one more
+    # row or equal rows to number desired) correctly.
+    b = a[:]
+    b = b + b
+    b.append(b[0])
+    sb = str(b)
+    body_of_printed_table = sb[sb.index('-\n') + 2: sb.index("...\n")]
+    assert( b.max_display == body_of_printed_table.count("\n"))
+
     # Test the 'fill' method.
     b = a[:]
     b[-2,1] = 'd'
@@ -373,6 +414,18 @@ def test_data():
 
     # ----------------------------------------------------------------
     #     Testing expected exceptions.
+
+    # Verify that incorrect names are detected in "Data.effect".
+    b = a[:]
+    try: b.effect("bad name")
+    except Data.BadIndex: pass
+    else:  assert(False)
+
+    # Verify that a data object refuses to be added to itself in place.
+    b = a[:]
+    try: b += b
+    except Data.Unsupported: pass
+    else:  assert(False)
 
     # Try assigning with a generator that is too short.
     try:   a['3'] = (i for i in range(len(a)-1))

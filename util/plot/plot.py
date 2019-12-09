@@ -6,12 +6,12 @@
 # in each row), animations, box-plots, and plot annotations.
 # 
 # Required packages:
-#   random, numbers, os, webbrowser, imp, sys, re, tempfile
+#   random, numbers, os, webbrowser, sys, re, tempfile
 #   numpy
 #   scipy
 # 
 # Imports nested in appropriate functions:
-#   import_package("plotly")
+#   import plotly
 #   from scipy.spatial import ConvexHull
 #   from scipy.spatial import Delaunay
 # 
@@ -53,9 +53,8 @@
 # 
 # --------------------------------------------------------------------
 
-import random, numbers, os, webbrowser, imp, sys, re, tempfile
+import random, numbers, os, webbrowser, sys, re, tempfile
 import numpy as np
-from scipy.spatial.qhull import QhullError
 
 NOTEBOOK_MODE = False    # Jupyter notebook mode
 PLOT_MARGIN = 50         # In pixels
@@ -289,6 +288,7 @@ class Plot:
     # development stage.
     def _clean_data(self, data):
         from scipy.spatial import Delaunay
+        from scipy.spatial.qhull import QhullError
         # Remove the extra color attribute stored for easy access
         # any_heatmaps = any(d.get("type","") == "heatmap" for d in data)
         for d in data:
@@ -308,7 +308,7 @@ class Plot:
             # 2D PLOT SETUP
             for d in data:
                 d.pop('z','')
-                # WARNING: I UNCOMMENTED THESE, NOT SURE WHY THEY'RE THERE
+                # WARNING: I COMMENTED THESE, NOT SURE WHY THEY'RE THERE
                 # d.pop('hoverinfo','')
                 # d.pop('text','')
                 # Special case for plotting histograms
@@ -569,7 +569,7 @@ class Plot:
             while None in response: response[response.index(None)] = [None]
         except ValueError:
             raise(Exception("The provided function returned a non-numeric value."))
-        response = np.array(response).flatten()
+        response = np.array(response, dtype=float).flatten()
 
         if "hoverinfo" not in kwargs: kwargs["hoverinfo"] = "name+x+y"+("+z" if self.is_3d else "")
         # Call the standard plot function
@@ -625,7 +625,7 @@ class Plot:
     #  opacity     -- See "add" function.
     def add_histogram(self, name, values, start_end=(None,None),
                       bar_spacing="x", num_bins=100, padding=0.03,
-                      opacity=0.7, histnorm='count',
+                      opacity=0.7, histnorm='count', marker_line_width=1,
                       barmode='overlay', **kwargs):
         # Check for errors in usage.
         if bar_spacing not in ("x", "y"):
@@ -1111,7 +1111,7 @@ class Plot:
              z_range=None, fixed=True, show_legend=True, layout={},
              aspect_mode='cube', legend={}, scene_settings={},
              axis_settings={}, x_axis_settings={}, y_axis_settings={},
-             z_axis_settings={}, hovermode=None,
+             z_axis_settings={}, hovermode="closest", 
              camera_position=DEFAULT_CAMERA_POSITION, html=True,
              file_name=None, show=True, append=False, height=None,
              width=None, loop_duration=5, bounce=False,
@@ -1365,7 +1365,7 @@ class Plot:
 def iplot(plot, *args, html=False, show=True, **kwargs):
     # Set notebook mode for this session if it has not been set.
     global NOTEBOOK_MODE
-    plotly = import_package("plotly")
+    import plotly
     if not NOTEBOOK_MODE:
         plotly.offline.init_notebook_mode()
         NOTEBOOK_MODE = True
@@ -1416,7 +1416,7 @@ def create_html(fig, file_name=None, show=True, append=False,
     if (file_name[-len('.html'):] != ".html"): file_name += ".html"
     # Load the pypi package "plotly" that interfaces with plotly.js
     # only once this is called, otherwise it slows down the import
-    plotly = import_package("plotly")
+    import plotly
     # Store the old file contents if we are appending
     if (append and os.path.exists(file_name)):
         with open(file_name) as f:
@@ -1504,7 +1504,7 @@ def multiplot(plots, x_domains=None, y_domains=None, html=True,
               height=None, width=None, **kwargs): 
     # Load the pypi package "plotly" that interfaces with plotly.js
     # only once this is called, otherwise it slows down the import
-    plotly = import_package("plotly")
+    import plotly
     # Make sure the plots array is 2D
     try:    plots[0][0]
     except: plots = [plots]
@@ -1652,18 +1652,6 @@ def multiplot(plots, x_domains=None, y_domains=None, html=True,
 # =================================================
 #      Helper functions needed for this module     
 # =================================================
-
-# Importer function to make sure that the a local file name doesn't
-# conflict with the true installed package name
-def import_package(name, custom_name=None):
-    # Use a custom name if provided, otherwise just name
-    custom_name = custom_name or name
-    # Find and open a file that is the non-local package name
-    f, pathname, desc = imp.find_module(name, [p for p in sys.path if
-                                               p not in os.getcwd()])
-    # Load the module
-    module = imp.load_module(custom_name, f, pathname, desc)
-    return module
 
 # Given some data, color the data according to a palatte with uniform
 # interpolation between the colors in the palatte from the minimum

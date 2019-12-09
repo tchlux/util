@@ -46,12 +46,12 @@ def epdf_diff(seq_1, seq_2):
                 shared += min(sub_density_1, sub_density_2)
         # Cycle whichever range has the lower maximum.
         if (upp_1 > upp_2):
-            low_2, upp_2, density_2 = gen_2.__next__()
+            low_2, upp_2, density_2 = next(gen_2)
         elif (upp_2 > upp_1):
-            low_1, upp_1, density_1 = gen_1.__next__()
+            low_1, upp_1, density_1 = next(gen_1)
         else:
-            low_1, upp_1, density_1 = gen_1.__next__()
-            low_2, upp_2, density_2 = gen_2.__next__()
+            low_1, upp_1, density_1 = next(gen_1)
+            low_2, upp_2, density_2 = next(gen_2)
     return max(0, 1 - shared)
 
 # Compute the PDF of a sequence of categories.

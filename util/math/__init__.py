@@ -32,6 +32,17 @@ def abs_diff(v1, v2):
     try:    return abs(v1 - v2)
     except: return int(v1 == v2)
 
+# Function for computing the product of a list of numbers.
+def product(sequence):
+    v = 1
+    for number in sequence: v *= number
+    return v
+
+# Compute the probability that 1 specific value is picked from a
+# population of size `N` given a set number of `samples`.
+def pick(samples, N):
+    return 1 - product( ((N-i-1)/(N-i) for i in range(samples)) )
+
 # Return True if a number is prime, False otherwise.
 def is_prime(n):
     for i in range(2,int(n**(1/2))+1):

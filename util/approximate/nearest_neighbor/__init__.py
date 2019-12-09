@@ -36,7 +36,7 @@ class NearestNeighbor(WeightedApproximator):
         # Update the associated 'y' values if they exist (since points
         # were shuffled on the construction of the tree).
         if (self.y is not None):
-            self.y = self.y[self.tree.index_mapping]
+            self.y = [self.y[i] for i in self.tree.index_mapping]
         # Automatically select the value for "k" if appropriate and
         # the response values are available for the points.
         if (self.num_neighbors is None):

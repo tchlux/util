@@ -20,7 +20,8 @@ def unique(weighted_approximator):
 
         # Wrap the fit method to capture only unique points.
         def fit(self, points, values=None, *args, **kwargs):
-            if ((type(points) != np.ndarray) or (len(points.shape) != 2)):
+            if ((not issubclass(type(points), np.ndarray)) or (len(points.shape) != 2)):
+                from util.approximate.base import UnexpectedType
                 raise(UnexpectedType("Expected 2D numpy array as first argument."))
             self.original_points = points
             self.unique_points = {}
@@ -49,7 +50,8 @@ def unique(weighted_approximator):
             
         # Wrap the predict method to return original points.
         def predict(self, points, *args, **kwargs):
-            if ((type(points) != np.ndarray) or (0 >= len(points.shape) < 2)):
+            if ((not issubclass(type(points), np.ndarray)) or (0 >= len(points.shape) < 2)):
+                from util.approximate.base import UnexpectedType
                 raise(UnexpectedType("Provided 'points' should be a 1D or 2D numpy array."))
             # If values were provided, return usual prediction.
             elif (self.original_values is not None):

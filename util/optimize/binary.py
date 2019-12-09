@@ -1,6 +1,4 @@
 
-GOLDEN_RATIO = (5**(1/2) + 1) / 2
-
 # Perform a binary search on a line over a boolean objective function.
 # Find the point at which the the function switches outputs.
 # 
@@ -34,6 +32,8 @@ def binary_search(f, l, u, accuracy=2**(-26), round=lambda x: x):
     # Return the midpoint of the upper and lower bounds.
     return round(l/2 + u/2)
 
+
+GOLDEN_RATIO = (5**(1/2) + 1) / 2
 
 # Perform a golden section search on a line over a convex 1D objective
 # function. Find the minimum point of the function.

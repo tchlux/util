@@ -4,35 +4,39 @@ from util.data.categories import regular_simplex
 from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES, \
     SEPARATORS, FILE_SAMPLE_SIZE, MISSING_SAMPLE_SIZE
 
-# TODO:  Check for duplicate column names, handle duplicate column
-#        names? Do names *have* to be Python strings?
-# TODO:  Make access of a single row (in slicing) return a Row object.
-# TODO:  Make "save" and "load" to CSV support having iterables of
-#        readable types. Expand them out to columns with particular
-#        names (for compatibility with other software), read those
-#        particular names back into a stack.
+# TODO:  Make "to_matrix" automatically consider 'None' a unique value
+#        for categorical columns and add a dimension 'is present' otherwise.
 # TODO:  Make "to_matrix" automatically flatten elements of columns
 #        that contain iterables into their base types. If the types
 #        are numeric, use float, otherwise use string. Use "is numeric".
-# TODO:  Make "to_matrix" automatically consider 'None' a unique value
-#        for categorical columns and add a dimension 'is present' otherwise.
-# TODO:  Wrap the necessary "Numeric" attributes into the matrix,
-#        using a custom ndarray object from numpy.
+# TODO:  Make access of a single row (in slicing) return a Row object.
+# TODO:  Check for duplicate column names, handle duplicate column
+#        names? Do names *have* to be Python strings?
+# TODO:  Support in-place addition with *some* duplicate solumns
+#        and the same number of rows? That or block duplicate col names.
+# TODO:  Warnings or versioning for when the source data is modified
+#        in a way that invalidates a view. Need to track unpropagated
+#        changes somehow. Or make permanent changes disallowed? Or copy?
+#        E.g. view is made, columns are rearranged
+# TODO:  Running 'predict' with nearest neighbor seg-faults after 4th
+#        round, might involve conditioning, probably involves ball tree.
+# TODO:  'predict' does not work with a view, picks wrong column, it
+#        also appears to pick the wrong column even when not a view.
 # TODO:  Rewrite "predict" to work given a data object. This will
 #        break up the data into collections of unique missing values.
 #        Then for each collection, build a model over the appropriate
 #        matrix-format data and predict that collection. This will
 #        work more nicely with the k-fold method.
-# TODO:  Remove the "fill" method in favor of "predict".
 # TODO:  Make "predict" not require that target columns be convertible
 #        to numeric form, only that they operate under a weighted sum.
+# TODO:  Remove the "fill" method in favor of "predict".
+# TODO:  Make printout shorter for data with lots of columns.
 # TODO:  Fix "type digression" message to say specifically what column
 #        changed types and show the value that triggered the change.
 # TODO:  Implement "parallel read" that create subprocesses that read
 #        chunks of the file, communicate progress, communicate type
 #        digressions, saves chunks in .pkl, then organizes them all
 #        into the expected ordered data format.
-# TODO:  Make printout shorter for data with lots of columns.
 # TODO:  Implmenent 'IndexedAudio' reader that mimics the
 #        'IndexedVideo' reader and allows for access to peaks.
 # TODO:  Implemenet 'IndexedText' reader that mimics the
@@ -43,8 +47,6 @@ from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES, \
 #        lazy-evaluated 'IndexedCSV' object.
 # TODO:  Implement 'CachedData' whose underlying '.data' object caches
 #        groups of rows to keep the memory footprint low.
-# TODO:  Support in-place addition with *some* duplicate solumns
-#        and the same number of rows?
 
 
 # ======================================================
@@ -55,6 +57,18 @@ from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES, \
 def is_iterable(obj):
     try:    return (iter(obj) and True)
     except: return False
+
+# Given an object of (nested) iterable(s), expand it in one list. Try
+# using a built-in flatten method for the object, if that fails, do it
+# the (slow) python way.
+def flatten(obj):
+    try: return obj.flatten()
+    except AttributeError:
+        if is_iterable(obj):
+            output = []
+            for v in obj: output += flatten(v)
+        else: output = [obj]
+        return output
 
 # Define a python data matrix structure (named and typed columns).
 class Data:
@@ -216,7 +230,7 @@ class Data:
                 # If this is a view, make that numerical index relative to this.
                 if (self.view):
                     col_names = list(self.names)
-                    if index not in col_names:
+                    if index[1] not in col_names:
                         raise(Data.UnknownName(f"This data does not have a column named '{index[1]}'."))
                     num_index = col_names.index(index[1])
                 # Otherwise, retreive the exact numerical column index.
@@ -241,12 +255,14 @@ class Data:
         else:
             # This index is retrieving a sliced subset of self.
             rows, cols = self._index_to_rows_cols(index)
-            # If this is only accessing a single row, return a Row object.
+            view = type(self)(data=self.data, names=self.names.values,
+                              types=self.types.values, rows=rows, cols=cols)
+            # If this is only accessing a single row, return a Row object
+            # from a Data view that only looks at the selected columns.
             if (type(index) == tuple) and (len(index) == 2) and (type(index[0]) == int): 
-                return self.data[rows[0]][cols]
-            # Otherwise make an alias data set (a data "view") and return it.
-            return type(self)(data=self.data, names=self.names.values,
-                        types=self.types.values, rows=rows, cols=cols)
+                return view[0]
+            # Otherwise return the full view.
+            return view
 
     # Overwrite the standard "[]" get operator to accept strings as well.
     # Given local-specific index, convert to Data index and return value.
@@ -339,8 +355,8 @@ class Data:
         rows += [ list(self.names) ]
         rows += [ list(map(lambda t: str(t)[8:-2],self.types)) ]
         for i,row in enumerate(self):
-            rows += [ row ]
             if i >= self.max_display: break
+            rows += [ row ]
         # Redefine all rows by mapping them to strings.
         rows = rows[:2] + [list(map(self._val_to_str,r)) for r in rows[2:]]
         # Compute length of each row.
@@ -409,6 +425,7 @@ class Data:
         # Check to see if this is a data view object.
         if (self.view): raise(Data.Unsupported("This is a data alias and does not support in-place addition."))
         # Check for improper usage
+        if (id(self) == id(data)): raise(Data.Unsupported("A Data object cannot be added to itself in-place."))
         if type(data) != Data:
             raise(Data.Unsupported(f"In-place addition only supports type {Data}, but {type(data)} was given."))
         # Special case for being empty.
@@ -486,17 +503,22 @@ class Data:
 
     # Check whether or not the values match a row in data.
     def __contains__(self, row):
-        # If the row is the wrong length, then certainly not.
-        if (len(row) != self.shape[1]): return False
-        # Otherwise, all rows of this Data have to be checked.
-        for r in self:
-            if all(v1 == v2 for (v1,v2) in zip(r,row)): return True
+        # Use the "equality" operator to determine if something is contained.
+        for i in (self == row): return True
         return False
 
     # Given a row, generate the list of indices in this data that equal the row.
     def __eq__(self, row):
-        for i in range(len(self)):
-            if all(self[i] == row): yield i
+        # Make sure the row object provided is not a generator.
+        if (type(row) is type((_ for _ in 'generator'))): row = list(row)
+        # Cycle through rows in self.
+        for row_idx in range(len(self)):
+            # Check to see that all values match.
+            for v in (self[row_idx] == row):
+                if (v is NotImplemented): break
+                elif (v is False): break
+            # If the entire row is looped and no problems are encountered, it matches.
+            else: yield row_idx
 
     # Overwrite the "len" operator.
     def __len__(self):
@@ -585,7 +607,7 @@ class Data:
         # Popping of a column
         elif (type(index) == str):
             if index not in self.names:
-                raise(Data.BadSpecifiedName(f"There is no column named {index} in this Data."))
+                raise(Data.BadSpecifiedName(f"There is no column named '{index}' in this Data."))
             col = self.names.index(index)
             # Pop the column from "names", from "types" and then
             # return values from the "pop" operation.
@@ -603,10 +625,17 @@ class Data:
             raise(Data.BadIndex(f"Index {index} of type {type(index)} is not recognized."))
 
     # Overwrite the "sort" method to behave as expected.
-    def sort(self):
+    def sort(self, key=None):
         # If this is a view, sort the row indices.
-        if self.view: self._row_indices.sort(key=lambda row_idx: self.data[row_idx][self._col_indices])
-        else:         self.data.sort(key=lambda row: row.values)
+        if self.view:
+            if (key is None): key = lambda row: tuple(row)
+            order = list(range(len(self)))
+            order.sort(key=lambda i: key(self[i]))
+            self._row_indices = [self._row_indices[i] for i in order]
+        # Otherwise sort the actual list of rows inside this data.
+        else:
+            if (key is None): key = lambda row: row.values
+            self.data.sort(key=key)
 
     # ========================
     #      Custom Methods     
@@ -766,7 +795,7 @@ class Data:
         # Check for compression
         compressed = path[-path[::-1].index("."):] in {"gz"}
         if compressed:
-            import gzip
+            import gzip, io
             file_opener = gzip.open
             base_path = path[:-path[::-1].index(".")-1]
             ext = base_path[-base_path[::-1].index("."):]
@@ -805,10 +834,14 @@ class Data:
                 # Open the file to read the number of lines.
                 with file_opener(path, mode, errors='ignore') as f:
                     lines = sum(chunk.count("\n") for chunk in read_chunks(f))
+                # Get the size of the (uncompressed) file.
+                with file_opener(path, mode, errors='ignore') as f:
+                    import io
+                    file_size = f.seek(0, io.SEEK_END)
                 # Guess at a sample number by assuming lines are equal
                 # sizes, try and grab approximately "FILE_SAMPLE_SIZE".
                 sample_ratio = read_data_kwargs.pop("sample_ratio",
-                    FILE_SAMPLE_SIZE/os.path.getsize(path) )
+                    FILE_SAMPLE_SIZE/file_size )
                 sample_size = int(lines * sample_ratio)
                 print("WARNING: Found",lines,"lines, randomly sampling",sample_size,"from this file.")
                 print("         Use 'sample=None' if you want all lines from this file.")
@@ -962,7 +995,7 @@ class Data:
                     raise(Data.BadSpecifiedType(f"Type casting {new_t} for column {c} is not compatible with existing value '{self[i,c]}' on row {i}."))
 
     # Given a new column, add it to this Data.
-    def add_column(self, column, name=None, idx=None):
+    def add_column(self, column, name=None, index=None, new_type=type(None)):
         import time
         start = time.time()
         # Special case for being empty.
@@ -970,9 +1003,9 @@ class Data:
             if (name is None): name = "0"
             self.names = []
             self.types = []
-            idx = 0
+            index = 0
         # Set the default index to add a column to be the end.
-        if (idx == None): idx = self.shape[1]
+        if (index == None): index = self.shape[1]
         # Verify the name.
         if (name is None):
             num = 0
@@ -981,9 +1014,8 @@ class Data:
         elif (type(name) != str):
             raise(Data.BadSpecifiedName(f"Only string names are allowed. Received name '{name}' with type {type(name)}."))
         # Set the name
-        self.names.insert(idx, name)
+        self.names.insert(index, name)
         # Verify the column type dynamically. Add new values to all rows.
-        new_type = type(None);
         i = -1
         for i,val in enumerate(column):
             # Update user on progress if too much time has elapsed..
@@ -993,16 +1025,16 @@ class Data:
             # Verify valid index first..
             if (self.shape[1] > 1) and (i >= len(self)):
                 # Remove the added name.
-                self.names.pop(idx)
+                self.names.pop(index)
                 # Remove the added elements if the length was not right
-                for j in range(len(self)): self[j].pop(idx)
+                for j in range(len(self)): self[j].pop(index)
                 # Raise error for too long of a column
                 raise(Data.BadData(f"Provided column has at least {i+1} elements, more than the length of this data ({len(self)})."))
             # If this is the first column in the data.
             elif (self.shape[1] == 1):
                 self.append(Data.Row(self, [val]))
             # Append the value to this row for normal operation.
-            else: self[i].insert(idx, val)
+            else: self[i].insert(index, val)
             # Only add to missing values entry if it's not already there
             if (val is None):  pass
             # Capture the new type (type must be right)
@@ -1010,21 +1042,21 @@ class Data:
             # Error out otherwise.
             elif (type(val) != new_type):
                 # Remove the added name.
-                self.names.pop(idx)
+                self.names.pop(index)
                 # Remove the added elements because a problem was encountered.
-                for j in range(i+1): self[j].pop(idx)
+                for j in range(i+1): self[j].pop(index)
                 # This is a new type, problem!
                 raise(Data.BadValue(f"Provided column has multiple types. Original type {new_type}, but '{val}' has type {type(val)}."))
         # Verify the column length
         if (i < len(self)-1):
             # Remove the added name.
-            self.names.pop(idx)
+            self.names.pop(index)
             # Remove the added elements if the length was not right
-            for j in range(i+1): self[j].pop(idx)
+            for j in range(i+1): self[j].pop(index)
             # Raise error for too short of a column
             raise(Data.BadData(f"Provided column has length {i+1}, less than the length of this data ({len(self)})."))
         # Finally, record the new type
-        self.types.insert(idx, new_type)
+        self.types.insert(index, new_type)
 
     # Generate a pair of functions. The first function will map rows
     # of Data to a real-valued list. The second function will map
@@ -1112,7 +1144,7 @@ class Data:
 
         # Generate a function that takes a row in the real-valued
         # space and generates a row in the original space.
-        def real_to(real_row, bias={}):
+        def from_real(real_row, bias={}):
             import numpy as np
             # Verify length of real-vector
             real_row = list(real_row)
@@ -1151,17 +1183,17 @@ class Data:
                 raise(Data.BadElement(f"Provided row has {len(real_row)} elements, translation to {len(names)} unsuccesful, only created {len(row)}."))
             return row
         # Return the two mapping functions and some info
-        return to_real, real_to, real_names, num_inds, cat_inds
+        return to_real, from_real, real_names, num_inds, cat_inds
 
     # Convert this Data automatically to a real-valued array.
     # Return real-valued array, function for going to real from
     # elements of this Data, function for going back to elements of
     # this data from a real vector.
     def to_matrix(self, print_column_width=70):
-        import time
+        import time, inspect
         start = time.time()
         import numpy as np
-        to_real, real_to, real_names, num_inds, cat_inds = self.generate_mapping()
+        to_real, from_real, real_names, num_inds, cat_inds = self.generate_mapping()
         data = []
         for i,row in enumerate(self):
             # Update user on progress if too much time has elapsed..
@@ -1173,21 +1205,29 @@ class Data:
             data.append( to_real(row) )
         if (len(data) == 0):
             raise(Data.BadData("No rows in this data are complete, resulting matrix empty."))
-        array = np.array(data)
-        # Container for important post-processing information. 
+        # This subclass of a NumPy matrix has relevant information to
+        # the process used when transforming a Data object into a
+        # purely numerical matrix of values for prediction purposes.
         # 
-        # Numeric.to_real -- the function for processing regular
-        #                    vectors into associated real vectors
-        # Numeric.real_to -- the function for processing real vectors
-        #                    back into regular vector
-        # Numeric.names   -- meaningful column names for the real vectors
-        # Numeric.nums    -- standard numerical indices
-        # Numeric.cats    -- translated categorical indices
-        # Numeric.data    -- The numeric version of the data.
-        # Numeric.shift   -- How to shift this data to have min 0.
-        # Numeric.scale   -- How to scale this data (after shift) to 
-        #                    have a domain of [0., 1.]
-        class Numeric:
+        # Numeric.to_real   -- the function for processing regular
+        #                      vectors into associated real vectors
+        # Numeric.from_real -- the function for processing real vectors
+        #                      back into regular vector
+        # Numeric.names     -- meaningful column names for the real vectors
+        # Numeric.nums      -- standard numerical indices
+        # Numeric.cats      -- translated categorical indices
+        # Numeric.data      -- The numeric version of the data.
+        # Numeric.shift     -- How to shift this data to have min 0.
+        # Numeric.scale     -- How to scale this data (after shift) to 
+        #                      have a domain of [0., 1.]                    
+        class Numeric(np.ndarray):
+            to_real = None
+            from_real = None
+            names = None
+            nums = None
+            cats = None
+            shift = None
+            scale = None
             def __str__(self):
                 opener = "  ["
                 str_real_names = [opener]
@@ -1198,18 +1238,20 @@ class Data:
                     str_real_names[-1] += f"'{n}', "
                 str_real_names[-1] = str_real_names[-1][:-2] + "]"
                 str_real_names = "\n".join(str_real_names)
-                return f"Numeric object for data with {len(real_names)} columns named:\n{str_real_names}"
+                return f"Numeric object for data with {len(real_names)} columns named:\n{str_real_names}\n\n{super().__str__()}"
+        # Assign the comments to the official documentation spot.
+        Numeric.__doc__ = inspect.getcomments(Numeric).replace("# ","")
         # Generate a container object and fill it.
-        numeric = Numeric()
+        numeric = Numeric((len(data),len(data[0])))
+        numeric[:] = data
         numeric.to_real = to_real
-        numeric.real_to = real_to
+        numeric.from_real = from_real
         numeric.names = real_names
         numeric.nums = num_inds
         numeric.cats = cat_inds
-        numeric.data = array
         # Compute the shift and scale for normalization (of numeric values)
-        numeric.shift = np.min(array, axis=0)
-        numeric.scale = np.max(array, axis=0) - numeric.shift
+        numeric.shift = np.min(numeric, axis=0)
+        numeric.scale = np.max(numeric, axis=0) - numeric.shift
         numeric.shift[cat_inds] = 0.
         numeric.scale[cat_inds] = 1.
         # Return the container object
@@ -1243,7 +1285,7 @@ class Data:
         import time
         start = time.time()
         if (columns is None): columns = self.names
-        column_info = {n:{} for n in self.names}
+        column_info = {n:{} for n in columns}
         for i,row in enumerate(self):
             # Update user on progress if too much time has elapsed..
             if (time.time() - start) > self.max_wait:
@@ -1283,13 +1325,102 @@ class Data:
                 rows.append(i)
         return self[rows]
 
+
+    # Given a column made of iterables, flatten all elements and make
+    # as many columns are necessary to suit the largest length. Make
+    # new columns with naming scheme, fill empty slots with None.
+    def inflate(self, column):
+        # Check for errors.
+        if (self.view): raise(Data.Unsupported(f"This Data is a view and cannot be inflated."))
+        if (column not in self.names): raise(Data.BadIndex(f"No column named '{column}' exists in this Data."))
+        # Check to see if the column contains things that are iterable.
+        if (not any(is_iterable(v) for v in self[column])):
+            raise(Data.ImproperUsage(f"No elements of '{column}' support iteration."))
+        # Start tracking runtime.
+        import time
+        start = time.time()
+        # Extract the old values from this Data one element at a time,
+        # making a list of iterators for each element.
+        values = []
+        for v in self.pop(column):
+            if (v is None):
+                values.append(None)
+            else:
+                # Try iterating over the object, otherwise construct a
+                # tuple containing just the first value (since it
+                # can't provide iteration.
+                try:    values.append( iter(v) )
+                except: values.append( iter((v,)) )
+        # One element at a time, add columns to this Data.
+        idx = 1
+        empty_elements = [0]
+        while (empty_elements[0] < len(self)):
+            # Update user on progress if too much time has elapsed..
+            if (time.time() - start) > self.max_wait:
+                print(f" {idx} inflating..", end="\r", flush=True)
+                start = time.time()
+            # Look for the next element in each iterable.
+            empty_elements[0] = 0
+            # Construct a generator that pulls one element from each row.
+            def column_generator():
+                for i in range(len(values)):
+                    if (values[i] is None):
+                        empty_elements[0] += 1
+                        yield None
+                    else:
+                        try:
+                            yield next(values[i])
+                        except StopIteration:
+                            empty_elements[0] += 1
+                            values[i] = None
+                            yield None
+            # Add the column using the generator object if it's not empty.
+            column_name = column + f' {idx}'
+            self.add_column(column_generator(), name=column_name)
+            idx += 1
+        # Pop out the last added column, because it only contains empty elements.
+        self.pop(column_name)
+
+
+    # Reverse the 'inflate' operation, using the same expected naming scheme.
+    def deflate(self, name):
+        if (self.view): raise(Data.Unsupported(f"This Data is a view and cannot be deflated."))
+        if all((name != n[:len(name)]) for n in self.names):
+            raise(Data.BadIndex(f"No inflated columns by name '{name}' exist in this Data."))
+        # Start tracking runtime.
+        import time
+        start = [time.time()]
+        # Identify those columns that need to be cobined into one column.
+        to_collapse = [n for n in self.names if n[:len(name)] == name]
+        # Sort the keys by their numerical index.
+        to_collapse.sort(key=lambda n: int(n[len(name)+1:]))
+        def row_generator():
+            for i,row in enumerate(zip(*(self.pop(col) for col in to_collapse))):
+                # Update user on progress if too much time has elapsed..
+                if (time.time() - start[0]) > self.max_wait:
+                    print(f" {i+1}:{len(self)} deflating..", end="\r", flush=True)
+                    start[0] = time.time()
+                # Find the location of the last None value in this row.
+                for last_none in range(1,len(row)+1):
+                    if (row[-last_none] is not None): break
+                # If there are *only* None values, yield None.
+                else:
+                    yield None
+                    continue
+                # If the entire row is made of None, then return None.
+                if (last_none > 1): yield list(row[:1-last_none])
+                else:               yield list(row)
+        # Pop out all of the old columns and add one new column.
+        self.add_column(row_generator(), name=name)
+
+
     # Given a list of column names, modify this Data so that all
     # specified column names are stacked in lists associated with
     # unique combinations of unspecified column names.
     def stack(self, columns):
         if (self.view): raise(Data.Unsupported("Cannot 'stack' a data view, either 'stack' original data or copy and then 'stack'."))
-        import time
         from util.system import hash
+        import time
         start = time.time()
         # Adjust for usage (where user provides only one column).
         if (type(columns) != list): columns = [columns]
@@ -1516,14 +1647,14 @@ class Data:
             # Otherwise use nearest neighbor (can't get points + weights from NN)
             else:
                 from util.approximate import unique, condition
-                samples = min(numeric.data.shape[0], 10000)
-                dim = min(numeric.data.shape[1], 1000)
+                samples = min(numeric.shape[0], 10000)
+                dim = min(numeric.shape[1], 1000)
                 # Use nearest neighbor (can't get points + weights from NN)
                 from util.approximate import NearestNeighbor
                 model = condition(unique(NearestNeighbor), dim=dim, samples=samples)()
         # Set the weights accordingly
         if (weights is None):
-            weights = np.ones(numeric.data.shape[1])
+            weights = np.ones(numeric.shape[1])
         elif (len(weights) != self.shape[1]):
             raise(Data.BadValue("Weights vector is length {len(weights)}, expected length {self.shape[1]}."))
         else:
@@ -1561,17 +1692,18 @@ class Data:
         no_none_numeric_row = ((no_none_numeric_row - numeric.shift[known_values])
                                / numeric.scale[known_values]) * weights[known_values]
         # Get the normalized training point locations.
-        normalized_numeric_data = ((numeric.data - numeric.shift)
+        normalized_numeric_data = ((numeric - numeric.shift)
                                    / numeric.scale) * weights
         # Fit the model and make a prediction for this row.
         if hasattr(model, "WeightedApproximator"):
             # Fit the model (just to the points)
+            that_type = type(normalized_numeric_data[:,known_values])
             model.fit(normalized_numeric_data[:,known_values])
             del(normalized_numeric_data)
             # Get the source points and source weights for the prediction
             pts, wts = model.predict(np.array(no_none_numeric_row))
             # Compute the fill row by performing the weighted sum.
-            fill_row = np.sum((numeric.data[pts,:][:,unknown_values].T * wts), axis=1)
+            fill_row = np.sum((numeric[pts,:][:,unknown_values].T * wts), axis=1)
             # Convert points and weights into python list (in case they're not)
             pts = list(pts)
             wts = list(wts)
@@ -1591,9 +1723,8 @@ class Data:
                         numeric.shift[unknown_values])
         # Pad fill row with 0's so that it is the correct length for conversion.
         fill_row = [0.] * len(known_values) + list(fill_row)
-        # python3 -m pytest data.py
         # Transfer the filled numeric row into the original row
-        fill_row = numeric.real_to(fill_row, bias=bias)
+        fill_row = numeric.from_real(fill_row, bias=bias)
         for i,val in enumerate(fill_row):
             if (row[i] is None):
                 # Set the value in the row to be the predicted fill value.
@@ -1671,16 +1802,20 @@ class Data:
         print("normalized_data.shape: ",normalized_data.shape)
         # Identify those columns that are being predicted
         target_column_indices = [self.names.index(c) for c in target_columns]
+        print("target_column_indices: ",target_column_indices)
         results = Data(names=[c + " Predicted" for c in target_columns]+["Prediction Index"],
                        types=[self.types[i] for i in target_column_indices]+[int])
         # Identify the numeric ranges of those columns
         indices = set(target_column_indices)
+        print("target names: ",[self.names[i] for i in target_column_indices])
         sample = numeric.to_real([
             (v if i in indices else None)
             for i,v in enumerate(self[0])])
         del(indices)
         train_cols = np.array([i for (i,v) in enumerate(sample) if (v is None)])
         test_cols =  np.array([i for (i,v) in enumerate(sample) if (v is not None)])
+        print("train_cols: ",train_cols)
+        print("test_cols: ",test_cols)
         del(sample)
         # Cycle through and make predictions.
         for i,(train_rows, test_rows) in enumerate(
@@ -1700,7 +1835,7 @@ class Data:
             # Store the prediction results.
             for j,i in enumerate(test_rows):
                 row = list(numeric.data[i,train_cols]) + list(predictions[j,:])
-                row = numeric.real_to(row, bias=bias)
+                row = numeric.from_real(row, bias=bias)
                 results.append( [row[i] for i in target_column_indices] + [i] )
             print(" "*70,end="\r",flush=True)
         # Sort results by the original index
@@ -1725,6 +1860,10 @@ class Data:
         if (compare_with is None):         compare_with = set(self.names)
         elif (type(compare_with) == list): compare_with = set(compare_with)
         else:                              compare_with = {compare_with}
+        # Make sure all names provided are valid.
+        for n in compare_with:
+            if n not in self.names:
+                raise(Data.BadIndex(f"No column named '{n}' exists in this Data."))
         # Print out the effect in column form (not matrix form).
         effs = []
         for (col_1, col_2) in combinations(self.names, 2):

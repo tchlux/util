@@ -33,7 +33,7 @@ class Approximator:
     def fit(self, x, y, classifier=None, *args, **kwargs):
         if (classifier is not None): self.classifier = classifier
         elif (not is_numeric(y[0])):  self.classifier = True
-        if ((type(x) != np.ndarray) or (len(x.shape) != 2)):
+        if ((not issubclass(type(x), np.ndarray)) or (len(x.shape) != 2)):
             raise(UnexpectedType("Provided 'x' should be a 2D numpy array."))
         # If this is a classification problem, convert y values into
         # vertices of a regular simplex.
@@ -45,7 +45,7 @@ class Approximator:
             self.class_map = dict(zip(categories,values))
             y = np.array([self.class_map[hash(v)] for v in y])
         if (type(y) == list): y = np.array(y)
-        if (type(y) != np.ndarray):
+        if (not issubclass(type(y), np.ndarray)):
             raise(UnexpectedType("Provided 'y' should be a 1D or 2D numpy array."))
         elif (len(y.shape) == 1):
             y = np.reshape(y, (y.shape[0], 1))
@@ -58,7 +58,7 @@ class Approximator:
         
     # Predict y at new x locations from fit model.
     def predict(self, x, *args, **kwargs):
-        if ((type(x) != np.ndarray) or (0 >= len(x.shape) < 2)):
+        if ((not issubclass(type(x), np.ndarray)) or (0 >= len(x.shape) < 2)):
             raise(UnexpectedType("Provided 'x' should be a 1D or 2D numpy array."))
         single_response = len(x.shape) == 1
         if single_response:
@@ -72,7 +72,8 @@ class Approximator:
                     np.argmax(category_ratio(guess)) ])
             response = np.array(class_response)
         # Reduce to one response value if that's what was trained.
-        if self._response_dim == 1: response = response[:,0]
+        if (self._response_dim == 1) and (len(response.shape) > 1):
+            response = response[:,0]
         # Reduce to one approximation point if that's what was provided.
         if single_response:         response = response[0]
         # Return the response
@@ -102,7 +103,7 @@ class WeightedApproximator(Approximator):
     def fit(self, x, y=None, classifier=None, **kwargs):
         if (classifier is not None):                     self.classifier = classifier
         elif (y is not None) and (not is_numeric(y[0])): self.classifier = True
-        if ((type(x) != np.ndarray) or (len(x.shape) != 2)):
+        if ((not issubclass(type(x), np.ndarray)) or (len(x.shape) != 2)):
             raise(UnexpectedType("Provided 'x' should be a 2D numpy array."))
         if (y is not None):
             if (not hasattr(y, "__len__")):
@@ -119,7 +120,7 @@ class WeightedApproximator(Approximator):
         
     # Predict y at new x locations from fit model.
     def predict(self, x, *args, **kwargs):
-        if ((type(x) != np.ndarray) or (0 >= len(x.shape) < 2)):
+        if ((not issubclass(type(x), np.ndarray)) or (0 >= len(x.shape) < 2)):
             raise(UnexpectedType("Provided 'x' should be a 1D or 2D numpy array."))
         single_response = len(x.shape) == 1
         if single_response:
