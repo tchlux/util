@@ -1,5 +1,9 @@
 from util.data.data import Data, flatten
 
+# TODO:  Test for file that has a type digression happen on a line
+#        with empty strings in it. This caused a crash [2019-12-17].
+
+
 # Some tests for the data
 def test_data():
     import os
@@ -385,8 +389,73 @@ def test_data():
     b = b + b
     b.append(b[0])
     sb = str(b)
-    body_of_printed_table = sb[sb.index('-\n') + 2: sb.index("...\n")]
-    assert( b.max_display == body_of_printed_table.count("\n"))
+    # Test the correctness of truncated rows and columns.
+    b.max_display = 2
+    b_printout = '''
+=========================
+Size: (11 x 3)
+
+ 0   | ... | 2    
+ int | ... | float
+-------------------
+ 1   | ... | 1.2  
+ ...   ...   ...  
+ 2   | ... | 3.0  
+
+ missing 4 of 33 entries,
+      at rows: [5, 10]
+   at columns: [1, 2]
+=========================
+'''
+    assert( str(b) == b_printout)
+    # Test the correctness of truncated rows only.
+    b.max_display = 4
+    b_printout = '''
+=========================
+Size: (11 x 3)
+
+ 0   | 1   | 2    
+ int | str | float
+-------------------
+ 1   | "a" | 1.2  
+ 2   | "b" | 3.0  
+ ...   ...   ...  
+ 3   | "c" | 2.4  
+ 1   | "2" | 3.0  
+
+ missing 4 of 33 entries,
+      at rows: [5, 10]
+   at columns: [1, 2]
+=========================
+'''
+    assert( str(b) == b_printout)
+    # Test the correctness of exact match (no truncation).
+    b.max_display = 11
+    b_printout = '''
+=========================
+Size: (11 x 3)
+
+ 0   | 1    | 2    
+ int | str  | float
+--------------------
+ 1   | "a"  | 1.2  
+ 2   | "b"  | 3.0  
+ 3   | "c"  | 2.4  
+ 1   | "2"  | 3.0  
+ -1  | None | None 
+ 1     "a"    1.2  
+ 2   | "b"  | 3.0  
+ 3   | "c"  | 2.4  
+ 1   | "2"  | 3.0  
+ -1  | None | None 
+ 1   | "a"  | 1.2  
+
+ missing 4 of 33 entries,
+      at rows: [5, 10]
+   at columns: [1, 2]
+=========================
+'''
+    assert( str(b) == b_printout)
 
     # Test the 'fill' method.
     b = a[:]

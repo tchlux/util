@@ -8,7 +8,7 @@ from util.data import QUOTES, COMMON_SEPARATORS, UPDATE_FREQUENCY, \
 # Return the type of a string (try converting to int and float)
 def get_type(obj):
     # Special case for handling empty strings (default to base type, int).
-    if (hasattr(obj, "__len__") and (len(obj) == 0)):
+    if (hasattr(obj, "__len__") and (len(obj) == 0)) or (obj is None):
         return int
     # Detect type by tring to cast and seeing what works.
     try:
@@ -195,17 +195,19 @@ def read_data(filename="<no_provided_file>", sep=None, types=None,
             data.append(list_line)
         except Data.BadValue:
             if type_digression:
-                # Update the types based on digression order
-                list_line = [el.strip() for el in split_with_quotes(line, sep)]
+                # Get the new types.
                 new_types = list(map(get_type, list_line))
                 type_order = {int:0, float:1, str:2}
                 new_types = [max(old,new, key=lambda v: type_order[v])
                              for (old,new) in zip(types, new_types)]
                 # Update the user if appropriate
                 if verbose:
-                    print(f"\nType digression because of line {i+3}."+
-                          f"\n  old types: {types}"+
-                          f"\n  new types: {new_types}")
+                    print(f"\nType digression because of line {i+3}.")
+                    for c in range(len(types)):
+                        if (types[c] != new_types[c]):
+                            old_type_name = str(types[c]).split("'")[1]
+                            new_type_name = str(new_types[c]).split("'")[1]
+                            print(f"  Column {c+1} digressed from '{old_type_name}' to '{new_type_name}' due to: {list_line[c]}")
                 # Retype the existing data to match the new types
                 data.retype(new_types)
                 # Append line that matches new types

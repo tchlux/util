@@ -10,6 +10,9 @@ from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES, \
 #        that contain iterables into their base types. If the types
 #        are numeric, use float, otherwise use string. Use "is numeric".
 # TODO:  Make access of a single row (in slicing) return a Row object.
+# TODO:  Remove builtin prediction code for anything other than
+#        nearest neighbor prediction. Maybe remove prediction in
+#        general, since it isn't something that can be picked beforehand.
 # TODO:  Check for duplicate column names, handle duplicate column
 #        names? Do names *have* to be Python strings?
 # TODO:  Support in-place addition with *some* duplicate solumns
@@ -30,9 +33,6 @@ from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES, \
 # TODO:  Make "predict" not require that target columns be convertible
 #        to numeric form, only that they operate under a weighted sum.
 # TODO:  Remove the "fill" method in favor of "predict".
-# TODO:  Make printout shorter for data with lots of columns.
-# TODO:  Fix "type digression" message to say specifically what column
-#        changed types and show the value that triggered the change.
 # TODO:  Implement "parallel read" that create subprocesses that read
 #        chunks of the file, communicate progress, communicate type
 #        digressions, saves chunks in .pkl, then organizes them all
@@ -81,7 +81,7 @@ class Data:
     # Default maximum printed rows of this data.
     max_display = 10
     # Default maximum string length of printed column values.
-    max_str_len = 50
+    max_str_len = 30
     # Define the time waited before displaying progress.
     max_wait = DEFAULT_DISPLAY_WAIT
     # Define the maximum display width for a table (with many columns)
@@ -350,34 +350,71 @@ class Data:
         # Custom short string for a 'data' type object.
         if short: return f"Data ({self.shape[0]} x {self.shape[1]}) -- {self.names}"
         # Make a pretty table formatted output
-        num_rows, num_cols = self.shape
         rows = []
-        rows += [ list(self.names) ]
-        rows += [ list(map(lambda t: str(t)[8:-2],self.types)) ]
+        half_max = self.max_display // 2
+        # Add the string values of "types" and "names" to the display.
+        if (self.shape[1] <= self.max_display):
+            rows += [ list(self.names) ]
+            rows += [ list(map(lambda t: str(t)[8:-2],self.types)) ]
+        else:
+            names = []
+            types = []
+            for c in range(self.max_display):
+                if (c == half_max):
+                    names.append("...")
+                    types.append("...")
+                if (c >= half_max): c -= self.max_display
+                names.append( str(self.names[c]) )
+                types.append( str(self.types[c])[8:-2] )
+            rows += [names, types]
+        # ------------------------------------------------------------
+        #          PRODUCE STRINGS OF STORED DATA TO SHOW
+        # 
+        # Add some rows to display to the printout.
         for i,row in enumerate(self):
+            # If this is beyond the "max_display", then break.
             if i >= self.max_display: break
-            rows += [ row ]
-        # Redefine all rows by mapping them to strings.
-        rows = rows[:2] + [list(map(self._val_to_str,r)) for r in rows[2:]]
-        # Compute length of each row.
-        lens = [max(len(r[c]) for r in rows)
-                for c in range(num_cols)]
-        # Redefine all rows by adding spaces to short-columns.
+            # If this is more than halfway through max_display, insert
+            # a truncation sequence and look at back of this Data.
+            elif (len(self) > self.max_display) and (i >= half_max):
+                if (i == half_max): rows += [["..."]*len(rows[0])]
+                i -= self.max_display
+            # Convert values in the row into strings for printing.
+            str_row = []
+            for c in range(len(row)):
+                if c >= self.max_display: break
+                elif (self.shape[1] > self.max_display) and (c >= half_max):
+                    if (c == half_max): str_row.append("...")
+                    c -= self.max_display
+                str_row.append( self._val_to_str(row[c]) )
+            rows += [ str_row ]
+        # Compute length of each column.
+        lens = [max(len(r[c]) for r in rows) for c in range(len(rows[0]))]
+        # Redefine all columns by adding spaces to short-columns.
         rows = [[v + " "*(lens[i]-len(v)) for i,v in enumerate(row)]
                 for row in rows]
-        rows = [" " + (" | ".join(row)) + "\n" for row in rows]
+        # Add dividers between the data values (skip truncation rows).
+        for r in range(len(rows)):
+            if ((r-2) == half_max):
+                rows[r] = " " + ("   ".join(rows[r])) + "\n"
+            else:
+                rows[r] = " " + (" | ".join(rows[r])) + "\n"
         # Construct the strings for the "view" and "size" descriptions
         view_string = "This data is a view.\n" if self.view else ""
-        size_string = f"Size: ({num_rows} x {num_cols})"
+        size_string = f"Size: ({self.shape[0]} x {self.shape[1]})"
         # Construct the string describing missing values.
         missing_string = ""
-        # For small data, the sample is everything.
-        if len(self) < MISSING_SAMPLE_SIZE:
+        # ------------------------------------------------------------
+        #           COMPUTE THE AMOUNT OF MISSING DATA
+        # 
+        # For small data, everything is checked (quickly).
+        if (self.shape[0] * self.shape[1]) < MISSING_SAMPLE_SIZE:
             sample = self
         # For larger data, use a sample of reasonably small size.
         else:
             from util.random import random_range
-            sample = self[sorted(random_range(len(self),count=MISSING_SAMPLE_SIZE)),:]
+            # Get a sample of rows to check for missing values.
+            sample = self[sorted(random_range(len(self),count=MISSING_SAMPLE_SIZE//self.shape[1])),:]
         is_none = lambda v: (v is None)
         missing_rows = {r+1:sum(map(is_none,v)) for (r,v) in enumerate(sample) if (None in v)}
         # Print some info about missing values if they exist.
@@ -388,7 +425,7 @@ class Data:
             col_indices = [sample.names[i] for i in sorted(missing_cols)]
             total_missing_values = sum(missing_rows.values())
             if (sample != self): total_missing_values *= round(len(self) / MISSING_SAMPLE_SIZE)
-            total_values = num_rows * num_cols
+            total_values = self.shape[0] * self.shape[1]
             # Print out the indices of the rows with missing values
             # Add elipses if there are a lot of missing values.
             print_indices = ', '.join(map(str, row_indices[:self.max_display]))
@@ -402,6 +439,9 @@ class Data:
             if (len(col_indices) > self.max_display): missing_string += ", ..."
             missing_string += "]\n"
         missing_string_len = max(map(len, missing_string.split("\n")))
+        # ------------------------------------------------------------
+        #         CREATE A PRETTY BOUNDARY FOR THE PRINTOUT
+        # 
         # Construct a header bar out of "=".
         horizontal_bar = "="*max(len(rows[0]), len(size_string),
                                  len(view_string)-1, missing_string_len)
@@ -410,8 +450,7 @@ class Data:
         string += rows[0]
         string += rows[1]
         string += "-"*len(rows[0]) + "\n"
-        for row in rows[2:]:                string += row
-        if (len(self) > self.max_display): string += "  ...\n"
+        for row in rows[2:]: string += row
         string += "\n"
         string += missing_string
         string += horizontal_bar + "\n"
@@ -560,7 +599,7 @@ class Data:
                         element[i] = typ(val)
                     except ValueError:
                         # Otherwise raise an error to the user
-                        raise(Data.BadValue(f"Value '{val}' of type '{type(val)}' could not successfully be cast as '{typ}'."))
+                        raise(Data.BadValue(f"Value '{val}' of type '{type(val)}' could not successfully be cast as '{typ}' to match column {i+1}."))
                     except TypeError:
                         print("Data error:", typ, typ==type(None))
         else:
@@ -652,7 +691,7 @@ class Data:
             string = v.__str__(short=True)
         # Shorten the string if it needs to be done.
         if len(string) > self.max_str_len: 
-            string = string[:self.max_str_len]+".."
+            string = string[:self.max_str_len]+'..'
         return string
 
     # Given an index (of any acceptable type), convert it into an
@@ -1941,6 +1980,7 @@ class Data:
         print_to_file()
         name_len = max(map(len, self.names))
         type_len = max(map(lambda t: len(str(t)), self.types))
+        count_string_len = len(str(len(self)))
         # Describe each column of the data
         for c,(n,t) in enumerate(zip(self.names, self.types)):
             # Count the number of elements for each value
@@ -1960,7 +2000,7 @@ class Data:
             if (t in {int,float}) and (len(counts) > max_display):
                 if (none_count > 0):
                     perc = 100. * (none_count / len(self))
-                    print_to_file(f"    None                   {none_count:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
+                    print_to_file(f"    None                   {none_count:{count_string_len}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
                 # Order the values by intervals and print
                 min_val = min(counts)
                 max_val = max(counts)
@@ -1975,7 +2015,7 @@ class Data:
                         num = sum(counts[v] for v in counts if lower <= v < upper)
                         cap = ")"
                     perc = 100. * (num / len(self))
-                    print_to_file(f"    [{lower:9.2e}, {upper:9.2e}{cap} {num:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
+                    print_to_file(f"    [{lower:9.2e}, {upper:9.2e}{cap} {num:{count_string_len}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
             else:
                 if t in {int, float}:
                     # Order the values by their inate ordering
@@ -1989,13 +2029,22 @@ class Data:
                 if (t == str): val_len += 2
                 if (none_count > 0):
                     perc = 100. * (none_count / len(self))
-                    print_to_file(f"    {'None':{val_len}s}{'  ' if (t == str) else ''} {none_count:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
+                    print_to_file(f"    {'None':{val_len}s}{'  ' if (t == str) else ''} {none_count:{count_string_len}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
                 for val in ordered_vals[:max_display]:
                     perc = 100. * (counts[val] / len(self))
                     if (t == str):
-                        print_to_file(f"    \"{val}\"{'':{1+val_len-len(str(val))}s}{counts[val]:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
+                        num_spaces = max(1 + val_len - len(str(val)), 0)
+                        hash_bar = "#"*round(perc/2)
+                        count = counts[val]
+                        val = val + " "*num_spaces
+                        if (len(val) > self.max_str_len): val = val[:self.max_str_len]+".."
+                        print_to_file(f'    "{val}"{count:{count_string_len}d} ({perc:5.1f}%) {hash_bar}')
                     else:
-                        print_to_file(f"    {self._val_to_str(val):{val_len}s} {counts[val]:{len(str(len(self)))}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
+                        hash_bar = "#"*round(perc/2)
+                        count = counts[val]
+                        val = self._val_to_str(val)
+                        if (len(val) > self.max_str_len): val = val[:self.max_str_len]+".."
+                        print_to_file(f"    {val:{val_len}s} {count:{count_string_len}d} ({perc:5.1f}%) {hash_bar}")
                 if (len(ordered_vals) > max_display):
                     print_to_file("    ... (increase 'max_display' to see more summary statistics).")
             print_to_file()

@@ -17,8 +17,10 @@ PY_TYPES = {value[0]:key for (key,value) in NP_TYPES.items()}
 # 
 GENERATOR_TYPE = type(_ for _ in ())
 
-FILE_SAMPLE_SIZE = 2**20
-MISSING_SAMPLE_SIZE = 10000
+FILE_SAMPLE_SIZE = 2**20 # <- Default amount of files read by Data (in bytes).
+MISSING_SAMPLE_SIZE = 100000 # <- The max size for which "missing" data
+#                                 calculations become an estimate instead
+#                                 of exact numbers of missing values.
 
 is_none = lambda v: type(v) == type(None)
 

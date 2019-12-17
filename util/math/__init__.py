@@ -96,3 +96,31 @@ def choose(n, k):
     for i in range(1,min(n-k,k)+1):  denominator *= i
     return numerator // denominator
 
+
+# Compute the root of something to a higher degree of accuracy than is
+# possible with floating point numbers. Default accuracy is 1e(-17),
+# which is slightly more precise than a 64 bit floating point number.
+# 
+# The result that is returned is a Fraction object, so that raising
+# it to the "power" should result in something that exactly rounds to
+# the provided "base".
+def root(base, power, accuracy=Fraction(1,1e17)):
+    from util.optimize import min_on_line
+    power = Fraction(power)
+    lower = Fraction(0,1)
+    upper = Fraction(base)
+    f = lambda x: abs(x**power.numerator - upper)
+    frac_round = lambda x: Fraction(x)
+    return min_on_line(f, lower, upper, accuracy=accuracy, round=frac_round)
+
+
+if __name__ == "__main__":
+    value = 2
+    root_num = 10
+    print("value: ",value)
+    print("power: ",1/root_num)
+    float_result = value**(1/root_num)
+    print("float_result**power: ",float_result**root_num)
+    root_result = root(value, root_num)
+    print("root_result**power:  ",float(root_result**root_num))
+    print("root_result: ",repr(root_result))

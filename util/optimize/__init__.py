@@ -2,7 +2,9 @@
 import time, os
 import numpy as np
 # Algorithm for one-dimensional optimization.
-from util.optimize.newton import Secant as zero
+from util.optimize.line import Secant as zero_on_line
+from util.optimize.line import golden_section_search as min_on_line
+from util.optimize.line import binary_search
 # Algorithms for multi-dimensional optimization.
 from util.optimize.gradient_free import AMPGO, AdaptiveNormal, DiRect, Random
 from util.optimize.gradient_based import L_BFGS, SGD, ADAGRAD, ADAM

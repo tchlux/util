@@ -115,7 +115,7 @@ def plot_percentiles(plot, name, x_points, y_points, color=None,
                      group=group_id, show_in_legend=False,
                      mode="lines", textfont=textfont, **kwargs)
         # Add a master legend entry.
-        plot.add(name + " Percentiles", [None], [None],
+        plot.add(name, [None], [None], # name + " Percentiles"
                  color='rgba(%i,%i,%i,%f)'%tuple(center_color),
                  group=group_id, **kwargs)
     else:
