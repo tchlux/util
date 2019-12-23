@@ -21,6 +21,7 @@ FILE_SAMPLE_SIZE = 2**20 # <- Default amount of files read by Data (in bytes).
 MISSING_SAMPLE_SIZE = 100000 # <- The max size for which "missing" data
 #                                 calculations become an estimate instead
 #                                 of exact numbers of missing values.
+MAX_DISPLAY_COLS = 20 # <- maximum number of displayed columnns from data on read
 
 is_none = lambda v: type(v) == type(None)
 

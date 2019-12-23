@@ -2,7 +2,7 @@
 from multiprocessing import cpu_count, get_context, current_process
 # Imports that are used by the processes.
 from queue import Empty
-import sys, os
+import os
 # Try to import "dill" module for better serialization, otherwise use pickle.
 try:                        from dill   import dumps, loads
 except ModuleNotFoundError: from pickle import dumps, loads
@@ -16,17 +16,6 @@ MAP_PROCESSES = []
 # Get a reference to the builtin "map" function, so it is not lost
 # when it is overwrittend by "def map" later in this file.
 builtin_map = map
-
-# Given a shape, create a numpy double array that is prepared to be
-# shared during multiprocessing, but behaves like a normal array.
-def shared_array(shape):
-    import numpy as np
-    from multiprocessing.sharedctypes import Array
-    from ctypes import c_double
-    # Allocate the memory in shared space.
-    memory = Array(c_double, int(np.prod(shape)))
-    # Create and return a structure to access the shared memory (numpy array).
-    return np.frombuffer(memory.get_obj(), dtype=float).reshape(shape)
 
 # Iterator that pulls jobs from a queue and stops iterating once the
 # queue is empty (and remains empty for "JOB_GET_TIMEOUT" seconds). On
@@ -58,6 +47,7 @@ def producer(jobs_iter, job_queue):
 #   redirect     -- Boolean, True if log files should be created per
 #                   process, otherwise all print goes to standard out.
 def consumer(func, iterable, return_queue, redirect):
+    import sys
     # Retrieve the function (because it's been dilled for transfer)
     func = loads(func)
     if redirect:
@@ -103,6 +93,9 @@ def consumer(func, iterable, return_queue, redirect):
 #                "func" should *not* be deleted.
 #   redirect  -- Boolean, True if log files should be created per
 #                process, otherwise all print goes to standard out.
+#   chunk     -- Boolean, True if `split` should be called on the
+#                iterable automatically. WARNING: This will convert
+#                the iterable into a python list, more memory!
 # 
 # RETURNS:
 #   An output generator, just like the builtin "map" function.
@@ -114,7 +107,15 @@ def consumer(func, iterable, return_queue, redirect):
 # 
 #   The mapped function will not have access to global variables.
 def map(func, iterable, max_waiting_jobs=1, max_waiting_returns=1,
-        order=True, save_logs=False, redirect=True):
+        order=True, save_logs=False, redirect=True, chunk=True):
+    # If chunking should be done, then `split` the iterable.
+    if chunk:
+        iterable = split(iterable)
+        total_size = sum([len(i) for i in iterable])
+        single_func = func
+        # Create a new function that returns a list of the original
+        # function mapped onto the elements.
+        func = lambda series: [single_func(element) for element in series]
     # Create multiprocessing context (not to muddle with others)
     ctx = get_context() # "fork" on Linux, "spawn" on Windows.
     # Create a job_queue for passing jobs to processes
@@ -172,6 +173,13 @@ def map(func, iterable, max_waiting_jobs=1, max_waiting_returns=1,
         MAP_PROCESSES.remove(producer_process)
         # Delete log files if the user doess not want them.
         if not save_logs: clear_logs()
+    # If this data was chunked, then re-merge the data in order.
+    if chunk:
+        result = list(return_generator())
+        output = []
+        for i in range(total_size):
+            output.append( result[i%len(result)].pop(0) )
+        return output
     # Return all results in a generator object.
     return return_generator()
 
@@ -179,9 +187,8 @@ def map(func, iterable, max_waiting_jobs=1, max_waiting_returns=1,
 # processes. This is not particularly efficient, as it uses python
 # lists, but it is convenient!
 def split(iterable, count=MAX_PROCS):
-    list_version = list(iterable)
     # Fill the chunks by walking through the iterable.
-    chunks = [[]] * count
+    chunks = [list() for i in range(count)]
     for i,v in enumerate(iterable):
         chunks[i%count].append( v )
     # Return the list of lists that are chunks.
@@ -200,3 +207,14 @@ def clear_logs():
         if (f_name[:8] == "Process-") and (f_name[-4:] == ".log"):
             f_name = os.path.join(LOG_DIRECTORY, f_name)
             os.remove(f_name)
+
+# Given a shape, create a numpy double array that is prepared to be
+# shared during multiprocessing, but behaves like a normal array.
+def shared_array(shape):
+    import numpy as np
+    from multiprocessing.sharedctypes import Array
+    from ctypes import c_double
+    # Allocate the memory in shared space.
+    memory = Array(c_double, int(np.prod(shape)))
+    # Create and return a structure to access the shared memory (numpy array).
+    return np.frombuffer(memory.get_obj(), dtype=float).reshape(shape)

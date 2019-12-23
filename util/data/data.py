@@ -371,14 +371,14 @@ class Data:
         #          PRODUCE STRINGS OF STORED DATA TO SHOW
         # 
         # Add some rows to display to the printout.
-        for i,row in enumerate(self):
-            # If this is beyond the "max_display", then break.
-            if i >= self.max_display: break
+        for i in range(min(len(self), self.max_display)):
             # If this is more than halfway through max_display, insert
             # a truncation sequence and look at back of this Data.
-            elif (len(self) > self.max_display) and (i >= half_max):
+            if (len(self) > self.max_display) and (i >= half_max):
                 if (i == half_max): rows += [["..."]*len(rows[0])]
                 i -= self.max_display
+            # Get the row.
+            row = self[i]
             # Convert values in the row into strings for printing.
             str_row = []
             for c in range(len(row)):
@@ -395,7 +395,7 @@ class Data:
                 for row in rows]
         # Add dividers between the data values (skip truncation rows).
         for r in range(len(rows)):
-            if ((r-2) == half_max):
+            if (len(self) > self.max_display) and ((r-2) == half_max):
                 rows[r] = " " + ("   ".join(rows[r])) + "\n"
             else:
                 rows[r] = " " + (" | ".join(rows[r])) + "\n"

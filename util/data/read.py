@@ -1,5 +1,5 @@
 from util.data import QUOTES, COMMON_SEPARATORS, UPDATE_FREQUENCY, \
-    MAX_ERROR_PRINTOUT
+    MAX_ERROR_PRINTOUT, MAX_DISPLAY_COLS
 
 # =================================================
 #      Automatically Reading Structured Arrays     
@@ -146,10 +146,16 @@ def read_data(filename="<no_provided_file>", sep=None, types=None,
     if type(types) == type(None):
         types = list(map(get_type, line))
         type_digression = True
+        # Padd the "types" with int's on the end (the first type).
+        types += [int] * (len(header) - len(types))
     # Initialize our data holder
     data = Data(names=header, types=types)
     # Add the first line to the data store (after inserting "None")
     while "" in line: line[line.index("")] = None
+    # Pad the end of the line with "None" values.
+    if (len(line) < len(header)):
+        line += [None] * max(0,len(header) - len(line))
+    # Append the line.
     data.append(line)
     # Get the rest of the raw data from the file and close it
     raw_data = f.readlines()
@@ -159,10 +165,20 @@ def read_data(filename="<no_provided_file>", sep=None, types=None,
     # WARNING: Provided file object left to be closed by caller
     # Print out a nicely formatted description of the detected types
     if verbose:
-        print("Column names and types:")
+        print(f"Column names and types: {len(header)}")
         first_line  = ""
         second_line = ""
-        for h,t in zip(header,types):
+        for i in range(len(header)):
+            # For large numbers of columns, only show front and end.
+            if (len(header) > MAX_DISPLAY_COLS):
+                if (i == MAX_DISPLAY_COLS // 2):
+                    first_line += "  ..."
+                    second_line += "  ..."
+                    continue
+                # Skip everything but the front and end of the list.
+                elif min(i, len(header)-i-1) >= MAX_DISPLAY_COLS // 2:
+                    continue
+            h, t = header[i], types[i]
             length = max(len(h), len(t.__name__))
             first_line += f"  {h:{length}s}"
             second_line += f"  {t.__name__:{length}s}"
@@ -188,6 +204,9 @@ def read_data(filename="<no_provided_file>", sep=None, types=None,
         # Read the line of data into a list format (replace empty string with None)
         # Remove leading and trailing quotes from strings if necessary
         list_line = [el.strip() for el in split_with_quotes(line, sep)]
+        # Pad the end of the line with "None" values.
+        if (len(list_line) < len(header)):
+            list_line += [None] * max(0,len(header) - len(list_line))
         # Replace any empty strings with "None" for missing values
         while "" in list_line: list_line[list_line.index("")] = None
         # Try and add the line of data

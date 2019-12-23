@@ -57,6 +57,10 @@ def count_greater(indexable, value):
 #       value selected from "interest" will be in position "rank" from
 #       the smallest value
 def rank_probability(interest, other_data, rank=0, order=False):
+    # Check basic assumptions that should hold at the start of this function.
+    assert(len(interest) > 0)
+    assert(len(other_data) > 0)
+    assert(sum(map(len,other_data)) > 0)
     # Convert negative ranks into their positive counterparts.
     while (rank < 0): rank += len(other_data) + 1
     # Prepare all the data in tuple format (less memory) make sure

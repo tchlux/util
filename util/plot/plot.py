@@ -794,14 +794,14 @@ class Plot:
         # Convert the x, y (and z) values into numpy arrays and
         # store 'values' for creating marker colors based on magnitude
         if type(x_values) != type(None):
-            x_values = np.array(x_values)
+            x_values = np.array(x_values, dtype=float)
             values = x_values
             no_none = [v for v in x_values if isinstance(v,numbers.Number)]
             if len(no_none) != 0:
                 self.x_min_max = [min(min(no_none), self.x_min_max[0]),
                                   max(max(no_none), self.x_min_max[1])]
         if type(y_values) != type(None):
-            y_values = np.array(y_values)
+            y_values = np.array(y_values, dtype=float)
             values = y_values
             no_none = [v for v in y_values if isinstance(v,numbers.Number)]
             if len(no_none) != 0:
@@ -809,7 +809,7 @@ class Plot:
                                   max(max(no_none), self.y_min_max[1])]
         if type(z_values) != type(None):
             self.is_3d = True
-            z_values = np.array(z_values)
+            z_values = np.array(z_values, dtype=float)
             values = z_values
             no_none = [v for v in z_values if isinstance(v,numbers.Number)]
             if len(no_none) != 0:
