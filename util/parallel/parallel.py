@@ -10,7 +10,7 @@ except ModuleNotFoundError: from pickle import dumps, loads
 # Make sure new processes started are minimal (not complete copies)
 MAX_PROCS = cpu_count()
 LOG_DIRECTORY = os.path.abspath(os.path.curdir)
-JOB_GET_TIMEOUT = 1
+JOB_GET_TIMEOUT = 5
 # Global storage for processes
 MAP_PROCESSES = []
 # Get a reference to the builtin "map" function, so it is not lost
