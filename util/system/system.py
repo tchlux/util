@@ -104,7 +104,7 @@ def assemble(names=(), chunk_ext=".chunks", verbose=True):
     # Re-assemble all of the chunked files.
     for name in names:
         if verbose: print(f"  assembling {name}")
-        output_path = os.path.join(output_dair, name[:-len(chunk_ext)])
+        output_path = os.path.join(output_dir, name[:-len(chunk_ext)])
         # Skip the file if it already exists (do not overwrite).
         if (os.path.exists(output_path)):
             print(f"  file '{output_path}' already exists, skipping")

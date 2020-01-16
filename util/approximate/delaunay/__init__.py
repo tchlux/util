@@ -150,6 +150,10 @@ class Delaunay(WeightedApproximator):
                            ibudget=ibudget, eps=epsilon, chain=self.chain)
         # Remove "extrapolation" errors if the user doesn't care.
         if allow_extrapolation: error_out = np.where(error_out == 1, 0, error_out)
+        else:
+            if 1 in error_out:
+                class Extrapolation(Exception): pass
+                raise(Extrapolation("Encountered extrapolation point when making Delaunay prediction."))
         # Handle any errors that may have occurred.
         if (sum(error_out) != 0):
             if print_errors:

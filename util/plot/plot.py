@@ -397,7 +397,7 @@ class Plot:
             end = len(data)
             data[start:end] = data[start:end][::-1]
 
-        self.to_reverse = [False] * len(data)
+        # self.to_reverse = [False] * len(data)
         # Fix the fills that should be left alone
         for d in data:
             if ("toprev" in str(d.get("fill",""))): 

@@ -8,21 +8,24 @@
 #   u -- The upper bound for the range to search, f(u) = False.
 # 
 # OPTIONAL INPUTS:
-#   accuracy -- The maximum allowable distance from the correct solution.
-#   round    -- A rounding function to set the values of l and u.
+#   accuracy  -- The maximum allowable distance from the correct solution.
+#   round     -- A rounding function to set the values of l and u.
+#   max_steps -- The maximum number of steps allowed in the search.
 # 
 # RETURNS:
 #   x -- A point within `accuracy` of the position where f transitions
 #        from True to False.
 #    
-def binary_search(f, l, u, accuracy=2**(-26), round=lambda x: x):
+def binary(f, l, u, accuracy=0, round=lambda x: x, max_steps=1000):
     # Verify the inputs provided are valid.
     assert(f(l) == True)
     assert(f(u) == False)
     assert(l <= u)
     assert(accuracy > 0)
     # Perform the binary search until we reach desired accuracy.
-    while (abs(u - l) > accuracy):
+    step = 1
+    while (abs(u - l) > accuracy) and (step <= max_steps):
+        step += 1
         mid = round(l/2 + u/2)
         # If we've reached the limit of achievable accuracy, return.
         if (mid == l) or (mid == u): return mid
@@ -43,16 +46,17 @@ def binary_search(f, l, u, accuracy=2**(-26), round=lambda x: x):
 #   u -- The upper bound for the range to search.
 # 
 # OPTIONAL INPUTS:
-#   accuracy -- The maximum allowable distance from the correct solution.
-#   round    -- A rounding function to set the values of l and u.
+#   accuracy  -- The maximum allowable distance from the correct solution.
+#   round     -- A rounding function to set the values of l and u.
+#   max_steps -- The maximum number of steps allowed for the algorithm.
 # 
 # RETURNS:
 #   x -- A point within `accuracy` of the position that minimizes f.
 #    
-def golden_section_search(f, l, u, accuracy=2**(-26), round=lambda x: x):
+def golden_section(f, l, u, accuracy=0, round=lambda x: x, max_steps=1000):
     # Verify the inputs provided are valid.
     assert(l <= u)
-    assert(accuracy > 0)
+    assert(accuracy >= 0)
     # Make sure the lower and upper bounds are rounded.
     l, u = round(l), round(u)
     ratio = (5**(1/2) + 1) / 2
@@ -65,8 +69,10 @@ def golden_section_search(f, l, u, accuracy=2**(-26), round=lambda x: x):
     fm1 = f(m1)
     fm2 = f(m2)
     fu = f(u)
+    step = 1
     # Perform the Golden section search.
-    while (abs(u - l) > accuracy):
+    while (abs(u - l) > accuracy) and (step <= max_steps):
+        step += 1
         # Based on the midpoint evaluations, decide which side to search.
         if (fm1 <= fm2):
             # In this case, the minimum must be on the left side.
@@ -95,35 +101,38 @@ def golden_section_search(f, l, u, accuracy=2**(-26), round=lambda x: x):
 # 
 # Given a function f: R -> R, such that f(x) = 0 exactly once for 
 #  some (low <= x <= upp), this function will return an x_0 such that
-#  abs(x_0 - x) < prec using the Secant method.
+#  abs(x_0 - x) < accuracy using the Secant method.
 # 
-def Secant(f, low, upp, prec=2**(-2**1023), max_steps=1000, display=False):
+def secant(f, low, upp, accuracy=0, round=lambda x: x, max_steps=100000, display=False):
+    assert(low <= upp)
     # Compute the "low" function value and the "upp" function value.
-    flow = abs(f(low))
-    fupp = abs(f(upp))
+    flow = f(low)
+    assert(flow <= 0)
+    fupp = f(upp)
+    assert(fupp >= 0)
     # Compute the new guess for the zero by linearly interpolating.
-    low_wt = fupp / (flow + fupp)
-    new = low_wt * low + (1 - low_wt) * upp
+    low_wt = fupp / (fupp - flow)
+    new = round(low_wt * low + (1 - low_wt) * upp)
     if display:
-        print("------------------------------------------------")
-        print(" step [  low       upp   ] (  new      f(new)  )")
-        print("------------------------------------------------")
-    # Loop until the movement is less than "prec".
+        print("----------------------------------------------------")
+        print(" step [   low        upp   ] (  flow        fupp  ) ")
+        print("----------------------------------------------------")
+    # Loop until the movement is less than "accuracy".
     step = 1
-    while (min(new-low, upp-new) > prec) and (step <= max_steps):
+    while (abs(upp - low) > accuracy) and (step <= max_steps):
         # Compute the new function value.
         fnew = f(new)
-        if display: print(" %3i  [%.2e  %.2e] (%.2e  %.2e)"%(step, low, upp, new, fnew))
+        if display: print(" %3i  [% .2e  % .2e] (% .2e  % .2e)"%(step, low, upp, flow, fupp))
         # Perform appropriate bound substitution based on function value.
         if  (fnew == 0): return new
-        elif (fnew < 0): low, flow = new, abs(fnew)
-        elif (fnew > 0): upp, fupp = new, abs(fnew)
+        elif (fnew < 0): low, flow = new, fnew
+        elif (fnew > 0): upp, fupp = new, fnew
         # Compute the new guess for the zero by linearly interpolating.
-        low_wt = fupp / (flow + fupp)
-        new = low_wt * low + (1 - low_wt) * upp
+        low_wt = fupp / (fupp - flow)
+        new = round(low_wt * low + (1 - low_wt) * upp)
         # Increment the step (for unexpected failure cases).
         step += 1
-    if display: print("------------------------------------------------")
+    if display: print("----------------------------------------------------")
     return new
 # ====================================================================
 
@@ -133,16 +142,17 @@ def Secant(f, low, upp, prec=2**(-2**1023), max_steps=1000, display=False):
 if __name__ == "__main__":
     # Test function for the different searches. Given a search
     # function and an objective function generator (given a solution).
-    def _test_serach(search, f_gen, print=print):
+    def _test_search(search, f_gen, print=print):
         import random
         random.seed(0)
 
         # Pick which function we want to test.
         print()
+        print('-'*70)
         print(f"Testing '{str(search).split()[1]}'..")
         accuracy = 2**(-26)
 
-        # Test `binary_search` without any modification.
+        # Test `search` without any modification.
         solution = random.random() + 1/2
         f = f_gen(solution)
         lower = 0
@@ -181,15 +191,16 @@ if __name__ == "__main__":
         print()
         print("solution:    ",float(solution))
         print("output:      ",float(output))
-        print("evaluations: ", len(function_values))
-        print("accuracy:    ", float(accuracy))
+        print("evaluations: ",len(function_values))
+        print("accuracy:    ",float(accuracy))
         print("error:       ",float(output - solution))
         assert(abs(output - solution) < accuracy)
 
-
-
     # Run the testing code.
+    import math
     binary_f_gen = lambda solution: lambda x: x <= solution
     golden_f_gen = lambda solution: lambda x: abs(x - solution)
-    _test_serach(binary_search, binary_f_gen)
-    _test_serach(golden_section_search, golden_f_gen)
+    secant_f_gen = lambda solution: lambda x: math.sin((x - solution)/50)
+    _test_search(binary, binary_f_gen)
+    _test_search(golden_section, golden_f_gen)
+    _test_search(secant, secant_f_gen)

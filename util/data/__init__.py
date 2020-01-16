@@ -1,13 +1,19 @@
 import numpy as np
 
-QUOTES = {'"'}
 DEFAULT_DISPLAY_WAIT = 3.
-COMMON_SEPARATORS = [",", " ", "	", ";"]
 UPDATE_FREQUENCY = .5  # How much time (in seconds) between updates when reading data.
 MAX_ERROR_PRINTOUT = 10 # Only print out this many errors when processing data
 
 # Definition of separators by file extension when saving.
-SEPARATORS = {"csv":",", "tsv":"\t", "ssv":" "}
+COMMON_SEPARATORS = [",", " ", "\t", ";"]
+SEPARATORS = {
+    "csv" : ",",
+    "txt" : " ",
+    "tsv" : "\t",
+}
+
+# Allowable "quote" characters in files.
+QUOTES = {'"'}
 
 # Declare some constants.
 NP_TYPES = {str:(np.str_, 16),    # Which numpy types correspond to 
@@ -22,8 +28,6 @@ MISSING_SAMPLE_SIZE = 100000 # <- The max size for which "missing" data
 #                                 calculations become an estimate instead
 #                                 of exact numbers of missing values.
 MAX_DISPLAY_COLS = 20 # <- maximum number of displayed columnns from data on read
-
-is_none = lambda v: type(v) == type(None)
 
 # coding: future_fstrings
 # from future import print_function

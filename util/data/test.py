@@ -39,6 +39,10 @@ def test_data():
     #  Done modifying "a", rest of tests leave it constant.
     # ----------------------------------------------------------------
 
+    # Verify that "index" works correctly.
+    assert( a.index([1,"2",3.0]) == 3 )
+    assert( a.index([-1,None,None]) == 4 )
+
     # Verify that slicing works on descirptors.
     assert(a.names[:-1] == ['0','1'])
 
@@ -255,22 +259,23 @@ def test_data():
     assert(tuple(a["0"]) == tuple(b["0"]))
     os.remove("a-test.csv.gz")
 
-    # Verify the behavior of the 'inflate' and 'deflate' functions.
+    # Verify the behavior of the 'unpack' and 'pack' functions.
     b = a[:]
     b['iter'] = [None] + [list(range(i)) for i in range(len(b)-1)]
     _ = b.shape[1]
-    b.inflate("iter")
+    b.unpack("iter")
     assert((b.shape[1] - _) == (len(b) - 3))
-    b.deflate("iter")
+    b.pack("iter")
     assert(b.shape[1] == _)
     assert(b[0,-1] is None)
     assert(b[1,-1] is None)
 
     # Check the 'flatten' function to make sure it correctly flattens
     # structures with nested, differential depth, and different types.
-    assert(tuple(flatten([(l for l in ((1,2,3)+tuple("abc"))),
-                          "def","ghi", ("jk",tuple("lmn"))])) ==
-           (1,2,3)+tuple('abcdefghijklmn'))
+    complex_sequence = [(l for l in ((1,2,3)+tuple("abc"))),
+                        "def", "ghi", ("jk",tuple("lmn"))]
+    simplified_sequence = (1,2,3)+tuple('abcdefghijklmn')
+    assert(tuple(flatten(complex_sequence)) == simplified_sequence)
 
     # TODO: Verify load of a large file (sample only)
     # TODO: Verify load of a large compressed file (sample only)
@@ -392,68 +397,68 @@ def test_data():
     # Test the correctness of truncated rows and columns.
     b.max_display = 2
     b_printout = '''
-=========================
-Size: (11 x 3)
-
- 0   | ... | 2    
- int | ... | float
--------------------
- 1   | ... | 1.2  
- ...   ...   ...  
- 1   | ... | 1.2  
-
- missing 4 of 33 entries,
-      at rows: [5, 10]
-   at columns: [1, 2]
-=========================
+========================
+Size: (11 x 3)          
+                        
+ 0   | ... | 2          
+ int | ... | float      
+------------------      
+ 1   | ... | 1.2        
+ ...   ...   ...        
+ 1   | ... | 1.2        
+                        
+ missing 4 of 33 entries
+      at rows: [5, 10]  
+   at columns: [1, 2]   
+========================
 '''
     assert( str(b) == b_printout)
     # Test the correctness of truncated rows only.
     b.max_display = 4
     b_printout = '''
-=========================
-Size: (11 x 3)
-
- 0   | 1    | 2    
- int | str  | float
---------------------
- 1   | "a"  | 1.2  
- 2   | "b"  | 3.0  
- ...   ...    ...  
- -1  | None | None 
- 1   | "a"  | 1.2  
-
- missing 4 of 33 entries,
-      at rows: [5, 10]
-   at columns: [1, 2]
-=========================
+========================
+Size: (11 x 3)          
+                        
+ 0   | 1    | 2         
+ int | str  | float     
+-------------------     
+ 1   | "a"  | 1.2       
+ 2   | "b"  | 3.0       
+ ...   ...    ...       
+ -1  | None | None      
+ 1   | "a"  | 1.2       
+                        
+ missing 4 of 33 entries
+      at rows: [5, 10]  
+   at columns: [1, 2]   
+========================
 '''
     assert( str(b) == b_printout)
     # Test the correctness of exact match (no truncation).
     b.max_display = 11
     b_printout = '''
-=========================
-Size: (11 x 3)
-
- 0   | 1    | 2    
- int | str  | float
---------------------
- 1   | "a"  | 1.2  
- 2   | "b"  | 3.0  
- 3   | "c"  | 2.4  
- 1   | "2"  | 3.0  
- -1  | None | None 
- 1   | "a"  | 1.2  
- 2   | "b"  | 3.0  
- 3   | "c"  | 2.4  
- 1   | "2"  | 3.0  
- -1  | None | None 
- 1   | "a"  | 1.2  
-
- missing 4 of 33 entries,
-      at rows: [5, 10]
-   at columns: [1, 2]
-=========================
+========================
+Size: (11 x 3)          
+                        
+ 0   | 1    | 2         
+ int | str  | float     
+-------------------     
+ 1   | "a"  | 1.2       
+ 2   | "b"  | 3.0       
+ 3   | "c"  | 2.4       
+ 1   | "2"  | 3.0       
+ -1  | None | None      
+ 1   | "a"  | 1.2       
+ 2   | "b"  | 3.0       
+ 3   | "c"  | 2.4       
+ 1   | "2"  | 3.0       
+ -1  | None | None      
+ 1   | "a"  | 1.2       
+                        
+ missing 4 of 33 entries
+      at rows: [5, 10]  
+   at columns: [1, 2]   
+========================
 '''
     assert( str(b) == b_printout)
 
@@ -483,6 +488,11 @@ Size: (11 x 3)
 
     # ----------------------------------------------------------------
     #     Testing expected exceptions.
+
+    # Verify that indexing an element that doesn't exist fails.
+    try: a.index([1,2,3])
+    except ValueError: pass
+    else: assert(False)
 
     # Verify that incorrect names are detected in "Data.effect".
     b = a[:]

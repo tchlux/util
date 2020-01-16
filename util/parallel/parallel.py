@@ -1,3 +1,8 @@
+# TODO: When a function called by a worker uses "exit()", 'None' is
+#       printed and the process remains, sitting there. If all
+#       processes exit, then the master should exit too. A message
+#       should be printed saying that a subprocess exited, though.
+
 # Get functions required for establishing multiprocessing
 from multiprocessing import cpu_count, get_context, current_process
 # Imports that are used by the processes.
@@ -50,12 +55,17 @@ def consumer(func, iterable, return_queue, redirect):
     import sys
     # Retrieve the function (because it's been dilled for transfer)
     func = loads(func)
+    log_file_name = f"Process-{int(current_process().name.split('-')[-1].split(':')[0])-1}"
     if redirect:
         # Set the output file for this process so that all print statments
         # by default go there instead of to the terminal
-        log_file_name = f"Process-{int(current_process().name.split('-')[1])-1}"
+        # log_file_name = current_process().name
+        short_name = log_file_name
         log_file_name = os.path.join(LOG_DIRECTORY, log_file_name)
+        print(" started worker", short_name,"logging standard output in", log_file_name)
         sys.stdout = open("%s.log"%log_file_name,"w")
+    else:
+        print("  started parallel worker", log_file_name)
     # Iterate over values and apply function.
     for (i,value) in iterable:
         try:
@@ -107,7 +117,7 @@ def consumer(func, iterable, return_queue, redirect):
 # 
 #   The mapped function will not have access to global variables.
 def map(func, iterable, max_waiting_jobs=1, max_waiting_returns=1,
-        order=True, save_logs=False, redirect=True, chunk=True):
+        order=True, save_logs=False, redirect=True, chunk=False):
     # If chunking should be done, then `split` the iterable.
     if chunk:
         iterable = split(iterable)
@@ -203,6 +213,7 @@ def killall():
 
 # Clear out the log files from each process.
 def clear_logs():
+    print("Deleting parallel log files..")
     for f_name in os.listdir(LOG_DIRECTORY):
         if (f_name[:8] == "Process-") and (f_name[-4:] == ".log"):
             f_name = os.path.join(LOG_DIRECTORY, f_name)

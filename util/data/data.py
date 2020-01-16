@@ -4,23 +4,26 @@ from util.data.categories import regular_simplex
 from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES, \
     SEPARATORS, FILE_SAMPLE_SIZE, MISSING_SAMPLE_SIZE
 
+# TODO:  Instead of just checking file size, check number of columns too,
+#        use a sample by default if the #columns is large (speed!).
+# TODO:  Warnings or versioning for when the source data is modified
+#        in a way that invalidates a view. Need to track unpropagated
+#        changes somehow. Or make permanent changes disallowed? Or copy?
+#        E.g. view is made, columns are rearranged
 # TODO:  Make "to_matrix" automatically consider 'None' a unique value
 #        for categorical columns and add a dimension 'is present' otherwise.
 # TODO:  Make "to_matrix" automatically flatten elements of columns
 #        that contain iterables into their base types. If the types
 #        are numeric, use float, otherwise use string. Use "is numeric".
-# TODO:  Make access of a single row (in slicing) return a Row object.
+# TODO:  Check for duplicate column names, handle duplicate column
+#        names? Do names *have* to be Python strings?
+# TODO:  Support in-place addition with *some* duplicate solumns and
+#        the same number of rows? That or block duplicate col names.
+# 
+# 
 # TODO:  Remove builtin prediction code for anything other than
 #        nearest neighbor prediction. Maybe remove prediction in
 #        general, since it isn't something that can be picked beforehand.
-# TODO:  Check for duplicate column names, handle duplicate column
-#        names? Do names *have* to be Python strings?
-# TODO:  Support in-place addition with *some* duplicate solumns
-#        and the same number of rows? That or block duplicate col names.
-# TODO:  Warnings or versioning for when the source data is modified
-#        in a way that invalidates a view. Need to track unpropagated
-#        changes somehow. Or make permanent changes disallowed? Or copy?
-#        E.g. view is made, columns are rearranged
 # TODO:  Running 'predict' with nearest neighbor seg-faults after 4th
 #        round, might involve conditioning, probably involves ball tree.
 # TODO:  'predict' does not work with a view, picks wrong column, it
@@ -33,20 +36,27 @@ from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES, \
 # TODO:  Make "predict" not require that target columns be convertible
 #        to numeric form, only that they operate under a weighted sum.
 # TODO:  Remove the "fill" method in favor of "predict".
+# 
+# 
 # TODO:  Implement "parallel read" that create subprocesses that read
 #        chunks of the file, communicate progress, communicate type
 #        digressions, saves chunks in .pkl, then organizes them all
 #        into the expected ordered data format.
+# TODO:  Make access of a single row (in slicing) return a Row object.
+#        This object should have protections on assignment, like the column.
+# 
+# 
 # TODO:  Implmenent 'IndexedAudio' reader that mimics the
 #        'IndexedVideo' reader and allows for access to peaks.
 # TODO:  Implemenet 'IndexedText' reader that mimics the
 #        'IndexedVideo' reader and allows for access to characters.
 # TODO:  Implement 'IndexedCSV' reader that reads rows out of a very
 #        large CSV file.
-# TODO:  Implement 'LazyData' whose underlying '.data' object is a
-#        lazy-evaluated 'IndexedCSV' object.
 # TODO:  Implement 'CachedData' whose underlying '.data' object caches
-#        groups of rows to keep the memory footprint low.
+#        groups of rows to keep the memory footprint low. OR,
+#        Implement 'LazyData' whose underlying '.data' object is a
+#        lazy-evaluated 'IndexedCSV' object. 
+
 
 
 # ======================================================
@@ -98,7 +108,7 @@ class Data:
         BadElement, BadTarget, BadValue, BadIndex, BadData, Empty, \
         MissingModule
     # Import the classes used to protect this data object.
-    from util.data.auxiliary import Descriptor, Column, Row
+    from util.data.internals import Descriptor, Column, Row
 
     # Protect the "names" and "types" attributes by using properties
     # to control the access and setting of these values.
@@ -351,6 +361,9 @@ class Data:
         if short: return f"Data ({self.shape[0]} x {self.shape[1]}) -- {self.names}"
         # Make a pretty table formatted output
         rows = []
+        # ------------------------------------------------------------
+        #          MAKE THE FIRST TWO LINES (NAMES AND TYPES)
+        # 
         half_max = self.max_display // 2
         # Add the string values of "types" and "names" to the display.
         if (self.shape[1] <= self.max_display):
@@ -388,6 +401,9 @@ class Data:
                     c -= self.max_display
                 str_row.append( self._val_to_str(row[c]) )
             rows += [ str_row ]
+        # ------------------------------------------------------------
+        #               MAKE COLUMN WIDTHS UNIFORM
+        # 
         # Compute length of each column.
         lens = [max(len(r[c]) for r in rows) for c in range(len(rows[0]))]
         # Redefine all columns by adding spaces to short-columns.
@@ -396,64 +412,87 @@ class Data:
         # Add dividers between the data values (skip truncation rows).
         for r in range(len(rows)):
             if (len(self) > self.max_display) and ((r-2) == half_max):
-                rows[r] = " " + ("   ".join(rows[r])) + "\n"
+                rows[r] = " " + ("   ".join(rows[r]))
             else:
-                rows[r] = " " + (" | ".join(rows[r])) + "\n"
+                rows[r] = " " + (" | ".join(rows[r]))
+        # Add a divider between the first two rows and the data.
+        rows.insert(2, "-"*len(rows[0]))
         # Construct the strings for the "view" and "size" descriptions
-        view_string = "This data is a view.\n" if self.view else ""
+        view_string = "This data is a view." if self.view else ""
         size_string = f"Size: ({self.shape[0]} x {self.shape[1]})"
         # Construct the string describing missing values.
-        missing_string = ""
+        missing_string = []
+        missing_string_len = 0
         # ------------------------------------------------------------
         #           COMPUTE THE AMOUNT OF MISSING DATA
         # 
         # For small data, everything is checked (quickly).
-        if (self.shape[0] * self.shape[1]) < MISSING_SAMPLE_SIZE:
+        if (self.shape[0] * self.shape[1]) <= MISSING_SAMPLE_SIZE:
             sample = self
         # For larger data, use a sample of reasonably small size.
         else:
             from util.random import random_range
             # Get a sample of rows to check for missing values.
-            sample = self[sorted(random_range(len(self),count=MISSING_SAMPLE_SIZE//self.shape[1])),:]
+            indices_for_sample = sorted(random_range(len(self),count=MISSING_SAMPLE_SIZE//self.shape[1]))
+            sample = self[indices_for_sample,:]
         is_none = lambda v: (v is None)
         missing_rows = {r+1:sum(map(is_none,v)) for (r,v) in enumerate(sample) if (None in v)}
         # Print some info about missing values if they exist.
         if len(missing_rows) > 0:
-            missing_cols = {c:sum(map(is_none,sample[n])) for (c,n) in enumerate(sample.names) if (None in sample[n])}
+            missing_cols = {}
+            # Get the row and column indices.
+            if (sample._col_indices is None): col_ids = range(self.shape[1])
+            else:                             col_ids = sample._col_indices
+            if (sample._row_indices is None): row_ids = range(len(self))
+            else:                             row_ids = sample._row_indices
+            # Cycle through and count the missing values in each column.
+            for c_idx, c in enumerate(col_ids):
+                missing = 0
+                for r in row_ids:
+                    if (sample.data[r][c] is None): missing += 1
+                if (missing > 0): missing_cols[c_idx] = missing
             # Get some statistics on the missing values.
             row_indices = sorted(missing_rows)
             col_indices = [sample.names[i] for i in sorted(missing_cols)]
+            # Extrapolate total missing by using the row as an estimate.
             total_missing_values = sum(missing_rows.values())
-            if (sample != self): total_missing_values *= round(len(self) / MISSING_SAMPLE_SIZE)
+            is_full = id(sample) == id(self)
+            if (not is_full): total_missing_values = max(1,int(total_missing_values * (len(self)/len(sample))+1/2))
             total_values = self.shape[0] * self.shape[1]
+            # --------------------------------------------------------
+            #       MAKE A PRETTY PRINTOUT OF MISSING ENTRIES
+            # 
             # Print out the indices of the rows with missing values
             # Add elipses if there are a lot of missing values.
+            missing_string += [f" missing {'estimated ' if (not is_full) else ''}{total_missing_values} of {total_values} entries"]
+            if (not is_full): missing_string[-1] += f" ({100*total_missing_values/total_values:.1f}%)"
             print_indices = ', '.join(map(str, row_indices[:self.max_display]))
-            missing_string += f" missing {'estimated ' if (sample != self) else ''}{total_missing_values} of {total_values} entries,\n"
-            missing_string += f"      at rows: [{print_indices}"
-            if (len(row_indices) > self.max_display): missing_string += ", ..."
-            missing_string += "]\n"
+            missing_string += [f"      at rows: [{print_indices}"]
+            if (len(row_indices) > self.max_display): missing_string[-1] += ", ..."
+            missing_string[-1] += "]"
             # Repeat same information for columns..
             print_indices = ', '.join(map(str, col_indices[:self.max_display]))
-            missing_string += f"   at columns: [{print_indices}"
-            if (len(col_indices) > self.max_display): missing_string += ", ..."
-            missing_string += "]\n"
-        missing_string_len = max(map(len, missing_string.split("\n")))
+            missing_string += [f"   at columns: [{print_indices}"]
+            if (len(col_indices) > self.max_display): missing_string[-1] += ", ..."
+            missing_string[-1] += "]"
+            missing_string_len = max(map(len, missing_string))
         # ------------------------------------------------------------
-        #         CREATE A PRETTY BOUNDARY FOR THE PRINTOUT
+        #        ADD HEADER, FOOTER, AND GENERATE FINAL STRING
         # 
         # Construct a header bar out of "=".
-        horizontal_bar = "="*max(len(rows[0]), len(size_string),
-                                 len(view_string)-1, missing_string_len)
-        string = "\n" + horizontal_bar + "\n"
-        string += view_string + size_string + f"\n\n"
-        string += rows[0]
-        string += rows[1]
-        string += "-"*len(rows[0]) + "\n"
-        for row in rows[2:]: string += row
-        string += "\n"
-        string += missing_string
-        string += horizontal_bar + "\n"
+        width = max(len(rows[0]), len(size_string),
+                    len(view_string), missing_string_len)
+        horizontal_bar = "="*width
+        header = [horizontal_bar]
+        if len(view_string) > 0:
+            header += [view_string]
+        header += [size_string, ""]
+        footer = [""] + missing_string + [horizontal_bar]
+        # Print out all of the rows with appropriate whitespace padding.
+        string = "\n"
+        for row in (header + rows + footer):
+            string += row  +  " "*(width - len(row))  +  "\n"
+        # Return the final string.
         return string
 
     # Define a convenience funciton for concatenating another
@@ -563,6 +602,13 @@ class Data:
     def __len__(self):
         if (self.view): return len(self._row_indices)
         else:           return len(self.data)
+
+    # Return the index of a 'row' based on its contents.
+    def index(self, search_row):
+        for i in range(len(self)):
+            if all(((v == True) or (v is None))
+                   for v in (self[i] == search_row)): return i
+        else: raise(ValueError(f"{search_row} not found in this data."))
 
     # Define the "append" operator using the insert operation. On a
     # list, the  "insert" operation takes about twice as long when
@@ -889,10 +935,8 @@ class Data:
             if (is_big and ("verbose" not in read_data_kwargs)):
                 read_data_kwargs["verbose"] = True
             # Set the separator based off the file extension if not provided.
-            if ("sep" not in read_data_kwargs):
-                if   (ext == "csv"): read_data_kwargs["sep"] = ","
-                elif (ext == "txt"): read_data_kwargs["sep"] = " "
-                elif (ext == "tsv"): read_data_kwargs["sep"] = "\t"
+            if ("sep" not in read_data_kwargs) and (ext in SEPARATORS):
+                read_data_kwargs["sep"] = SEPARATORS[ext]
             # Open the file for an actual read.
             with file_opener(path, mode) as f:
                 read_data_kwargs["opened_file"] = f
@@ -1365,12 +1409,12 @@ class Data:
         return self[rows]
 
 
-    # Given a column made of iterables, flatten all elements and make
+    # Given a column made of iterables, unpack all elements and make
     # as many columns are necessary to suit the largest length. Make
     # new columns with naming scheme, fill empty slots with None.
-    def inflate(self, column):
+    def unpack(self, column):
         # Check for errors.
-        if (self.view): raise(Data.Unsupported(f"This Data is a view and cannot be inflated."))
+        if (self.view): raise(Data.Unsupported(f"This Data is a view and cannot be unpacked."))
         if (column not in self.names): raise(Data.BadIndex(f"No column named '{column}' exists in this Data."))
         # Check to see if the column contains things that are iterable.
         if (not any(is_iterable(v) for v in self[column])):
@@ -1420,12 +1464,23 @@ class Data:
         # Pop out the last added column, because it only contains empty elements.
         self.pop(column_name)
 
-
-    # Reverse the 'inflate' operation, using the same expected naming scheme.
+    # DEPRECATION WARNING -- THIS IS ONLY FOR BACKWARDS COMPATIBILITY
     def deflate(self, name):
-        if (self.view): raise(Data.Unsupported(f"This Data is a view and cannot be deflated."))
+        import warnings
+        warnings.warn("\n  The 'deflate' function is being deprecated, use 'pack' instead.")
+        return self.pack(name)
+
+    # DEPRECATION WARNING -- THIS IS ONLY FOR BACKWARDS COMPATIBILITY
+    def inflate(self, column):
+        import warnings
+        warnings.warn("\n  The 'inflate' function is being deprecated, use 'unpack' instead.")
+        return self.unnpack(column)
+
+    # Reverse the 'unpack' operation, using the same expected naming scheme.
+    def pack(self, name):
+        if (self.view): raise(Data.Unsupported(f"This Data is a view and cannot be packed."))
         if all((name != n[:len(name)]) for n in self.names):
-            raise(Data.BadIndex(f"No inflated columns by name '{name}' exist in this Data."))
+            raise(Data.BadIndex(f"No flattened columns by name '{name}' exist in this Data."))
         # Start tracking runtime.
         import time
         start = [time.time()]
@@ -1437,7 +1492,7 @@ class Data:
             for i,row in enumerate(zip(*(self.pop(col) for col in to_collapse))):
                 # Update user on progress if too much time has elapsed..
                 if (time.time() - start[0]) > self.max_wait:
-                    print(f" {i+1}:{len(self)} deflating..", end="\r", flush=True)
+                    print(f" {i+1}:{len(self)} packing..", end="\r", flush=True)
                     start[0] = time.time()
                 # Find the location of the last None value in this row.
                 for last_none in range(1,len(row)+1):
@@ -1468,7 +1523,7 @@ class Data:
             if   (type(columns[i]) == int): columns[i] = self.names[i]
             elif (type(columns[i]) == str):
                 if (columns[i] not in self.names):
-                    raise(Data.BadIndex("There is no column named '{columns[i]}' in this data."))
+                    raise(Data.BadIndex(f"There is no column named '{columns[i]}' in this data."))
             else:
                 raise(Data.BadIndex("The index '{columns[i]}' is not recognized. Only {int} and {str} are allowed."))
         # Create a view of the columns that will be kept for hashing.

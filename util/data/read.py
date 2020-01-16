@@ -1,4 +1,4 @@
-from util.data import QUOTES, COMMON_SEPARATORS, UPDATE_FREQUENCY, \
+from util.data import QUOTES, COMMON_SEPARATORS, DEFAULT_DISPLAY_WAIT, \
     MAX_ERROR_PRINTOUT, MAX_DISPLAY_COLS
 
 # =================================================
@@ -75,7 +75,7 @@ def detect_separator(filename="<no_provided_file>", verbose=False, opened_file=N
     separators = {char:first_line.count(char) for char in set(first_line)}
     # Update the user
     last_update = 0
-    should_update = lambda: (verbose and ((time.time() - last_update) > UPDATE_FREQUENCY))
+    should_update = lambda: (verbose and ((time.time() - last_update) > DEFAULT_DISPLAY_WAIT))
     raw_data = f.readlines()
     # Cycle the file (narrowing down the list of potential separators
     for i,line in enumerate(raw_data):
@@ -125,11 +125,11 @@ def detect_separator(filename="<no_provided_file>", verbose=False, opened_file=N
 #       "display" is True if the user wants the detected types printed
 # Post: A data.Data class containing all data from the file.
 def read_data(filename="<no_provided_file>", sep=None, types=None,
-              verbose=False, opened_file=None, sample=None):
+              verbose=False, opened_file=None, header=True, sample=None):
     import time
     from util.system import AtomicOpen
     from util.data.data import Data
-    if sep == None: sep = detect_separator(filename, verbose, opened_file)
+    if (sep is None): sep = detect_separator(filename, verbose, opened_file)
     # Get the opened file object
     if (not opened_file):
         # Open the file to get the data
@@ -137,21 +137,26 @@ def read_data(filename="<no_provided_file>", sep=None, types=None,
     else:
         f = opened_file
         file_name = f.name
-    # Get the first line, assuming it's the header
-    header = [n.strip() for n in split_with_quotes(f.readline().strip(),sep)]
+    # Get the first line (the header, if desired).
+    if header: header = [n.strip() for n in split_with_quotes(f.readline().strip(),sep)]
     # Get the first line of data and learn the types of each column
     line = [v.strip() for v in split_with_quotes(f.readline().strip(), sep)]
+    # Assign a numeric 
+    if not header: header = [f"column {i+1}" for i in range(len(line))]
     # Automatically detect types (if necessary)
     type_digression = False
-    if type(types) == type(None):
+    if types is None:
         types = list(map(get_type, line))
         type_digression = True
         # Padd the "types" with int's on the end (the first type).
         types += [int] * (len(header) - len(types))
+    # If a singular type was provided, expand that out to fill the columns.
+    elif (type(types) == type): types = [types] * len(header)
     # Initialize our data holder
     data = Data(names=header, types=types)
     # Add the first line to the data store (after inserting "None")
-    while "" in line: line[line.index("")] = None
+    for i in range(len(line)):
+        if (line[i] == ""): line[i] = None
     # Pad the end of the line with "None" values.
     if (len(line) < len(header)):
         line += [None] * max(0,len(header) - len(line))
@@ -187,12 +192,13 @@ def read_data(filename="<no_provided_file>", sep=None, types=None,
     # Now process the rest of the data, dynamically overwriting old data
     errors = []
     last_update = 0
-    should_update = lambda: (verbose and ((time.time() - last_update) > UPDATE_FREQUENCY))
+    should_update = lambda: (verbose and ((time.time() - last_update) > DEFAULT_DISPLAY_WAIT))
     # Define an appropriate iterator based on the usage of this "read".
-    if sample:
+    if sample is None: iterator = enumerate(raw_data)
+    else:
+        # Randomly sample lines from the file, (we've already read one line).
         from util.random import random_range
-        iterator = ((i, raw_data[i]) for i in sorted(random_range(len(raw_data), count=sample)))
-    else: iterator = enumerate(raw_data)
+        iterator = ((i, raw_data[i]) for i in sorted(random_range(len(raw_data), count=sample-1)))
     # Cycle through the elements of "raw_data".
     for i,line in iterator:
         # Update the user on progress if appropriate
@@ -208,7 +214,9 @@ def read_data(filename="<no_provided_file>", sep=None, types=None,
         if (len(list_line) < len(header)):
             list_line += [None] * max(0,len(header) - len(list_line))
         # Replace any empty strings with "None" for missing values
-        while "" in list_line: list_line[list_line.index("")] = None
+        for j in range(len(list_line)):
+            if (list_line[j] == ""): list_line[j] = None
+        digressions = 0
         # Try and add the line of data
         try:
             data.append(list_line)
@@ -220,13 +228,17 @@ def read_data(filename="<no_provided_file>", sep=None, types=None,
                 new_types = [max(old,new, key=lambda v: type_order[v])
                              for (old,new) in zip(types, new_types)]
                 # Update the user if appropriate
-                if verbose:
+                if verbose and (digressions < MAX_ERROR_PRINTOUT):
                     print(f"\nType digression because of line {i+3}.")
                     for c in range(len(types)):
                         if (types[c] != new_types[c]):
+                            digressions += 1
                             old_type_name = str(types[c]).split("'")[1]
                             new_type_name = str(new_types[c]).split("'")[1]
                             print(f"  Column {c+1} digressed from '{old_type_name}' to '{new_type_name}' due to: {list_line[c]}")
+                        if (digressions == MAX_ERROR_PRINTOUT):
+                            print(" Suppressing further type digression notices..")
+                            break
                 # Retype the existing data to match the new types
                 data.retype(new_types)
                 # Append line that matches new types
