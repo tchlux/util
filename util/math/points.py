@@ -1,5 +1,6 @@
 # Compile and build the fekete point generation code.
-import os, fmodpy
+import os
+import og_fmodpy as fmodpy
 CWD = os.path.dirname(os.path.abspath(__file__))
 fp_mod = fmodpy.fimport(os.path.join(CWD,"fekete.f90"),
                         module_link_args=["-lblas","-llapack"],
@@ -19,10 +20,29 @@ def chebyshev(n, d=1, sample=None):
     return mesh(x, multiplier=d, sample=sample)
 
 
+# Compute a grid of "n" points in "d" dimensions. Randomly subsample
+# the full grid if it is larger than "n".
+def grid(n, d):
+    from random import sample
+    per_dim = round( n**(1/d) + .5 )
+    pts = mesh(list(range(per_dim)), d) / (per_dim-1)
+    if n < len(pts): return pts[sample(range(len(pts)), n)]
+    else:            return pts
+
 # Create a tensor mesh of "len(nodes) * multiplier" dimension of all
-# lists provided inside of "nodes". If "sample" is provided, then a
-# random sample of size "sample" is drawn from the mesh.
-def mesh(*nodes, multiplier=1, sample=None):
+# provided lists inside of "nodes". If "sample" is provided,
+# then a random sample of size "sample" is drawn from that mesh.
+# 
+#    `mesh([0, 1], 2) = [[0, 0], [1, 0], [0, 1], [1, 1]]`
+# 
+def mesh(*nodes, multiplier=None, sample=None):
+    # Extract the passed `sample` and `multiplier` from the end of the
+    # argument list if they were not given as keyword arguments.
+    if (sample is None) and (type(nodes[-1]) == bool):
+        nodes, sample = nodes[:-1], nodes[-1]
+    if (multiplier is None) and (type(nodes[-1]) == int):
+        nodes, multiplier = nodes[:-1], nodes[-1]
+    # Start of the actual function.
     from numpy import vstack, meshgrid
     if sample:
         # Compute the multiplicative product of a list of integers.
@@ -160,9 +180,100 @@ def fekete_points(num_points, dimension, min_per_dim=3,
     return f_points
 
 
+# Given "d" categories that need to be converted into real space,
+# generate a regular simplex in (d-1)-dimensional space. (all points
+# are equally spaced from each other and the origin) This process
+# guarantees that all points are not placed on a sub-dimensional
+# manifold (as opposed to "one-hot" encoding).
+def regular_simplex(d, volume=None):
+    import numpy as np
+    # Special cases for one and two categories
+    if d < 1:
+        class InvalidDimension(Exception): pass
+        raise(InvalidDimension("Dimension must be an integer greater than 0."))
+    elif d == 1: return np.array([[0.],[1.]])
+    # Initialize all points to be zeros.
+    points = np.zeros((d+1,d))
+    # Set the initial first point as 1
+    points[0,0] = 1
+    # Calculate all the intermediate points
+    for i in range(1,d):
+        # Set all points to be flipped from previous calculation while
+        # maintaining the angle "arcos(-1/d)" between vectors.
+        points[i:,i-1] = -1/(1+d-i) * points[i-1,i-1]
+        # Compute the new coordinate using pythagorean theorem
+        points[i,i] = (1 - sum(points[i,:i]**2))**(1/2)
+    # Set the last coordinate of the last point as the negation of the previous
+    points[i+1,i] = -points[i,i]
+    # Normalize the edge lengths to all be 1.
+    points *= (2 + 2/d)**(-1/2)
+    # If no volume was specified, return the vertices of the regular simplex.
+    if volume is None: return points
+    elif (volume > 0):
+        # Return a regular simplex with volume specified by first converting
+        # to unit edge length, then using the formula from [1]:
+        # 
+        #   volume  =   (length^d / d!) ([d+1] / 2^d)^(1/2)
+        # 
+        # where "volume" is the volume of the simplex defined by d+1
+        # vertices, "d" is the dimension the simplex lives in (number
+        # of vertices minus one), and "length" is the length of all
+        # edges between vertices of the simplex. This gives:
+        # 
+        #  length  =  [ volume d! ([d+1] / 2^d)^(-1/2) ]^(1/d)
+        #          =  (volume d!)^(1/d) ([d+1] / 2^d)^(-1/(2d))
+        # 
+        # Reference:
+        #  [1] https://www.researchgate.net/publication/267127613_The_Volume_of_an_n-Simplex_with_Many_Equal_Edges
+        # 
+        from math import factorial
+        edge_length = (volume*factorial(d))**(1/d) * ((d+1) / 2**d)**(-1/(2*d))
+        # get_v = lambda l: (l**d / factorial(d)) * ((d+1) / 2**d)**(1/2)
+        # get_l = lambda v: (v*factorial(d))**(1/d) * ((d+1) / 2**d)**(-1/(2*d))
+        # print("Estimated volume: ",get_v(edge_length))
+        return points * edge_length
+        
+
+# Construct a mesh formed from equilateral simplices grown out from
+# the middle, attempt to have nearly "n" points in a "d" dimensional
+# unit hypercube.
+def regular_mesh(n, d):
+    from math import factorial
+    # Get a regular simplex with a prescribed volume.
+    seed_simplex = regular_simplex(d, volume=1/n)
+    # Shrink the simplex so that the growing procedure will create
+    # approximately "n" points in total.
+    import numpy as np
+    print("Edge lengths:")
+    print("",np.round(np.linalg.norm(seed_simplex[1:] - seed_simplex[0],axis=1),2))
+    print()
+    print("Vertices:")
+    for i in range(len(seed_simplex)):
+        print("", str(np.round(seed_simplex[i], 3)).replace("\n "," "))
+    print()
+    if d in {2,3}:
+        from util.plot import Plot
+        p = Plot()
+        p.add("simplex", *(seed_simplex.T), mode="markers+lines", color=(0,0,0,.5))
+        p.show(x_range=[-1, 1], y_range=[-1,1], z_range=[-1,1],
+               width=500, height=500, show_legend=False)
+
+    # Find a way to rotate simplex so it fits inside the unit hypercube,
+    #   will be tough in high dimension, but should be possible by pointing
+    #   long edges in the direction of many simultaneous components.
+    # At that point, all vertices should be inside the unit hypercube.
+    # Queue up all faces (and opposite vertices).
+    # For each flip in queue, record the new vertex and all face
+    #   vertices as new faces that need to be flipped across (if new
+    #   vertex is in cube).
+
+
 
 if __name__ == "__main__":
-    show = True
+    regular_mesh(1, 20)
+    # regular_mesh(10e10, 20)
+
+    show = False
 
     def _test_mesh(show=True):
         from weakly_admissable_meshes import polar_wam, box_wam
@@ -207,6 +318,6 @@ if __name__ == "__main__":
 
 
 
-    _test_num_polynomials()
-    _test_mesh(show=show)
-    _test_fekete(show=show)
+    # _test_mesh(show=show)
+    # _test_num_polynomials()
+    # _test_fekete(show=show)

@@ -1,7 +1,7 @@
 # Makes available all custom algorithms that I have worked with
 import os, time
 import numpy as np
-import fmodpy
+import og_fmodpy as fmodpy
 from util.approximate import Approximator
 
 # This directory

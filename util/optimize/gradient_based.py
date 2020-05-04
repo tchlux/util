@@ -4,15 +4,68 @@ STEPS = 100000 // 2
 SGD_ALPHA = .1
 ADA_ALPHA = .01
 
-# BFGS minimization.
-def L_BFGS(func, grad, start):
-    from scipy.optimize import fmin_l_bfgs_b
-    points = [start]
-    def wrapped_grad(x):
-        points.append(x)
-        return grad(x)
-    fmin_l_bfgs_b(func, start, fprime=wrapped_grad, maxiter=STEPS)
-    return points[:10000]
+# Implement ReLU activation network in Fortran, this is a waste.
+
+
+# L-BFGS minimization.
+def L_BFGS(grad, start, budget=1000, m=0, alpha=.99, eps=2.**(-56)):
+    from numpy import zeros, dot, sqrt, roll, asarray, array
+    points = []
+    dim = len(start)
+    if (m == 0): m = max(10, int(sqrt(dim)))
+    # Initialize storage for internal variables.
+    x = start
+    g = zeros(dim)
+    s = zeros((m, dim))
+    y = zeros((m, dim))
+    rho = zeros(m)
+    a = zeros(m)
+    b = zeros(m)
+    old_x = zeros(dim)
+    old_g = zeros(dim)
+    # Loop until the budget is exhausted.
+    for i in range(budget):
+        points.append(x.copy())
+        g = grad(x)
+        # Very first step does different stuff for initialization.
+        if (i == 0):
+            old_x[:] = x[:]
+            old_g[:] = g[:]
+            x -= alpha * old_g
+            continue
+        # Normal case.
+        # 
+        # Roll the history arrays (free the first index) and also
+        # check for termination (numerically unstable small step).
+        # 
+        s = roll(s, 1, axis=0)
+        y = roll(y, 1, axis=0)
+        rho = roll(rho, 1, axis=0)
+        s[0,:] = x[:] - old_x[:]
+        y[0,:] = g[:] - old_g[:]
+        ys = (dot(y[0], s[0])) # <- Original L-BFGS doesn't "abs",
+        #                              but for noisy functions this is
+        #                              a necessary change to continue.
+        if (sqrt(abs(ys)) < eps): break
+        rho[0] = 1 / ys
+        # Copy current iterates for next iteraction.
+        old_x[:] = x[:]
+        old_g[:] = g[:]
+        # Reconstruct the BFGS update.
+        for j in range(min(m, i)):
+            a[j] = rho[j] * dot(s[j], g)
+            g -= a[j] * y[j]
+        g *= (ys / dot(y[0],y[0]))
+        for j in range(min(m, i)-1, -1, -1):
+            b[j] = rho[j] * dot(y[j], g)
+            g += s[j] * (a[j] - b[j])
+        # Compute the rescaled update.
+        x -= alpha * g
+    else:
+        # If the for loop didn't break, then the last point needs to be recorded.
+        points.append( x.copy() )
+    # Return the set of points.
+    return points
 
 
 # Standard SGD optimization algorithm.

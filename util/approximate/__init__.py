@@ -5,7 +5,7 @@ def class_name(obj):
 
 # Import the base classes for approximation and the wrappers for approximation.
 from util.approximate.base import Approximator, WeightedApproximator
-from util.approximate.wrappers import unique, condition
+from util.approximate.wrappers import unique, condition, Split
 
 # Import all defined approximation algorithms.
 

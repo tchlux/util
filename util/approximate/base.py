@@ -79,6 +79,29 @@ class Approximator:
         # Return the response
         return response
 
+    # Give the model gradient at new x locations from fit model.
+    def gradient(self, x, *args, **kwargs):
+        if ((not issubclass(type(x), np.ndarray)) or (0 >= len(x.shape) < 2)):
+            raise(UnexpectedType("Provided 'x' should be a 1D or 2D numpy array."))
+        single_response = len(x.shape) == 1
+        if single_response:
+            x = np.reshape(x, (1,len(x)))
+        response = np.asarray(self._gradient(x.copy(), *args, **kwargs), dtype=float)
+        if (self.classifier):
+            from util.data import category_ratio
+            class_response = []
+            for guess in response:
+                class_response.append(self.class_map[
+                    np.argmax(category_ratio(guess)) ])
+            response = np.array(class_response)
+        # Reduce to one response value if that's what was trained.
+        if (self._response_dim == 1) and (len(response.shape) > 1):
+            response = response[:,0]
+        # Reduce to one approximation point if that's what was provided.
+        if single_response:         response = response[0]
+        # Return the response
+        return response
+
     # Wrapper for 'predict' that returns a single value for a single
     # prediction, or an array of values for an array of predictions
     def __call__(self, *args, **kwargs): return self.predict(*args, **kwargs)
@@ -147,6 +170,37 @@ class WeightedApproximator(Approximator):
         if single_response: response = response[0]
         # Return the response
         return response
+
+    # Predict gradient at new x locations from fit model.
+    def gradient(self, x, *args, **kwargs):
+        if ((not issubclass(type(x), np.ndarray)) or (0 >= len(x.shape) < 2)):
+            raise(UnexpectedType("Provided 'x' should be a 1D or 2D numpy array."))
+        single_response = len(x.shape) == 1
+        if single_response:
+            x = np.reshape(x, (1,len(x)))
+        indices, weights = self._gradient(x.copy(), *args, **kwargs)
+        # Return the indices and weights if no y values were provided.
+        if (self.y is None): 
+            response = [(ids,wts) for (ids,wts) in zip(indices, weights)]
+        else:
+            # Collect response values via weighted sums of self.y values
+            response = []        
+            for ids, wts in zip(indices, weights):
+                if self.classifier:
+                    val_weights = {}
+                    # Sum the weights associated with each category.
+                    for i, w in zip(ids, wts):
+                        val_weights[self.y[i]] = val_weights.get(self.y[i],0.)+w
+                    # Return the category with the largest sum of weight.
+                    response.append( max(val_weights.items(), key=lambda i: i[-1])[0] )
+                else:
+                    # Return the weighted sum of predictions.
+                    response.append( sum(self.y[i]*w for (i,w) in zip(ids, wts)) )
+        # Reduce to one approximation point if that's what was provided.
+        if single_response: response = response[0]
+        # Return the response
+        return response
+
 
     # Wrapper for 'predict' that returns a single value for a single
     # prediction, or an array of values for an array of predictions

@@ -30,7 +30,9 @@ def test_plot(model, low=0, upp=1, plot_points=3000, p=None,
     if (type(x) == type(None)):
         # Generate x points
         if random:
-            x = np.random.random(size=(N,D))
+            from util.random import latin
+            x = latin(N, D)
+            # x = np.random.random(size=(N,D))
         else:
             N = int(round(N ** (1/D)))
             x = np.array([r.flatten() for r in np.meshgrid(*[np.linspace(0,1,N)]*D)]).T

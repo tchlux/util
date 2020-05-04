@@ -68,7 +68,7 @@ def pause(string="press enter to continue.."):
 #                     bytes that a file chunk can contain. [50MB]
 #   chunk_ext      -- A string. [".chunks"]
 #   verbose        -- Prints out status information when True. [True]
-def disassemble(file_path, max_size_bytes=50*(2**20),
+def disassemble(file_path, max_size_bytes=50*(2**20), skip_size=1024,
                 chunk_ext=".chunks", verbose=True):
     class FileTooSmall(Exception): pass
     import os, math
@@ -90,8 +90,44 @@ def disassemble(file_path, max_size_bytes=50*(2**20),
             with open(os.path.join(out_path,str(c)), "wb") as out:
                 if verbose:
                     print(" writing chunk %i of %i in '%s'..."%(c,chunks,out.name))
-                out.write(f.read(max_size_bytes))
+                # Attempt to read the chunk (safely, replacing bad bits with 0's).
+                try: chunk = f.read(max_size_bytes)
+                except OSError:
+                    print( "  WARNING: Encountered unreadable data, attempting partial read.")
+                    # If there was a failed I/O operation, try reading
+                    # a smaller number of bytesfrom the file.
+                    bad_bytes = []
+                    read_bytes = 0
+                    chunk_size = max_size_bytes // 2
+                    chunk = bytes()
+                    while (read_bytes < max_size_bytes):
+                        chunk_size = min(chunk_size, max_size_bytes - read_bytes)
+                        print(f"    read {read_bytes} of {max_size_bytes} (trying {chunk_size})"+" "*20, end="\r")
+                        try:
+                            chunk += f.read(chunk_size)
+                            read_bytes += chunk_size
+                            chunk_size *= 2
+                        except OSError:
+                            if chunk_size > skip_size:
+                                chunk_size = max(skip_size,chunk_size // 10)
+                            elif chunk_size <= skip_size:
+                                # Get the index of the bad byte (block).
+                                bad_bytes.append( f.seek(0,1) )
+                                # Add a null byte to the stream in place of the truth.
+                                chunk += bytes(chunk_size)
+                                read_bytes += chunk_size
+                                # Seek forward one byte relative to current position, skip.
+                                f.seek(chunk_size,1)
+                    # Let the user know how the bad bytes were handled.
+                    print(f"           Found {len(bad_bytes)} bad bytes and replaced them with 0's.")
+                    if len(bad_bytes) < 100:
+                        print(f"           Bad bytes are located at indices:")
+                        print(f"             {bad_bytes}")                    
+                    # Now the full amount of data has been read into "chunk".
+                # Write the output chunk to file.
+                out.write(chunk)
 
+                
 # This function provides the counterpart to `disassemble`.
 def assemble(names=(), chunk_ext=".chunks", verbose=True):
     if verbose: print(" Beginning `assemble`")

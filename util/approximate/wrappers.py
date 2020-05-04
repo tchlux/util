@@ -1,10 +1,36 @@
 import numpy as np
 from util.math import abs_diff
+from util.approximate.base import Approximator
 
 MAX_DIM = None
 MAX_SAMPLES = None
 DEFAULT_COND_SCALE = True
 DEFAULT_CONDITIONER = "PCA" # MPCA
+
+class Split(Approximator):
+    def __init__(self, model_type, k=5, seed=0, *args, **kwargs):
+        # Initialize "k" internal models.
+        self._seed = seed
+        self._count = k
+        self._models = []
+        for i in range(k): self._models.append( model_type(*args, **kwargs) )
+
+    # Fit multiple internal models.
+    def _fit(self, x, y):
+        np.random.seed(self._seed)
+        splits = np.arange(len(x))
+        np.random.shuffle(splits)
+        for i in range(self._count):
+            indices = splits[i:len(x):self._count]
+            self._models[i].fit( x[indices], y[indices] )
+        
+    # Average over the predictions of multiple models.
+    def _predict(self, z):
+        outcomes = []
+        for m in self._models:
+            outcomes.append( m(z) )
+        return np.mean(np.array(outcomes), axis=0)
+
 
 # A wrapper for an approximator that must fit unique points. Use this
 # wrapper on an un-initialized "weighted approximator" to inheret all

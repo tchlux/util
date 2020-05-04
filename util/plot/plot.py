@@ -227,8 +227,8 @@ class Plot:
         self.to_reverse = []
         # Data for tracking default plot settings
         self.color_num = -1
-        self.data = []
-        self.annotations = []
+        self.data = list()
+        self.annotations = list()
         self.mode = mode
         self.palatte = palatte
         self.palatte_size = len(palatte)
@@ -551,6 +551,8 @@ class Plot:
         else:
             if mode == None: mode = 'lines'
 
+        # Convert the minimum and maximum values into floats.
+        min_max_x = (float(min_max_x[0]), float(min_max_x[1]))
         # Generate the input points
         x_vals = (np.linspace(*min_max_x, num=plot_points),)
         if self.is_3d:
@@ -794,14 +796,17 @@ class Plot:
         # Convert the x, y (and z) values into numpy arrays and
         # store 'values' for creating marker colors based on magnitude
         if type(x_values) != type(None):
-            x_values = np.array(x_values, dtype=float)
+            # WARNING: Plotly allows for string "x" values for some plots.
+            try: x_values = np.asarray(x_values, dtype=float)
+            except ValueError: pass
+            # Get the "values" as the 'x'.
             values = x_values
             no_none = [v for v in x_values if isinstance(v,numbers.Number)]
             if len(no_none) != 0:
                 self.x_min_max = [min(min(no_none), self.x_min_max[0]),
                                   max(max(no_none), self.x_min_max[1])]
         if type(y_values) != type(None):
-            y_values = np.array(y_values, dtype=float)
+            y_values = np.asarray(y_values, dtype=float)
             values = y_values
             no_none = [v for v in y_values if isinstance(v,numbers.Number)]
             if len(no_none) != 0:
@@ -809,7 +814,7 @@ class Plot:
                                   max(max(no_none), self.y_min_max[1])]
         if type(z_values) != type(None):
             self.is_3d = True
-            z_values = np.array(z_values, dtype=float)
+            z_values = np.asarray(z_values, dtype=float)
             values = z_values
             no_none = [v for v in z_values if isinstance(v,numbers.Number)]
             if len(no_none) != 0:
@@ -854,6 +859,8 @@ class Plot:
         # Cancel shading if a color was provided.
         else:
             shade = False
+            # Automatically convert integer color numbers into colors.
+            if (type(color) == int): color = self.color(color, alpha=opacity)
             # Automatically convert tuple colors to color strings.
             if (type(color) == tuple) and (len(color) in {3,4}):
                 color = ("rgba" if len(color) == 4 else "rgb") + str(color)
@@ -985,9 +992,9 @@ class Plot:
                        show_arrow=True, arrow_color="#666",
                        arrow_size=1, arrow_width=1, arrow_head=7,
                        **kwargs):
-        # Assign default ax and ay references based on provided info
-        if (ax != None) and (axref == None) and (z == None): axref = "x"
-        if (ay != None) and (ayref == None) and (z == None): ayref = "y"
+        # # Assign default ax and ay references based on provided info
+        # if (ax != None) and (axref == None) and (z == None): axref = "x"
+        # if (ay != None) and (ayref == None) and (z == None): ayref = "y"
         # Add computed values for the annotation x and y
         if show_arrow:
             if ax == None: ax = 10

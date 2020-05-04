@@ -11,7 +11,7 @@ from util.optimize.gradient_based import L_BFGS, SGD, ADAGRAD, ADAM
 
 # Optimization default settings.
 DEFAULT_SEARCH_SIZE = 2.0**(10)
-DEFAULT_MAX_TIME_SEC = 2.0**(-1)
+DEFAULT_MAX_TIME_SEC = 2.0**(0)
 DEFAULT_MIN_STEPS = 10
 DEFAULT_MAX_STEPS = 10000
 DEFAULT_MIN_IMPROVEMENT = 0.0
@@ -25,8 +25,13 @@ CHECKPOINT_FILE = "optimization_checkpoint.py"
 # Class for tracking convergence of optimization algorithm
 class Tracker:
     # Initialization of storage attributes
-    def __init__(self, objective, max_time, min_steps, max_steps, min_improvement,
-                 display=False, checkpoint=False, checkpoint_file=CHECKPOINT_FILE):
+    def __init__(self, objective,
+                 max_time=DEFAULT_MAX_STEPS,
+                 min_steps=DEFAULT_MIN_STEPS,
+                 max_steps=DEFAULT_MAX_STEPS,
+                 min_improvement=DEFAULT_MIN_IMPROVEMENT,
+                 display=False, checkpoint=False,
+                 checkpoint_file=CHECKPOINT_FILE):
         self.max_time = max_time
         self.min_steps = min_steps
         self.max_steps = max_steps
@@ -189,7 +194,7 @@ def minimize(objective, solution, bounds=None, args=tuple(),
     if display: 
         print()
         try:
-            from util.plotly import Plot
+            from util.plot import Plot
             name = objective.__name__.title()
             p = Plot(f"Minimization Performance on Objective '{name}'",
                      "Trial Number", "Objective Value")

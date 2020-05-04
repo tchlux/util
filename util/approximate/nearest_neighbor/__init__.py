@@ -1,8 +1,8 @@
 import numpy as np
 from util.approximate import WeightedApproximator
 from util.math import abs_diff
-from balltree import BallTree
-# from sklearn.neighbors import BallTree
+# from balltree import BallTree
+from sklearn.neighbors import BallTree
 
 # Construct an approximation algorithm that only returns the average
 # of the fit points.
@@ -35,7 +35,7 @@ class NearestNeighbor(WeightedApproximator):
         self.tree = BallTree(self.points)
         # Update the associated 'y' values if they exist (since points
         # were shuffled on the construction of the tree).
-        if (self.y is not None):
+        if (self.y is not None) and hasattr(self.tree, "index_mapping"):
             self.y = [self.y[i] for i in self.tree.index_mapping]
         # Automatically select the value for "k" if appropriate and
         # the response values are available for the points.

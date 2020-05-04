@@ -1,14 +1,13 @@
 # Makes available all custom algorithms that I have worked with
 import os
 import numpy as np
-import fmodpy
+import og_fmodpy as fmodpy
 from util.approximate import WeightedApproximator
 
 # This directory
 CWD = os.path.dirname(os.path.abspath(__file__))
 meshes = fmodpy.fimport(os.path.join(CWD,"meshes.f90"),
-                        output_directory=CWD, omp=True)
-
+                        output_directory=CWD)
 
 # ======================
 #      BoxMesh Mesh     
@@ -17,30 +16,20 @@ class BoxMesh(WeightedApproximator):
     # Initialize with the option to do an oder 1 or order 2 mesh.
     def __init__(self, order=1, **kwargs):
         if (order == 1):
-            self.eval_mesh = meshes.eval_order_1_box_mesh
-        elif (order == 2):
-            self.eval_mesh = meshes.eval_order_2_box_mesh
+            self.eval_mesh = meshes.eval_box_mesh
         else:
             class UnsupportedOrder(Exception): pass
-            raise(UnsupportedOrder(f"The provided order '{order}' is not supported. Only 1 and 2 are available."))
+            raise(UnsupportedOrder(f"The provided order '{order}' is not supported. Only 1 is available."))
 
     # Fit a set of points
     def _fit(self, points):
-        # Sort points by their distance from the center of the data.
-        center = (np.max(points, axis=0) + np.min(points, axis=0)) / 2
-        sq_sums = np.sum(points**2, axis=1)
-        sq_dists = np.sum(center**2) + sq_sums - 2*np.matmul(points, center)
-        indices = np.argsort(sq_dists)
-        # Reorder the square sums.
-        sq_sums = sq_sums[indices]
-        if (self.y is not None): self.y = [self.y[i] for i in indices]
         # Get points in a fortran compatible format.
-        self.points = np.asfortranarray(points[indices].T)
+        self.points = np.asfortranarray(points.T)
         # Initialize the box sizes to be undefined (-1).
         self.box_sizes = np.ones((self.points.shape[0]*2,self.points.shape[1]),
                                   dtype=np.float64, order="F") * -1
         # Build the iterative box mesh from the points.
-        meshes.build_ibm(self.points, sq_sums, self.box_sizes)
+        meshes.build_mbm(self.points, self.box_sizes)
 
     # Generate a prediction for a new point
     def _predict(self, xs):
@@ -63,7 +52,7 @@ class BoxMesh(WeightedApproximator):
 if __name__ == "__main__":
     from util.plot import Plot
     from util.approximate.testing import test_plot
-    model = BoxMesh(order=1)
+    model = BoxMesh()
 
     # # Test case that breaks the iterative box mesh design.
     # x = np.array([[0.68, 0.44, 0.61],
@@ -82,7 +71,7 @@ if __name__ == "__main__":
     # print("w: ",w)
     # exit()
 
-    p,x,y = test_plot(model, N=3, random=True)
+    p,x,y = test_plot(model, N=6, random=True)
     p.plot(show=False)
     x = model.points.T
     print("x:",x.shape)

@@ -1616,7 +1616,7 @@ class Data:
             # Check to make sure the lengths are all the same.
             stack_size = set(map(len,values.values()))
             if (len(stack_size) > 1):
-                raise(Data.BadData("Row contains stacks of different length. {self[i]}"))
+                raise(Data.BadData(f"Row contains stacks of different length. {self[i]}"))
             # If there are no stacked values, remove this row and continue.
             elif (len(stack_size) == 0):
                 i += 1

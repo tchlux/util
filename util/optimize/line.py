@@ -103,7 +103,7 @@ def golden_section(f, l, u, accuracy=0, round=lambda x: x, max_steps=1000):
 #  some (low <= x <= upp), this function will return an x_0 such that
 #  abs(x_0 - x) < accuracy using the Secant method.
 # 
-def secant(f, low, upp, accuracy=0, round=lambda x: x, max_steps=100000, display=False):
+def secant(f, low, upp, accuracy=0, round=lambda x: x, max_steps=1000, display=False):
     assert(low <= upp)
     # Compute the "low" function value and the "upp" function value.
     flow = f(low)
