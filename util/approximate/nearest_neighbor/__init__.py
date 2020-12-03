@@ -1,8 +1,6 @@
 import numpy as np
 from util.approximate import WeightedApproximator
 from util.math import abs_diff
-# from balltree import BallTree
-from sklearn.neighbors import BallTree
 
 # Construct an approximation algorithm that only returns the average
 # of the fit points.
@@ -29,6 +27,8 @@ class NearestNeighbor(WeightedApproximator):
 
     # Use fortran code to compute the boxes for the given data
     def _fit(self, control_points, k=None, display=True, **kwargs):
+        # from balltree import BallTree
+        from sklearn.neighbors import BallTree
         if (k is not None): self.num_neighbors=k
         # Process and store local information
         self.points = control_points.copy()

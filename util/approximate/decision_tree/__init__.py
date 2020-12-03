@@ -1,9 +1,9 @@
 from util.approximate.base import Approximator
-from sklearn.tree import DecisionTreeRegressor
 
 # This class provides a simple wrapper for the SkLearn decision tree.
 class DecisionTree(Approximator):
     def __init__(self, *args, **kwargs):
+        from sklearn.tree import DecisionTreeRegressor
         self.tree = DecisionTreeRegressor(*args, **kwargs)
 
     def _fit(self, x, y, *args, **kwargs):

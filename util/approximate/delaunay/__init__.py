@@ -107,8 +107,13 @@ class Delaunay(WeightedApproximator):
     # from multiprocessing import cpu_count
     # os.environ["OMP_NUM_THREADS"] = str(cpu_count())
     os.environ["OMP_NESTED"] = "TRUE"
-    from util.approximate.delaunay import delsparse
     def __init__(self, parallel=False, pmode=None, chain=None):
+        # from util.approximate.delaunay import delsparse
+        import fmodpy
+        self.delsparse = fmodpy.fimport("delsparse.f90", lapack=True, 
+                                        omp=True, output_dir=CWD,
+                                        f_compiler_args="-std=legacy -fPIC -shared -O3",
+        )
         # Get the source fortran code module
         path_to_src = os.path.join(CWD,"delsparse.f90")
         # Set up the algorithm for parallel or serial evaluation.
@@ -178,25 +183,21 @@ class Delaunay(WeightedApproximator):
 
 # Wrapper class for using the Delaunay fortran code
 class DelaunayP1(Delaunay):
-    from util.approximate.delaunay import delsparse
     def __init__(self, parallel=True, pmode=1):
         return super().__init__(parallel=parallel, pmode=pmode)
 
 # Wrapper class for using the Delaunay fortran code
 class DelaunayP2(Delaunay):
-    from util.approximate.delaunay import delsparse
     def __init__(self, parallel=True, pmode=2):
         return super().__init__(parallel=parallel, pmode=pmode)
 
 # Wrapper class for using the Delaunay fortran code
 class DelaunayP3(Delaunay):
-    from util.approximate.delaunay import delsparse
     def __init__(self, parallel=True, pmode=3):
         return super().__init__(parallel=parallel, pmode=pmode)
 
 # Wrapper class for using the Delaunay fortran code
 class DelaunayP3CT(Delaunay):
-    from util.approximate.delaunay import delsparse
     def __init__(self, parallel=True, pmode=3,chain=True):
         return super().__init__(parallel=parallel, pmode=pmode, chain=chain)
 

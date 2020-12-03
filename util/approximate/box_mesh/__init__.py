@@ -1,13 +1,11 @@
 # Makes available all custom algorithms that I have worked with
 import os
 import numpy as np
-import og_fmodpy as fmodpy
+import fmodpy
 from util.approximate import WeightedApproximator
 
 # This directory
 CWD = os.path.dirname(os.path.abspath(__file__))
-meshes = fmodpy.fimport(os.path.join(CWD,"meshes.f90"),
-                        output_directory=CWD)
 
 # ======================
 #      BoxMesh Mesh     
@@ -15,11 +13,13 @@ meshes = fmodpy.fimport(os.path.join(CWD,"meshes.f90"),
 class BoxMesh(WeightedApproximator):
     # Initialize with the option to do an oder 1 or order 2 mesh.
     def __init__(self, order=1, **kwargs):
+        self.meshes = fmodpy.fimport(os.path.join(CWD,"meshes.f90"), output_dir=CWD).meshes
         if (order == 1):
-            self.eval_mesh = meshes.eval_box_mesh
+            self.eval_mesh = self.meshes.eval_box_mesh
         else:
             class UnsupportedOrder(Exception): pass
             raise(UnsupportedOrder(f"The provided order '{order}' is not supported. Only 1 is available."))
+        super().__init__(**kwargs)
 
     # Fit a set of points
     def _fit(self, points):
@@ -29,7 +29,7 @@ class BoxMesh(WeightedApproximator):
         self.box_sizes = np.ones((self.points.shape[0]*2,self.points.shape[1]),
                                   dtype=np.float64, order="F") * -1
         # Build the iterative box mesh from the points.
-        meshes.build_mbm(self.points, self.box_sizes)
+        self.meshes.build_mbm(self.points, self.box_sizes)
 
     # Generate a prediction for a new point
     def _predict(self, xs):

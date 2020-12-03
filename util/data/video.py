@@ -1,6 +1,4 @@
-import cv2
 import numpy as np
-
 
 # Define a class for reading a video file without actually storing it in memory.
 class IndexedVideo:
@@ -10,18 +8,20 @@ class IndexedVideo:
     class IndexTooLarge(Exception): pass
     # Initialize by getting the information about this video from file.
     def __init__(self, video_file_name, flatten=False, use_float=False):
+        import cv2 # <- lazy import of the opencv-python library.
+        self.cv = cv2
         # Store the 'flatten' attirbute for flattening images.
         self.flatten = flatten
         self.float = use_float
         # Store the video using an OpenCV video capture object (with its attributes)
-        self.vid = cv2.VideoCapture(video_file_name)
-        self.width  = int(self.vid.get(cv2.CAP_PROP_FRAME_WIDTH))
-        self.height = int(self.vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        self.fps    = int(self.vid.get(cv2.CAP_PROP_FPS))
+        self.vid = self.cv.VideoCapture(video_file_name)
+        self.width  = int(self.vid.get(self.cv.CAP_PROP_FRAME_WIDTH))
+        self.height = int(self.vid.get(self.cv.CAP_PROP_FRAME_HEIGHT))
+        self.fps    = int(self.vid.get(self.cv.CAP_PROP_FPS))
         # Find the last available index in the video using the "set"
         # method. This must be done because of a bug in OpenCV. The
         # total number of frames is often over-estimated by descriptors.
-        frames = int(self.vid.get(cv2.CAP_PROP_FRAME_COUNT))
+        frames = int(self.vid.get(self.cv.CAP_PROP_FRAME_COUNT))
 
         i = step = frames // 2
         while (step > 0):
@@ -50,7 +50,7 @@ class IndexedVideo:
         if (index < 0):
             while (index < 0): index += self.length
         # Move the capture to the correct frame of the video.
-        success = self.vid.set(cv2.CAP_PROP_POS_FRAMES, index)
+        success = self.vid.set(self.cv.CAP_PROP_POS_FRAMES, index)
         if not success: raise(self.FailedSet(f"Failed to set to video frame {index}."))
         # Get the image at that frame.
         success, image = self.vid.read()

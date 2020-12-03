@@ -1,7 +1,7 @@
 # Makes available all custom algorithms that I have worked with
 import os, time
 import numpy as np
-import og_fmodpy as fmodpy
+import fmodpy
 from util.approximate import WeightedApproximator
 
 # This directory
@@ -10,8 +10,6 @@ DISPLAY_WAIT_SEC = 3.
 
 # Get the source fortran code module
 path_to_src = os.path.join(CWD,"weight.f90")
-# Compile the fortran source (with OpenMP for acceleration)
-shepmod = fmodpy.fimport(path_to_src, output_directory=CWD, omp=True)
 
 # =================
 #      Shepard     
@@ -22,6 +20,11 @@ shepmod = fmodpy.fimport(path_to_src, output_directory=CWD, omp=True)
 class Shepard(WeightedApproximator):
     points = None
     dots = None
+
+    def __init__(self, *args, **kwargs):
+        # Compile the fortran source (with OpenMP for acceleration)
+        self.shepmod = fmodpy.fimport(path_to_src, output_dire=CWD, omp=True)
+        super().__init__(*args, **kwargs)
 
     # Given points, pre-calculate the inner products of all pairs.
     def _fit(self, points):
@@ -40,6 +43,6 @@ class Shepard(WeightedApproximator):
                 start = time.time()
                 print(f" {100.*i/len(points):.2f}%", end="\r", flush=True)
             # Calculate the support at this point
-            weights[i,:] = shepmod.weight(self.points, pt.copy())
+            weights[i,:] = self.shepmod.weight(self.points, pt.copy())
         return indices, weights
 

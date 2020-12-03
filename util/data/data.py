@@ -1,9 +1,11 @@
 import os, sys
 from util.data.read import read_data
 from util.data.categories import regular_simplex
-from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES, \
-    SEPARATORS, FILE_SAMPLE_SIZE, MISSING_SAMPLE_SIZE
+from util.data import DEFAULT_WAIT, DEFAULT_MAX_DISPLAY, \
+    DEFAULT_MAX_STR_LEN, FILE_SAMPLE_SIZE, \
+    GENERATOR_TYPE, MISSING_SAMPLE_SIZE, NP_TYPES, SEPARATORS
 
+# TODO:  Read data that has new lines in the column values.
 # TODO:  Instead of just checking file size, check number of columns too,
 #        use a sample by default if the #columns is large (speed!).
 # TODO:  Warnings or versioning for when the source data is modified
@@ -19,6 +21,12 @@ from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES, \
 #        names? Do names *have* to be Python strings?
 # TODO:  Support in-place addition with *some* duplicate solumns and
 #        the same number of rows? That or block duplicate col names.
+# TODO:  Change printout style for data frames with lots of columns,
+#        use variable max_print_width
+# TODO:  Is it possible (or relevant) for a data object to become
+#        *empty* after it has been correctly initialized?
+# TODO:  Test the index of [int,str] on a view where the str is a
+#        column name in the data object, but not in the view.
 # 
 # 
 # TODO:  Remove builtin prediction code for anything other than
@@ -38,12 +46,11 @@ from util.data import DEFAULT_DISPLAY_WAIT, GENERATOR_TYPE, NP_TYPES, \
 # TODO:  Remove the "fill" method in favor of "predict".
 # 
 # 
-# TODO:  Implement "parallel read" that create subprocesses that read
-#        chunks of the file, communicate progress, communicate type
-#        digressions, saves chunks in .pkl, then organizes them all
-#        into the expected ordered data format.
-# TODO:  Make access of a single row (in slicing) return a Row object.
-#        This object should have protections on assignment, like the column.
+# TODO:  Implement "parallel read" that reads the file object 
+#        simultaneously into multiple Data objects, then merges the
+#        Data objects together (efficiently, fewest copies possible).
+# TODO:  Implement "C read" that gets the types of all columns using
+#        a C program (with pthreads for speed).
 # 
 # 
 # TODO:  Implmenent 'IndexedAudio' reader that mimics the
@@ -84,22 +91,20 @@ def flatten(obj):
 class Data:
     # Holder for data.
     data = None
-    view = False
     # Boolean for declaring if this is a "view" or actual data.
+    view = False
+    # Storage for the set of rows and columns being "viewed".
     _row_indices = None
     _col_indices = None
-    # Default maximum printed rows of this data.
-    max_display = 10
-    # Default maximum string length of printed column values.
-    max_str_len = 30
-    # Define the time waited before displaying progress.
-    max_wait = DEFAULT_DISPLAY_WAIT
-    # Define the maximum display width for a table (with many columns)
-    # before the data is automatically displayed in different format.
-    max_print_width = 100
     # Default values for 'self.names' and 'self.types'
     _names = None
     _types = None
+    # Default maximum printed rows of this data.
+    max_display = DEFAULT_MAX_DISPLAY
+    # Default maximum string length of printed column values.
+    max_str_len = DEFAULT_MAX_STR_LEN
+    # Define the time waited before displaying progress.
+    max_wait = DEFAULT_WAIT
 
     # Import all of the exceptions.
     from util.data.exceptions import NameTypeMismatch, \
@@ -107,7 +112,8 @@ class Data:
         ImproperUsage, UnknownName, Unsupported, BadAssignment, \
         BadElement, BadTarget, BadValue, BadIndex, BadData, Empty, \
         MissingModule
-    # Import the classes used to protect this data object.
+
+    # Import the classes used to protect this data object from users.
     from util.data.internals import Descriptor, Column, Row
 
     # Protect the "names" and "types" attributes by using properties
@@ -127,8 +133,8 @@ class Data:
     @property
     def shape(self):
         if (self.empty):  return (0, 0)
-        elif (self.view): return (len(self), len(self._col_indices))
-        else:             return (len(self), len(self.names.values))
+        elif (self.view): return (len(self._row_indices), len(self._col_indices))
+        else:             return (len(self), len(self.names.values)) # <- access values to save time
 
     # Declare a "summary" property that returns the results of
     # "summarize" as a string (instead of printing them to output).
@@ -169,14 +175,14 @@ class Data:
         if (names is not None):
             if any(type(n) != str for n in names):
                 raise(Data.BadSpecifiedName(f"An entry of provided names was not of {str} class."))
-            self.names = names
+            self.names = names # <- performs copy
             # Construct default types for each column if names were not provided.
             if (types is None): types = [type(None)] * len(names)
         # Store the types if provided
         if (types is not None):
             if any(type(t) != type for t in types):
                 raise(Data.BadSpecifiedType(f"An entry of provided types was not of {type(type)} class."))
-            self.types  = types
+            self.types = types # <- performs copy
             # Construct default names for each column if names were not provided.
             if (self.names is None): self.names = [str(i) for i in range(len(types))]
         # Check if this is a view or a full data object.
@@ -202,28 +208,29 @@ class Data:
     def __getitem__(self, index):
         # Special case for being empty.
         if (self.empty): raise(Data.Empty("Cannot get item from empty data."))
-        # This index is accessing a (row,col) entry
+        # This index is accessing a (row,col) entry, both integers.
         if ((type(index) == tuple) and (len(index) == 2) and 
             (type(index[0]) == int) and (type(index[1]) == int)):
             return self.data[self.row(index[0])][self.col(index[1])]
+        # This index is accessing a (row,col) entry where col is a string.
         elif ((type(index) == tuple) and (len(index) == 2) and 
-              (type(index[0]) == int and type(index[1]) == str)):
+              (type(index[0]) == int) and (type(index[1]) == str)):
             if (index[1] not in self.names):
                 raise(Data.BadIndex(f"Column index {index[1]} is not a recognized column name."))
-            # This index is accessing a (row,col) entry
             return self.data[self.row(index[0])][self.names.index(index[1])]
         elif (type(index) == int):
+            # This index is accessing a row by integer index.
             if (self.view): return Data.Row(self, self.data[self.row(index)])
             else:           return self.data[index]
+        # This index is accessing a column
         elif (type(index) == str):
-            # This index is accessing a column
             if (index not in self.names):
                 raise(Data.UnknownName(f"This data does not have a column named '{index}'."))
             # If this is a view, make that numerical index relative to this.
             if (self.view):
-                col_names = list(self.names)
+                col_names = list(self.names) # <- use the iterator because it grabs relevant columns
                 if index not in col_names:
-                    raise(Data.UnknownName(f"This data does not have a column named '{index}'."))
+                    raise(Data.UnknownName(f"This data view does not have a column named '{index}'."))
                 num_index = col_names.index(index)
             # Otherwise, retreive the exact numerical column index.
             else:
@@ -233,6 +240,7 @@ class Data:
         # Short-circuit for recognizing a column object.
         elif ((type(index) == tuple) and (len(index) == 2) and
               (type(index[0]) == slice) and (type(index[1]) in {int, str})):
+            # Handle a string column index.
             if (type(index[1]) == str):
                 # This index is accessing a column
                 if (index[1] not in self.names):
@@ -245,7 +253,7 @@ class Data:
                     num_index = col_names.index(index[1])
                 # Otherwise, retreive the exact numerical column index.
                 else: num_index = self.names.index(index[1])
-            # Handle an integer index.
+            # Handle an integer column index.
             elif (type(index[1]) == int):
                 if (not (-self.shape[1] <= index[1] < self.shape[1])):
                     raise(Data.BadIndex(f"The integer column index {index[1]} is out of the valid range."))
@@ -282,9 +290,9 @@ class Data:
         # Special case assignment of new column (*RETURN* to exit function).
         if ((type(index) == str) and (index not in self.names)):
             # Check to see if this is a data view object.
-            if (self.view) and (len(self) != len(self.data)):
-                raise(Data.Unsupported("This is a data alias and does not support assignment."))
-            elif (self.view) and (index in self.names.values):
+            if (self.view and (len(self) != len(self.data))):
+                raise(Data.Unsupported("This data view does not observe all rows and hence does not support column assignment."))
+            elif (self.view and (index in self.names.values)):
                 raise(Data.ImproperUsage("This is a data view and the provided index conflicts with a column in the original data."))
             elif (self.view):
                 raise(Data.Unsupported("\n  This is a view of a Data object.\n  Did you expect this new column to be added to the original data?"))
@@ -1143,7 +1151,7 @@ class Data:
 
     # Generate a pair of functions. The first function will map rows
     # of Data to a real-valued list. The second function will map
-    # real-valued lists back to rows in the original space.
+    # real-valued lists back to rows in the original data object.
     def generate_mapping(self):
         if self.empty: raise(Data.ImproperUsage("Cannot map empty Data."))
         # Make sure we can handle this type of data
@@ -1389,8 +1397,13 @@ class Data:
     # Generate a "view" on this data object that only has the first
     # occurrence of its unique rows and return it.
     def unique(self):
-        import time
-        from util.system import hash
+        import time, hashlib, pickle
+        # Generate hash values using a near-zero probability of conflict
+        # hashing mechanism that can handle non-hashable types. Does this
+        # by hashing the raw bytes (from pickle) with sha256.
+        def hash(something):
+            return hashlib.sha256(pickle.dumps(something)).hexdigest()
+        # Cycle rows, finding unique ones.
         rows = []
         found = set()
         start = time.time()
@@ -1464,18 +1477,6 @@ class Data:
         # Pop out the last added column, because it only contains empty elements.
         self.pop(column_name)
 
-    # DEPRECATION WARNING -- THIS IS ONLY FOR BACKWARDS COMPATIBILITY
-    def deflate(self, name):
-        import warnings
-        warnings.warn("\n  The 'deflate' function is being deprecated, use 'pack' instead.")
-        return self.pack(name)
-
-    # DEPRECATION WARNING -- THIS IS ONLY FOR BACKWARDS COMPATIBILITY
-    def inflate(self, column):
-        import warnings
-        warnings.warn("\n  The 'inflate' function is being deprecated, use 'unpack' instead.")
-        return self.unnpack(column)
-
     # Reverse the 'unpack' operation, using the same expected naming scheme.
     def pack(self, name):
         if (self.view): raise(Data.Unsupported(f"This Data is a view and cannot be packed."))
@@ -1507,6 +1508,17 @@ class Data:
         # Pop out all of the old columns and add one new column.
         self.add_column(row_generator(), name=name)
 
+    # DEPRECATION WARNING -- THIS IS ONLY FOR BACKWARDS COMPATIBILITY
+    def deflate(self, name):
+        import warnings
+        warnings.warn("\n  The 'deflate' function is being deprecated, use 'pack' instead.")
+        return self.pack(name)
+
+    # DEPRECATION WARNING -- THIS IS ONLY FOR BACKWARDS COMPATIBILITY
+    def inflate(self, column):
+        import warnings
+        warnings.warn("\n  The 'inflate' function is being deprecated, use 'unpack' instead.")
+        return self.unnpack(column)
 
     # Given a list of column names, modify this Data so that all
     # specified column names are stacked in lists associated with
@@ -1646,7 +1658,7 @@ class Data:
     # 
     # Example:
     #   Combined with "unique", this function can be used to convert a
-    #   struct where some rows are repeats of each other having unique
+    #   Data object where some rows are repeats of each other having unique
     #   values in only one column to a Data object with only unique
     #   rows and one column contains lists of values associated with
     #   each unique row.
@@ -1703,8 +1715,8 @@ class Data:
         # Return the self (that has been modified)
         return self
 
-    # Return an iterator that provides "k" (rest, fold) sub-data
-    # from this data. Randomly shuffle indices with seed "seed".
+    # Return an iterator that provides "k" {(k-1)/k, 1/k} paired Data
+    # from this Data. Randomly shuffle indices with seed "seed".
     def k_fold(self, k=10, seed=0, only_indices=False):
         # Generate random indices
         import random

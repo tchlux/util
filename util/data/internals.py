@@ -60,6 +60,8 @@ class Descriptor:
 
     # Identify the index (column number) of a value.
     def index(self, value): return self.values.index(value)
+    # TODO: ^^ Modify this code if the data is a view.
+    #       return self.data._col_indices.index(self.values.index(value))
 
     # Pop a value out of this descriptor.
     def pop(self, index):

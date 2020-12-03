@@ -153,12 +153,12 @@ class Tracker:
 #                      function , bounds, initial solution, obj args)
 #                      and will find a candidate minimum solution.
 #      This file provides the methods:
+#       AdaptiveNormal - Quasi simulated annealing with exhaustion,
+#            (default)   best for noisy multi-min spaces.
 #       DiRect         - The divided rectangles method, provably convergent
-#            (default)   at a slow rate, offers "region" of best solution.
+#                        at a slow rate, offers "region" of best solution.
 #       AMPGO          - BFGS with tunneling away from prior solutions,
 #                        best for smooth locally convex multi-min spaces
-#       AdaptiveNormal - Quasi simulated annealing with exhaustion,
-#                        best for noisy multi-min spaces.
 #       Random         - Pure random baseline for comparison, best for
 #                        discontinuous and noisy spaces.
 #   checkpoint      -- Boolean indicating whether or not a checkpoint
@@ -171,7 +171,7 @@ class Tracker:
 def minimize(objective, solution, bounds=None, args=tuple(),
              max_time=DEFAULT_MAX_TIME_SEC, min_steps=DEFAULT_MIN_STEPS,
              max_steps=DEFAULT_MAX_STEPS,  min_improvement=DEFAULT_MIN_IMPROVEMENT, 
-             display=True, method=DiRect, checkpoint=True,
+             display=True, method=AMPGO, checkpoint=True,
              checkpoint_file=CHECKPOINT_FILE):
     # Convert the solution into a float array (if it's not already)
     solution = np.asarray(solution, dtype=float)

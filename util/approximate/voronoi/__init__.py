@@ -1,7 +1,8 @@
 # Makes available all custom algorithms that I have worked with
 import os, time
 import numpy as np
-import og_fmodpy as fmodpy
+# import og_fmodpy as fmodpy
+import fmodpy
 from util.approximate import WeightedApproximator
 
 # This directory
@@ -9,8 +10,6 @@ CWD = os.path.dirname(os.path.abspath(__file__))
 DISPLAY_WAIT_SEC = 3.
 # Get the source fortran code module
 path_to_src = os.path.join(CWD,"voronoi.f90")
-# Compile the fortran source (with OpenMP for acceleration)
-voronoi_mod = fmodpy.fimport(path_to_src, output_directory=CWD, omp=True)
 
 class DuplicateInterpolationPoints(Exception): pass
 
@@ -24,6 +23,11 @@ class Voronoi(WeightedApproximator):
     points = None
     dots = None
 
+    def __init__(self):
+        # Compile the fortran source (with OpenMP for acceleration)
+        self.voronoi_mod = fmodpy.fimport(path_to_src, output_dir=CWD, omp=True)
+        super().__init__()
+
     # Given points, pre-calculate the inner products of all pairs.
     def _fit(self, points):
         self.points = points.copy().T
@@ -31,7 +35,7 @@ class Voronoi(WeightedApproximator):
         # intialize all values to be the maximum representable number.
         self.dots = np.empty((self.points.shape[1],
                               self.points.shape[1]), order='F')
-        voronoi_mod.make_huge(self.dots)
+        self.voronoi_mod.make_huge(self.dots)
 
     # Return the source points and weights associated with all the provided points.
     def _predict(self, points, display_wait_sec=DISPLAY_WAIT_SEC):
@@ -45,8 +49,8 @@ class Voronoi(WeightedApproximator):
                 start = time.time()
                 print(f" {100.*i/len(points):.2f}%", end="\r", flush=True)
             # Calculate the support at this point
-            _, support, error = voronoi_mod.predict(self.points, self.dots, 
-                                                    np.asarray(pt,order='F'))
+            _, support, error = self.voronoi_mod.predict(self.points, self.dots, 
+                                                         np.asarray(pt,order='F'))
             if (error == 1):
                 raise(OverflowError("The scale of the data caused a squared float to overflow, consider normalizing data."))
             elif (error == 2):

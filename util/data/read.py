@@ -1,4 +1,4 @@
-from util.data import QUOTES, COMMON_SEPARATORS, DEFAULT_DISPLAY_WAIT, \
+from util.data import QUOTES, COMMON_SEPARATORS, DEFAULT_WAIT, \
     MAX_ERROR_PRINTOUT, MAX_DISPLAY_COLS
 
 # =================================================
@@ -75,7 +75,7 @@ def detect_separator(filename="<no_provided_file>", verbose=False, opened_file=N
     separators = {char:first_line.count(char) for char in set(first_line)}
     # Update the user
     last_update = 0
-    should_update = lambda: (verbose and ((time.time() - last_update) > DEFAULT_DISPLAY_WAIT))
+    should_update = lambda: (verbose and ((time.time() - last_update) > DEFAULT_WAIT))
     raw_data = f.readlines()
     # Cycle the file (narrowing down the list of potential separators
     for i,line in enumerate(raw_data):
@@ -192,7 +192,7 @@ def read_data(filename="<no_provided_file>", sep=None, types=None,
     # Now process the rest of the data, dynamically overwriting old data
     errors = []
     last_update = 0
-    should_update = lambda: (verbose and ((time.time() - last_update) > DEFAULT_DISPLAY_WAIT))
+    should_update = lambda: (verbose and ((time.time() - last_update) > DEFAULT_WAIT))
     # Define an appropriate iterator based on the usage of this "read".
     if sample is None: iterator = enumerate(raw_data)
     else:
@@ -250,6 +250,14 @@ def read_data(filename="<no_provided_file>", sep=None, types=None,
                     print(f"\nERROR ON LINE {i+3}:\n  {line}")
                 if len(errors) == MAX_ERROR_PRINTOUT:
                     print("Suppressing further error output. See all erroneous lines in later message.")
+        except Data.BadElement:
+            errors.append(i+3)
+            if len(errors) <= MAX_ERROR_PRINTOUT:
+                print(f"\nERROR ON LINE {i+3}:\n  {line}")
+            if len(errors) == MAX_ERROR_PRINTOUT:
+                print("Suppressing further error output. See all erroneous lines in later message.")
+
+
     if verbose and (last_update != 0): print("\r100.0% complete.")
     if (len(errors) > 0) and (not verbose):
         print( "WARNING: Encountered potentially erroneous lines while\n"+

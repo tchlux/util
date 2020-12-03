@@ -1179,7 +1179,7 @@ class Plot:
             titlefont = title_font,
             showlegend = show_legend,
             legend = legend,
-            margin = dict(t=PLOT_MARGIN,b=PLOT_MARGIN,l=PLOT_MARGIN,r=PLOT_MARGIN),
+            margin = dict(t=PLOT_MARGIN,b=PLOT_MARGIN,l=10+PLOT_MARGIN,r=PLOT_MARGIN),
         )
         # Set width, height, and compensate for plotly spacing aroung SVG 
         if type(width) != type(None):  

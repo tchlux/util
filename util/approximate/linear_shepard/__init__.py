@@ -1,17 +1,11 @@
 # Makes available all custom algorithms that I have worked with
 import os, time
 import numpy as np
-import og_fmodpy as fmodpy
+import fmodpy
 from util.approximate import Approximator
 
 # This directory
 CWD = os.path.dirname(os.path.abspath(__file__))
-# Import the source Fortran code.
-lshep_mod = fmodpy.fimport(
-    os.path.join(CWD,"linear_shepard.f95"),
-    module_link_args=["-lblas","-llapack","-lgfortran"], 
-    output_directory=CWD, autocompile_extra_files=True)
-
 
 class TooFewDataPoints(Exception):
     def __init__(self, d, n):
@@ -28,6 +22,11 @@ class LSHEP(Approximator):
     #            this number (growing the radius of influence of all
     #            points) until desired model smoothness is obtained.
     def __init__(self, radius=2):
+        # Import the source Fortran code.
+        self.lshep_mod = fmodpy.fimport(
+            os.path.join(CWD,"linear_shepard.f95"),
+            output_dir=CWD, lapack=True, autocompile=True)
+
         self.ierrors = {}
         self.radius = radius
         self.x = self.f = self.a = self.rw = None
@@ -49,8 +48,8 @@ class LSHEP(Approximator):
             self.a.append( np.ones(shape=self.x.shape, order="F") )
             self.rw.append( np.ones(shape=(self.x.shape[1],), order="F") )
             # In-place update of self.a and self.rw
-            lshep_mod.lshep(self.x.shape[0], self.x.shape[1],
-                            self.x, self.f[i], self.a[i], self.rw[i], **kwargs)
+            self.lshep_mod.lshep(self.x.shape[0], self.x.shape[1],
+                                 self.x, self.f[i], self.a[i], self.rw[i], **kwargs)
             # Multiply in the radius modifier.
             self.rw[-1] *= self.radius
 

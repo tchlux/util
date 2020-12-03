@@ -6,13 +6,6 @@ from util.approximate import WeightedApproximator
 
 # This directory
 CWD = os.path.dirname(os.path.abspath(__file__))
-# Import the fortran source code.
-modified_shepard = fmodpy.fimport(
-    os.path.join(CWD,"modified_shepard.f95"),
-    output_directory=CWD)
-shepmod = modified_shepard.shepmod
-shepmodval = modified_shepard.shepmodval
-
 
 class TooFewDataPoints(Exception):
     def __init__(self, d, n):
@@ -21,6 +14,13 @@ class TooFewDataPoints(Exception):
 # Wrapper class for using the modified shepard fortran code
 class ShepMod(WeightedApproximator):
     def __init__(self):
+        # Import the fortran source code.
+        modified_shepard = fmodpy.fimport(
+            os.path.join(CWD,"modified_shepard.f95"),
+            output_directory=CWD)
+        self.shepmod = modified_shepard.shepmod
+        self.shepmodval = modified_shepard.shepmodval
+
         self.ierrors = {}
         self.x = self.rw = None
 
@@ -30,8 +30,8 @@ class ShepMod(WeightedApproximator):
         self.x = np.asfortranarray(control_points.T)
         self.rw = np.ones(shape=(self.x.shape[1],), order="F")
         # In-place update of self.rw (radius of influence).
-        _, ier = shepmod(self.x.shape[0], self.x.shape[1],
-                         self.x, self.rw, **kwargs)
+        _, ier = self.shepmod(self.x.shape[0], self.x.shape[1],
+                              self.x, self.rw, **kwargs)
         if (ier != 0):
             raise(TooFewDataPoints(*self.x.shape))
 
@@ -45,7 +45,7 @@ class ShepMod(WeightedApproximator):
             x_pt = np.array(np.reshape(x_pt,(self.x.shape[0],)), order="F")
             ierr = 0
             wts = np.zeros(self.x.shape[1], order="F")
-            _, ierr = shepmodval(x_pt, *self.x.shape, self.x, self.rw, wts)
+            _, ierr = self.shepmodval(x_pt, *self.x.shape, self.x, self.rw, wts)
             # Store the error flag (for processing later).
             self.ierrors[ierr] = self.ierrors.get(ierr, 0) + 1
             # Get those indices where there is a nonzero weight.

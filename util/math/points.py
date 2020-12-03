@@ -1,11 +1,5 @@
 # Compile and build the fekete point generation code.
 import os
-import og_fmodpy as fmodpy
-CWD = os.path.dirname(os.path.abspath(__file__))
-fp_mod = fmodpy.fimport(os.path.join(CWD,"fekete.f90"),
-                        module_link_args=["-lblas","-llapack"],
-                        output_directory=CWD)
-
 
 # Given an "n", construct the 1D Chebyshev-Guass-Lobatto nodes
 # (equally spaced on a unit semicircle).
@@ -25,6 +19,7 @@ def chebyshev(n, d=1, sample=None):
 def grid(n, d):
     from random import sample
     per_dim = round( n**(1/d) + .5 )
+    if ((per_dim-1)**d == n): per_dim -= 1
     pts = mesh(list(range(per_dim)), d) / (per_dim-1)
     if n < len(pts): return pts[sample(range(len(pts)), n)]
     else:            return pts
@@ -112,6 +107,11 @@ def polynomial_indices(degree=1, dimension=1):
 # destroy the contents of "vmt" (Vandermonde matrix transpose).
 def fekete_indices(vmt):
     import numpy as np
+    import og_fmodpy as fmodpy
+    CWD = os.path.dirname(os.path.abspath(__file__))
+    fp_mod = fmodpy.fimport(os.path.join(CWD,"fekete.f90"),
+                            module_link_args=["-lblas","-llapack"],
+                            output_directory=CWD)
     # If the system is not overdetermined, then all points should be kept.
     if (vmt.shape[1] <= vmt.shape[0]): return np.arange(vmt.shape[1])
     # Otherwise, identify which indices should be kept by performing a
@@ -128,6 +128,11 @@ def fekete_points(num_points, dimension, min_per_dim=3,
                   max_func_ratio=1, max_point_ratio=2):
     from math import log, ceil
     import numpy as np
+    import og_fmodpy as fmodpy
+    CWD = os.path.dirname(os.path.abspath(__file__))
+    fp_mod = fmodpy.fimport(os.path.join(CWD,"fekete.f90"),
+                            module_link_args=["-lblas","-llapack"],
+                            output_directory=CWD)
     assert(dimension >= 1)
     # Construct a set of functions at least as long as the number of points.
     degree = 1
