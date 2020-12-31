@@ -14,7 +14,7 @@ MARS_MODEL_FLAG = 1
 
 # Was using the fortran, but found a bug... Using Py-Earth instead
 
-INSTALL_MESSAGE = """Failed to import `pyearth`. Download and install with:
+INSTALL_MESSAGE = """\n\nFailed to import `pyearth`. Download and install with:
   git clone git://github.com/scikit-learn-contrib/py-earth.git
   cd py-earth
   sudo python setup.py install --cythonize

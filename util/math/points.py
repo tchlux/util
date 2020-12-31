@@ -107,11 +107,10 @@ def polynomial_indices(degree=1, dimension=1):
 # destroy the contents of "vmt" (Vandermonde matrix transpose).
 def fekete_indices(vmt):
     import numpy as np
-    import og_fmodpy as fmodpy
+    import fmodpy
     CWD = os.path.dirname(os.path.abspath(__file__))
     fp_mod = fmodpy.fimport(os.path.join(CWD,"fekete.f90"),
-                            module_link_args=["-lblas","-llapack"],
-                            output_directory=CWD)
+                            lapack=True, output_dir=CWD)
     # If the system is not overdetermined, then all points should be kept.
     if (vmt.shape[1] <= vmt.shape[0]): return np.arange(vmt.shape[1])
     # Otherwise, identify which indices should be kept by performing a
@@ -128,11 +127,10 @@ def fekete_points(num_points, dimension, min_per_dim=3,
                   max_func_ratio=1, max_point_ratio=2):
     from math import log, ceil
     import numpy as np
-    import og_fmodpy as fmodpy
+    import fmodpy
     CWD = os.path.dirname(os.path.abspath(__file__))
     fp_mod = fmodpy.fimport(os.path.join(CWD,"fekete.f90"),
-                            module_link_args=["-lblas","-llapack"],
-                            output_directory=CWD)
+                            lapack=True, output_dir=CWD)
     assert(dimension >= 1)
     # Construct a set of functions at least as long as the number of points.
     degree = 1
@@ -275,13 +273,13 @@ def regular_mesh(n, d):
 
 
 if __name__ == "__main__":
-    regular_mesh(1, 20)
+    # regular_mesh(1, 20)
     # regular_mesh(10e10, 20)
 
     show = False
 
     def _test_mesh(show=True):
-        from weakly_admissable_meshes import polar_wam, box_wam
+        from util.math.weakly_admissible_meshes import polar_wam, box_wam
         from util.plot import Plot
         p = Plot("Weakly admissable mesh")
         p.add("Polar", *(polar_wam(8).T), color=p.color(0))
@@ -321,8 +319,6 @@ if __name__ == "__main__":
         print()
         print()
 
-
-
-    # _test_mesh(show=show)
+    _test_mesh(show=show)
     # _test_num_polynomials()
     # _test_fekete(show=show)

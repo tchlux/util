@@ -1,0 +1,29 @@
+! This automatically generated Fortran wrapper file allows codes
+! written in Fortran to be called directly from C and translates all
+! C-style arguments into expected Fortran-style arguments (with
+! assumed size, local type declarations, etc.).
+
+
+SUBROUTINE C_WEIGHT(PTS_DIM_1, PTS_DIM_2, PTS, PT_DIM_1, PT, WTS_DIM_1, WTS) BIND(C)
+  USE ISO_FORTRAN_ENV , ONLY : REAL64
+  IMPLICIT NONE
+  INTEGER, INTENT(IN) :: PTS_DIM_1
+  INTEGER, INTENT(IN) :: PTS_DIM_2
+  REAL(KIND=REAL64), INTENT(IN), DIMENSION(PTS_DIM_1,PTS_DIM_2) :: PTS
+  INTEGER, INTENT(IN) :: PT_DIM_1
+  REAL(KIND=REAL64), INTENT(IN), DIMENSION(PT_DIM_1) :: PT
+  INTEGER, INTENT(IN) :: WTS_DIM_1
+  REAL(KIND=REAL64), INTENT(OUT), DIMENSION(WTS_DIM_1) :: WTS
+
+  INTERFACE
+    SUBROUTINE WEIGHT(PTS, PT, WTS)
+      USE ISO_FORTRAN_ENV , ONLY : REAL64
+      REAL(KIND=REAL64), INTENT(IN), DIMENSION(:,:) :: PTS
+      REAL(KIND=REAL64), INTENT(IN), DIMENSION(SIZE(PTS,1)) :: PT
+      REAL(KIND=REAL64), INTENT(OUT), DIMENSION(SIZE(PTS,2)) :: WTS
+    END SUBROUTINE WEIGHT
+  END INTERFACE
+
+  CALL WEIGHT(PTS, PT, WTS)
+END SUBROUTINE C_WEIGHT
+

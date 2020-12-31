@@ -23,7 +23,7 @@ class Shepard(WeightedApproximator):
 
     def __init__(self, *args, **kwargs):
         # Compile the fortran source (with OpenMP for acceleration)
-        self.shepmod = fmodpy.fimport(path_to_src, output_dire=CWD, omp=True)
+        self.shepmod = fmodpy.fimport(path_to_src, output_dir=CWD, omp=True)
         super().__init__(*args, **kwargs)
 
     # Given points, pre-calculate the inner products of all pairs.
@@ -45,4 +45,11 @@ class Shepard(WeightedApproximator):
             # Calculate the support at this point
             weights[i,:] = self.shepmod.weight(self.points, pt.copy())
         return indices, weights
+
+
+if __name__ == "__main__":
+    from util.approximate.testing import test_plot
+    m = Shepard()
+    p, x, y = test_plot(m, random=True, N=20)
+    p.show()
 

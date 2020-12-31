@@ -1,7 +1,6 @@
 # Makes available all custom algorithms that I have worked with
 import os, time
 import numpy as np
-# import og_fmodpy as fmodpy
 import fmodpy
 from util.approximate import WeightedApproximator
 
@@ -16,6 +15,7 @@ class DuplicateInterpolationPoints(Exception): pass
 # =================
 #      Voronoi     
 # =================
+
 # Class for using the voronoi mesh to make approximations. This relies
 # on some OpenMP parallelized fortran source to identify the voronoi
 # mesh coefficients (more quickly than can be done in python).

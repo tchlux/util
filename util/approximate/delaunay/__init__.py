@@ -110,8 +110,8 @@ class Delaunay(WeightedApproximator):
     def __init__(self, parallel=False, pmode=None, chain=None):
         # from util.approximate.delaunay import delsparse
         import fmodpy
-        self.delsparse = fmodpy.fimport("delsparse.f90", lapack=True, 
-                                        omp=True, output_dir=CWD,
+        self.delsparse = fmodpy.fimport(os.path.join(CWD,"delsparse.f90"), lapack=True, 
+                                        omp=True, output_dir=CWD, verbose=False,
                                         f_compiler_args="-std=legacy -fPIC -shared -O3",
         )
         # Get the source fortran code module

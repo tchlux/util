@@ -38,7 +38,7 @@ SUBROUTINE FEKETE_INDICES(VM_T, INDS, INFO)
   CALL DGEQP3(SIZE(VM_T,1), SIZE(VM_T,2), VM_T, SIZE(VM_T,1), &
        INDS, TAU, TAU, -1, INFO)
   ! Allocate the work array.
-  ALLOCATE( WORK(TAU(1)) )
+  ALLOCATE( WORK(INT(TAU(1))) )
   ! Call the QR (with column pivoting) function.
   CALL DGEQP3(SIZE(VM_T,1), SIZE(VM_T,2), VM_T, SIZE(VM_T,1), &
        INDS, TAU, WORK, SIZE(WORK), INFO)

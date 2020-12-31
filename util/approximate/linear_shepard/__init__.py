@@ -25,14 +25,15 @@ class LSHEP(Approximator):
         # Import the source Fortran code.
         self.lshep_mod = fmodpy.fimport(
             os.path.join(CWD,"linear_shepard.f95"),
-            output_dir=CWD, lapack=True, autocompile=True)
+            output_dir=CWD, lapack=True, autocompile=True,
+            verbose=False).linear_shepard_mod
 
         self.ierrors = {}
         self.radius = radius
         self.x = self.f = self.a = self.rw = None
 
     # Use fortran code to compute the boxes for the given data
-    def _fit(self, control_points, values, **kwargs):
+    def _fit(self, control_points, values, rlshep=True, **kwargs):
         # Local operations
         self.x = np.asfortranarray(control_points.T)
         # Raise an error if too few points are used for a fit.
@@ -67,8 +68,9 @@ class LSHEP(Approximator):
             for (f, a, rw) in zip(self.f, self.a, self.rw):
                 x_pt = np.array(np.reshape(x_pt,(self.x.shape[0],)), order="F")
                 ierr = 0
-                resp = lshep_mod.lshepval(x_pt, self.x.shape[0], self.x.shape[1], 
-                                          self.x, f, a, rw, ierr)
+                ierr, resp = self.lshep_mod.lshepval(x_pt, self.x.shape[0], 
+                                                     self.x.shape[1], 
+                                                     self.x, f, a, rw)
                 self.ierrors[ierr] = self.ierrors.get(ierr, 0) + 1
                 row.append(resp)
             response.append(row)

@@ -599,18 +599,20 @@ class background:
 
     # Define a function for running a job.
     def _run_job(q, job_num, func, args, kwargs):
-        q.put( (job_num, background.loads(func)(*args, **kwargs)) )
+        try: import dill as pickle
+        except: import pickle
+        q.put( (job_num, pickle.loads(func)(*args, **kwargs)) )
 
     # Define custom exceptions.
     class NotCalled(Exception): pass
     class UsageError(Exception): pass
 
-    # Import methods to dump and load functions to pass between processes.
-    from dill import dumps, loads
-
     # Define a property (with no setter) for looking at the function.
     @property
-    def func(self): return background.loads(self._func)
+    def func(self):
+        try: import dill as pickle
+        except: import pickle
+        return pickle.loads(self._func)
     @property
     def completed(self): return len(self._completed)
     @property
@@ -620,13 +622,15 @@ class background:
 
     # Define this so that it behaves like a decorator.
     def __init__(self, func):
+        try: import dill as pickle
+        except: import pickle
         from multiprocessing import get_context
         # Initialize storage for all of the details about this function.
         self._completed = []
         self._jobs = {}
         self._results = {}
         # Store the function in a serialized format.
-        self._func = background.dumps(func)
+        self._func = pickle.dumps(func)
         # Create multiprocessing context (not to muddle with others)
         self._ctx = get_context() # "fork" on Linux, "spawn" on Windows.
         # Create a queue for receiving function output.

@@ -19,12 +19,12 @@ class Vandermonde(WeightedApproximator):
     def _fit(self, points, funcs=None):
         # Set the default values.
         if (funcs is None):
-            from util.points import polynomials
+            from util.math.points import polynomials
             funcs = polynomials(self.degree, points.shape[1])
 
         # Pick the subset of points that should be kept.
         if self.fekete:
-            from util.points import polynomials, fekete_indices
+            from util.math.points import polynomials, fekete_indices
             # Make sure that we have enough points to interpolate.
             degree = self.degree
             while (len(funcs) > len(points)):
@@ -95,7 +95,7 @@ class Polynomial(Approximator):
 
     # Fit a polynomial function.
     def _fit(self, points, values):
-        from util.points import polynomials
+        from util.math.points import polynomials
         # Get the polymomials of desired degree for the given dimension.
         self.basis_funcs = polynomials(degree=self.degree, dimension=points.shape[1])
         # Get the Vandermonde matrix (for fitting the points).
@@ -123,7 +123,7 @@ class Polynomial(Approximator):
 
 if __name__ == "__main__":
     SHOW = True
-    from util.points import fekete_points
+    from util.math.points import fekete_points
 
     def _test_approximator(n=30, dim=2, degree=4, vandermonde=False,
                            polynomial=True, points_func=fekete_points,
@@ -134,6 +134,7 @@ if __name__ == "__main__":
 
         # Construct a Vandermonde interpolant
         if (points_func is None):
+            np.random.seed(0)
             points = np.random.random(size=(n, dim))
         else:
             points = points_func(n, dim)
@@ -149,7 +150,7 @@ if __name__ == "__main__":
 
         # Construct the visual.
         from util.plot import Plot
-        p = Plot("Multivariate Interpolation")
+        p = Plot(f"Multivariate Interpolation (v={vandermonde}, p={polynomial})")
         p.add("Points", *(points.T), values)
         print("Adding truth..")
         p.add_func("Truth", test_function, [min_x,max_x], [min_y,max_y],
@@ -175,5 +176,5 @@ if __name__ == "__main__":
         if show: p.show(append=True)
 
     # Run tests on these two approximators.
-    _test_approximator(vandermonde=False, polynomial=True)
-    _test_approximator(vandermonde=True, polynomial=False)
+    _test_approximator(vandermonde=False, polynomial=True, points_func=None)
+    _test_approximator(vandermonde=True, polynomial=False, points_func=None)

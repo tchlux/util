@@ -1,7 +1,7 @@
 # Makes available all custom algorithms that I have worked with
 import os
 import numpy as np
-import og_fmodpy as fmodpy
+import fmodpy
 from util.approximate import WeightedApproximator
 
 # This directory
@@ -17,7 +17,7 @@ class ShepMod(WeightedApproximator):
         # Import the fortran source code.
         modified_shepard = fmodpy.fimport(
             os.path.join(CWD,"modified_shepard.f95"),
-            output_directory=CWD)
+            output_dir=CWD).modified_shepard
         self.shepmod = modified_shepard.shepmod
         self.shepmodval = modified_shepard.shepmodval
 

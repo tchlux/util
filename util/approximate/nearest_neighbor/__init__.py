@@ -134,20 +134,20 @@ def auto(points, values, metric=abs_diff, max_k=None, samples=100,
 
 if __name__ == "__main__":
 
-    np.random.seed(0)
+    # np.random.seed(0)
 
-    pts = np.random.random(size=(10000,5))
-    values = np.random.random(size=(10000,))
-    test = np.random.random(size=(1000,5))
-    print("Fitting model..", flush=True)
-    m = NearestNeighbor()
-    m.fit(pts, values)
-    print("Evaluating model..", flush=True)
-    m(test)
-    print("done")
-    exit()
+    # pts = np.random.random(size=(10000,5))
+    # values = np.random.random(size=(10000,))
+    # test = np.random.random(size=(1000,5))
+    # print("Fitting model..", flush=True)
+    # m = NearestNeighbor()
+    # m.fit(pts, values)
+    # print("Evaluating model..", flush=True)
+    # m(test)
+    # print("done")
+    # exit()
 
-    TEST_AUTO = False
+    TEST_AUTO = True
     if TEST_AUTO:
         d = 10
         n = 511
@@ -159,5 +159,6 @@ if __name__ == "__main__":
     # m = condition(NearestNeighbor, method="MPCA", display=True)()
     m = NearestNeighbor()
     from util.approximate.testing import test_plot
-    p,x,y = test_plot(m, N=30, fun=lambda x: x[0]**3, plot_points=4000)
+    # p,x,y = test_plot(m, N=30, fun=lambda x: x[0]**3, plot_points=4000)
+    p,x,y = test_plot(m, N=30)
     p.show()
