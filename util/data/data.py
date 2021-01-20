@@ -2048,11 +2048,6 @@ class Data:
         name_len = max(map(len, self.names))
         type_len = max(map(lambda t: len(str(t)), self.types))
         count_string_len = len(str(len(self)))
-        # Identify the length of the longest (string for a) value.
-        val_len = max(map(lambda v: len(str(v)), counts))
-        val_len = min(val_len, self.max_str_len)
-        # Remove the "None" count from "counts" to prevent sorting problems
-        none_count = counts.pop(None, 0)
         # Describe each column of the data
         for c,(n,t) in enumerate(zip(self.names, self.types)):
             # Count the number of elements for each value
@@ -2066,6 +2061,11 @@ class Data:
                     val = str(val)
                     counts[val] = counts.get(val,0) + 1
             print_to_file(f"  {c:{len(str(self.shape[1]))}d} -- \"{n}\"{'':{1+name_len-len(n)}s}{str(t):{type_len}s} ({len(counts)} unique value{'s' if (len(counts) != 1) else ''})")
+            # Identify the length of the longest (string for a) value.
+            val_len = max(map(lambda v: len(str(v)), counts))
+            val_len = min(val_len, self.max_str_len)
+            # Remove the "None" count from "counts" to prevent sorting problems
+            none_count = counts.pop(None, 0)
             # For the special case of ordered values, reduce to ranges
             if (t in {int,float}) and (len(counts) > max_display):
                 # Print out the count of None values.
