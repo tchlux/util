@@ -1,3 +1,7 @@
+# Set all fmodpy imports to not be verbose.
+import fmodpy
+fmodpy.config.load_config(verbose=False)
+
 # Get the name of a class as listed in python source file.
 def class_name(obj):
     if type(obj) == type: return (repr(obj)[1:-2].split(".")[-1])

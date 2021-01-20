@@ -2098,8 +2098,6 @@ class Data:
                 if (none_count > 0):
                     perc = 100. * (none_count / len(self))
                     print_to_file(f"    {'None':{val_len}s}{'  ' if (t == str) else ''} {none_count:{count_string_len}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
-                else:
-
                 for val in ordered_vals[:max_display]:
                     perc = 100. * (counts[val] / len(self))
                     if (t == str):

@@ -667,31 +667,37 @@ Size: (11 x 3)
 
 # Run test cases
 if __name__ == "__main__":
-    # Get the path to be watching for code coverage.
-    import os
-    path_to_watch = os.path.abspath(os.curdir)
-    # Activate a code coverage module.
-    import coverage
-    cov = coverage.Coverage(source=[path_to_watch])
-    cov.start()
+    # Try to run the tests with code coverage, otherwise just run them.
+    try: 
+        # Get the path to be watching for code coverage.
+        import os
+        path_to_watch = os.path.abspath(os.curdir)
+        # Activate a code coverage module.
+        import coverage
+        cov = coverage.Coverage(source=[path_to_watch])
+        cov.start()
 
-    # Run the tests.
-    test_data()
+        # Run the tests.
+        test_data()
 
-    # Save data from the coverage tracking (for report).
-    cov.stop()
-    cov.save()
-    # Create a temporary directory for holding test results.
-    from tempfile import TemporaryDirectory
-    temp_dir = TemporaryDirectory()
-    results_dir = temp_dir.name
-    cov.html_report(directory=results_dir)
-    # Open the results file.
-    import webbrowser
-    webbrowser.open("file://"+os.path.join(results_dir, "index.html"))
-    # Wait for load, then delete the temporary directory.
-    #   (user might decide to kill this process early).
-    import time
-    time.sleep(60*10)
-    temp_dir.cleanup()
-    del temp_dir
+        # Save data from the coverage tracking (for report).
+        cov.stop()
+        cov.save()
+        # Create a temporary directory for holding test results.
+        from tempfile import TemporaryDirectory
+        temp_dir = TemporaryDirectory()
+        results_dir = temp_dir.name
+        cov.html_report(directory=results_dir)
+        # Open the results file.
+        import webbrowser
+        webbrowser.open("file://"+os.path.join(results_dir, "index.html"))
+        # Wait for load, then delete the temporary directory.
+        #   (user might decide to kill this process early).
+        import time
+        time.sleep(60*10)
+        temp_dir.cleanup()
+        del temp_dir
+
+    except ModuleNotFoundError:
+        # Run the tests without coverage.
+        test_data()
