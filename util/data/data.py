@@ -2048,6 +2048,11 @@ class Data:
         name_len = max(map(len, self.names))
         type_len = max(map(lambda t: len(str(t)), self.types))
         count_string_len = len(str(len(self)))
+        # Identify the length of the longest (string for a) value.
+        val_len = max(map(lambda v: len(str(v)), counts))
+        val_len = min(val_len, self.max_str_len)
+        # Remove the "None" count from "counts" to prevent sorting problems
+        none_count = counts.pop(None, 0)
         # Describe each column of the data
         for c,(n,t) in enumerate(zip(self.names, self.types)):
             # Count the number of elements for each value
@@ -2061,14 +2066,12 @@ class Data:
                     val = str(val)
                     counts[val] = counts.get(val,0) + 1
             print_to_file(f"  {c:{len(str(self.shape[1]))}d} -- \"{n}\"{'':{1+name_len-len(n)}s}{str(t):{type_len}s} ({len(counts)} unique value{'s' if (len(counts) != 1) else ''})")
-            # Remove the "None" count from "counts" to prevent sorting problems
-            none_count = counts.pop(None, 0)
-            # Print out the count of None vallues.
-            if (none_count > 0):
-                perc = 100. * (none_count / len(self))
-                print_to_file(f"    None                   {none_count:{count_string_len}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
             # For the special case of ordered values, reduce to ranges
             if (t in {int,float}) and (len(counts) > max_display):
+                # Print out the count of None values.
+                if (none_count > 0):
+                    perc = 100. * (none_count / len(self))
+                    print_to_file(f"    None                   {none_count:{count_string_len}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
                 # Order the values by intervals and print
                 min_val = min(counts)
                 max_val = max(counts)
@@ -2084,21 +2087,19 @@ class Data:
                         cap = ")"
                     perc = 100. * (num / len(self))
                     print_to_file(f"    [{lower:9.2e}, {upper:9.2e}{cap} {num:{count_string_len}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
-            elif (len(counts) > 0):
+            else:
                 if t in {int, float}:
                     # Order the values by their inate ordering
                     ordered_vals = sorted(counts)
                 else:
                     # Order the values by their frequency and print
                     ordered_vals = sorted(counts, key=lambda v: -counts[v])
-                # TODO: This next line can have an empty list, check len of counts.
-                val_len = max(map(lambda v: len(str(v)), counts))
-                val_len = max(val_len, len("None"))
-                val_len = min(val_len, self.max_str_len)
                 if (t == str): val_len += 2
                 if (none_count > 0):
                     perc = 100. * (none_count / len(self))
                     print_to_file(f"    {'None':{val_len}s}{'  ' if (t == str) else ''} {none_count:{count_string_len}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
+                else:
+
                 for val in ordered_vals[:max_display]:
                     perc = 100. * (counts[val] / len(self))
                     if (t == str):
