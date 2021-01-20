@@ -171,7 +171,7 @@ class Tracker:
 def minimize(objective, solution, bounds=None, args=tuple(),
              max_time=DEFAULT_MAX_TIME_SEC, min_steps=DEFAULT_MIN_STEPS,
              max_steps=DEFAULT_MAX_STEPS,  min_improvement=DEFAULT_MIN_IMPROVEMENT, 
-             display=True, method=AMPGO, checkpoint=True,
+             display=False, method=AMPGO, checkpoint=False,
              checkpoint_file=CHECKPOINT_FILE):
     # Convert the solution into a float array (if it's not already)
     solution = np.asarray(solution, dtype=float)

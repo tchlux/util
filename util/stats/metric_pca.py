@@ -20,7 +20,7 @@ def gen_random_metric_diff(matrix, index_metric, power=2, count=None):
 # Given a set of row-vectors, compute a convex weighting that is
 # proportional to the inverse total variation of metric distance
 # between adjacent points along each vector (component).
-def normalize_error(points, values, metric, display=True):
+def normalize_error(points, values, metric, display=False):
     # Compute the magnitudes using total variation.
     if display: print(" estimating error slope per axis.. ", end="\r", flush=True)
     avg_slope = np.zeros(points.shape[1])
@@ -52,7 +52,7 @@ def normalize_error(points, values, metric, display=True):
 # Compute the metric PCA (pca of the between vectors scaled by 
 # metric difference slope).
 def mpca(points, values, metric=abs_diff, num_components=None,
-         num_vecs=None, display=True):
+         num_vecs=None, display=False):
     if display: print(" normalizing axes by expected error..", end="\r", flush=True)
     # Set default values for num_components and num_vecs.
     if type(num_components) == type(None): num_components = min(points.shape)
@@ -79,7 +79,7 @@ def mpca(points, values, metric=abs_diff, num_components=None,
     return components, weights
 
 # Compute the principle components using sklearn.
-def pca(points, num_components=None, display=True):
+def pca(points, num_components=None, display=False):
     from sklearn.decomposition import PCA        
     pca = PCA(n_components=num_components)
     if (num_components is None): num_components = min(*points.shape)

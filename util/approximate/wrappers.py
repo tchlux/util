@@ -129,14 +129,15 @@ def condition(approximator, metric=abs_diff, method=DEFAULT_CONDITIONER,
             # Compute the components and the values.
             if method == "PCA":
                 # Compute the principle components as the new axes.
-                components, values = pca(x, num_components=num_comps, **cond_kwargs)
+                components, values = pca(x, num_components=num_comps, display=display, **cond_kwargs)
                 # Compute the values so that the transformed points have unit metric slope.
-                values = normalize_error(np.matmul(x, components.T), y, metric, display)
+                values = normalize_error(np.matmul(x, components.T), y, metric, display=display)
             elif method == "MPCA":
                 # Use metric PCA to compute components and values.
                 components, values = mpca(x, y, metric=metric,
                                           num_components=num_comps,
-                                          num_vecs=samples, 
+                                          num_vecs=samples,
+                                          display=display,
                                           **cond_kwargs)
             # Reset the values if scale should not be used.
             if not scale: values[:] = 1.

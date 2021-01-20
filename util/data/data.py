@@ -2063,11 +2063,12 @@ class Data:
             print_to_file(f"  {c:{len(str(self.shape[1]))}d} -- \"{n}\"{'':{1+name_len-len(n)}s}{str(t):{type_len}s} ({len(counts)} unique value{'s' if (len(counts) != 1) else ''})")
             # Remove the "None" count from "counts" to prevent sorting problems
             none_count = counts.pop(None, 0)
+            # Print out the count of None vallues.
+            if (none_count > 0):
+                perc = 100. * (none_count / len(self))
+                print_to_file(f"    None                   {none_count:{count_string_len}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
             # For the special case of ordered values, reduce to ranges
             if (t in {int,float}) and (len(counts) > max_display):
-                if (none_count > 0):
-                    perc = 100. * (none_count / len(self))
-                    print_to_file(f"    None                   {none_count:{count_string_len}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
                 # Order the values by intervals and print
                 min_val = min(counts)
                 max_val = max(counts)
@@ -2083,13 +2084,14 @@ class Data:
                         cap = ")"
                     perc = 100. * (num / len(self))
                     print_to_file(f"    [{lower:9.2e}, {upper:9.2e}{cap} {num:{count_string_len}d} ({perc:5.1f}%) {'#'*round(perc/2)}")
-            else:
+            elif (len(counts) > 0):
                 if t in {int, float}:
                     # Order the values by their inate ordering
                     ordered_vals = sorted(counts)
                 else:
                     # Order the values by their frequency and print
                     ordered_vals = sorted(counts, key=lambda v: -counts[v])
+                # TODO: This next line can have an empty list, check len of counts.
                 val_len = max(map(lambda v: len(str(v)), counts))
                 val_len = max(val_len, len("None"))
                 val_len = min(val_len, self.max_str_len)
