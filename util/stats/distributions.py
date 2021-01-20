@@ -123,6 +123,7 @@ def cdf_points(data):
 #          "cubic" constructs a monotonic piecewise cubic interpolating spline
 #          <other> returns the raw Emperical Distribution Function.
 def cdf_fit(data, fit="linear", smooth=None):
+    import numpy as np
     fit_type = fit
     # Scipy functions for spline fits.
     from scipy.interpolate import splrep, splev

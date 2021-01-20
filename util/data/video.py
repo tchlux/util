@@ -1,5 +1,3 @@
-import numpy as np
-
 # Define a class for reading a video file without actually storing it in memory.
 class IndexedVideo:
     class FailedSet(Exception): pass
@@ -57,6 +55,8 @@ class IndexedVideo:
         if not success: raise(self.FailedRead(f"Failed to read video frame {index}."))
         # Flatten / float the image if that setting is enabled.
         if self.flatten: image = image.flatten()
-        if self.float:   image = np.asarray(image, dtype=float)
+        if self.float:
+            import numpy as np
+            image = np.asarray(image, dtype=float)
         # Return the image at that frame.
         return image
