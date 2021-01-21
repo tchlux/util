@@ -5,6 +5,7 @@ from util.data import DEFAULT_WAIT, DEFAULT_MAX_DISPLAY, \
     DEFAULT_MAX_STR_LEN, FILE_SAMPLE_SIZE, \
     GENERATOR_TYPE, MISSING_SAMPLE_SIZE, NP_TYPES, SEPARATORS
 
+
 # TODO:  Read data that has new lines in the column values.
 # TODO:  Instead of just checking file size, check number of columns too,
 #        use a sample by default if the #columns is large (speed!).
@@ -1281,7 +1282,7 @@ class Data:
     # elements of this Data, function for going back to elements of
     # this data from a real vector.
     def to_matrix(self, print_column_width=70):
-        import time, inspect
+        import time
         start = time.time()
         import numpy as np
         to_real, from_real, real_names, num_inds, cat_inds = self.generate_mapping()
@@ -1296,45 +1297,12 @@ class Data:
             data.append( to_real(row) )
         if (len(data) == 0):
             raise(Data.BadData("No rows in this data are complete, resulting matrix empty."))
-        # This subclass of a NumPy matrix has relevant information to
-        # the process used when transforming a Data object into a
-        # purely numerical matrix of values for prediction purposes.
-        # 
-        # Numeric.to_real   -- the function for processing regular
-        #                      vectors into associated real vectors
-        # Numeric.from_real -- the function for processing real vectors
-        #                      back into regular vector
-        # Numeric.names     -- meaningful column names for the real vectors
-        # Numeric.nums      -- standard numerical indices
-        # Numeric.cats      -- translated categorical indices
-        # Numeric.data      -- The numeric version of the data.
-        # Numeric.shift     -- How to shift this data to have min 0.
-        # Numeric.scale     -- How to scale this data (after shift) to 
-        #                      have a domain of [0., 1.]                    
-        class Numeric(np.ndarray):
-            to_real = None
-            from_real = None
-            names = None
-            nums = None
-            cats = None
-            shift = None
-            scale = None
-            def __str__(self):
-                opener = "  ["
-                str_real_names = [opener]
-                for n in real_names:
-                    if not ((len(str_real_names[0]) == len(opener)) or
-                            (len(str_real_names[-1]) + len(n) < print_column_width)):
-                        str_real_names.append("   ")
-                    str_real_names[-1] += f"'{n}', "
-                str_real_names[-1] = str_real_names[-1][:-2] + "]"
-                str_real_names = "\n".join(str_real_names)
-                return f"Numeric object for data with {len(real_names)} columns named:\n{str_real_names}\n\n{super().__str__()}"
-        # Assign the comments to the official documentation spot.
-        Numeric.__doc__ = inspect.getcomments(Numeric).replace("# ","")
-        # Generate a container object and fill it.
+
+        # Place all data into a specialized container and return.
+        from util.data.numeric import Numeric
         numeric = Numeric((len(data),len(data[0])))
         numeric[:] = data
+        numeric.print_column_width = print_column_width
         numeric.to_real = to_real
         numeric.from_real = from_real
         numeric.names = real_names
