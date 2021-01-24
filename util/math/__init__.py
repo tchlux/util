@@ -4,6 +4,12 @@ from util.math.points import mesh, chebyshev, polynomials, \
     polynomial_indices, fekete_indices, fekete_points
 from util.math.pairs import pair_to_index, index_to_pair, \
     num_from_pairs, pairwise_distance
+# Access different polynoimal functions and objects.
+from util.math.polynomial import Spline, Polynomial, NewtonPolynomial
+from util.math.polynomial import fit as fit_spline
+from util.math.polynomial import polynomial as fit_polynomial
+from util.math.polynomial import inverse as polynomial_inverse
+
 
 # Useful for checking near-equal cases when roundoff error is involved.
 SMALL = 2**(-26)
