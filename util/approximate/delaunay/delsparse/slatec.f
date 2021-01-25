@@ -1,1 +1,0 @@
-/Users/thomaslux/Git/util/util/approximate/delaunay/slatec.f

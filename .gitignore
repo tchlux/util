@@ -2,3 +2,6 @@
 __pycache__
 *.pyc
 *.so
+/util/approximate/voronoi/voronoi
+/util/approximate/delaunay/delsparse
+/util/approximate/linear_shepard/linear_shepard
