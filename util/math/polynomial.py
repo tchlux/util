@@ -459,21 +459,12 @@ def fit(x, y, continuity=0):
     # Get the knots and initial values for the spline.
     knots = [v for v in x]
     values = [[v] for v in y]
-    # Use a local interpolating polynomial to estimate all derivatives.
-    order = continuity + 2
-    # Construct the first polynomial fit to initialize the derivative values.
-    df = local_polynomial(x, y, 0, order=order)
-    for d in range(continuity):
-        df = df.derivative()
-        values[0].append(df(x[0]))
-    # Construct the remaining polynomials by extending the first.
-    for i in range(1, len(x)):
-        constraints = {f"{d*'d'}x0":values[i-1][d]
-                       for d in range(1, continuity+1)}
-        df = polynomial([x[i-1], x[i]], [y[i-1], y[i]], **constraints)
-        for d in range(continuity):
-            df = df.derivative()
-            values[i].append(df(x[i]))
+    order = continuity + 1
+    for i in range(len(x)):
+        lp = local_polynomial(x,y,i,order=order)
+        for d in range(1,continuity+1):
+            dlp = lp.derivative()
+            values[i].append( dlp(x[i]) )
     # Return the interpolating spline.
     return Spline(knots, values)
 
@@ -944,14 +935,15 @@ def _test_fit(plot=False):
     for i in range(len(f._functions)):
         f._functions[i] = Polynomial(f._functions[i])
     if plot:
+        f = fit(x_vals, y_vals, continuity=1)
         print("f: ",f)
         from util.plot import Plot
         plot_range = [min(x_vals)-.1, max(x_vals)+.1]
         p = Plot()
         p.add("Points", list(map(float,x_vals)), list(map(float,y_vals)))
-        p.add_func("f)", f, plot_range)
+        p.add_func("f", f, plot_range)
         p.add_func("f'", f.derivative(1), plot_range, dash="dash")
-        p.add_func("f'')", f.derivative(2), plot_range, dash="dot")
+        p.add_func("f''", f.derivative(2), plot_range, dash="dot")
         # def L2(f, low, upp):
         #     f2 = f**2
         #     p.add_func("f''<sup>2</sup>", f2, plot_range)
@@ -990,7 +982,7 @@ if __name__ == "__main__":
     print(" Spline")
     _test_Spline()
     print(" fit")
-    _test_fit(plot=False)
+    _test_fit(plot=True)
     print(" local_quadratic")
     _test_local_quadratic()
     print(" inverse")

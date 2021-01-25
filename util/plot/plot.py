@@ -1507,8 +1507,8 @@ def create_html(fig, file_name=None, show=True, append=False,
 #  ... <any additional plotly.offline.plot keyword arguments> ...
 def multiplot(plots, x_domains=None, y_domains=None, html=True,
               show=True, append=False, specs=None, shared_y=False,
-              shared_x=False, show_legend=True, gap=0.12,
-              height=None, width=None, **kwargs): 
+              shared_x=False, legend=None, show_legend=True, gap=0.12,
+              height=None, width=None, layout=None, **kwargs): 
     # Load the pypi package "plotly" that interfaces with plotly.js
     # only once this is called, otherwise it slows down the import
     import plotly
@@ -1649,6 +1649,12 @@ def multiplot(plots, x_domains=None, y_domains=None, html=True,
     if type(height) != type(None): 
         height += 159
         fig["layout"].update(dict(height=height))
+    # Set up the legend if that was provided.
+    if (legend is not None):
+        fig["layout"].update(dict(legend=legend))
+    # Transfer any layout settings.
+    if (layout is not None):
+        fig['layout'].update(layout)
 
     # Create the html plot if the user wants that (pass extra arguments)
     if html: create_html(fig, show=show, append=append, **kwargs)
