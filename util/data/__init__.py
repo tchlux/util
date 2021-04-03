@@ -10,7 +10,7 @@ MISSING_SAMPLE_SIZE = 100000 # <- The max size for which "missing" data
 #                                 calculations become an estimate instead
 #                                 of exact numbers of missing values.
 MAX_DISPLAY_COLS = 20 # <- maximum number of displayed columnns from data on read
-
+EXTRA_CATEGORY_KEY = "Data - other" # <- key used for values that are "other" encoded
 
 # Definition of separators by file extension when saving.
 COMMON_SEPARATORS = [",", " ", "\t", ";"]
@@ -31,9 +31,8 @@ PY_TYPES = {value[0]:key for (key,value) in NP_TYPES.items()}
 # 
 GENERATOR_TYPE = type(_ for _ in ())
 
-from util.data.data import Data
-from util.data.video import IndexedVideo
-from util.data.categories import regular_simplex, category_ratio
+from .data import Data
+from .video import IndexedVideo
 
 # Automatically execute testing code?
 # from util.data.test import *

@@ -1,10 +1,7 @@
 import os, sys
-from util.data.read import read_data
-from util.data.categories import regular_simplex
-from util.data import DEFAULT_WAIT, DEFAULT_MAX_DISPLAY, \
-    DEFAULT_MAX_STR_LEN, FILE_SAMPLE_SIZE, \
+from . import DEFAULT_WAIT, DEFAULT_MAX_DISPLAY, \
+    DEFAULT_MAX_STR_LEN, FILE_SAMPLE_SIZE, EXTRA_CATEGORY_KEY, \
     GENERATOR_TYPE, MISSING_SAMPLE_SIZE, NP_TYPES, SEPARATORS
-
 
 # TODO:  Read data that has new lines in the column values.
 # TODO:  Instead of just checking file size, check number of columns too,
@@ -28,23 +25,6 @@ from util.data import DEFAULT_WAIT, DEFAULT_MAX_DISPLAY, \
 #        *empty* after it has been correctly initialized?
 # TODO:  Test the index of [int,str] on a view where the str is a
 #        column name in the data object, but not in the view.
-# 
-# 
-# TODO:  Remove builtin prediction code for anything other than
-#        nearest neighbor prediction. Maybe remove prediction in
-#        general, since it isn't something that can be picked beforehand.
-# TODO:  Running 'predict' with nearest neighbor seg-faults after 4th
-#        round, might involve conditioning, probably involves ball tree.
-# TODO:  'predict' does not work with a view, picks wrong column, it
-#        also appears to pick the wrong column even when not a view.
-# TODO:  Rewrite "predict" to work given a data object. This will
-#        break up the data into collections of unique missing values.
-#        Then for each collection, build a model over the appropriate
-#        matrix-format data and predict that collection. This will
-#        work more nicely with the k-fold method.
-# TODO:  Make "predict" not require that target columns be convertible
-#        to numeric form, only that they operate under a weighted sum.
-# TODO:  Remove the "fill" method in favor of "predict".
 # 
 # 
 # TODO:  Implement "parallel read" that reads the file object 
@@ -108,14 +88,14 @@ class Data:
     max_wait = DEFAULT_WAIT
 
     # Import all of the exceptions.
-    from util.data.exceptions import NameTypeMismatch, \
+    from .exceptions import NameTypeMismatch, \
         BadSpecifiedType, BadSpecifiedName, NoNamesSpecified, \
         ImproperUsage, UnknownName, Unsupported, BadAssignment, \
         BadElement, BadTarget, BadValue, BadIndex, BadData, Empty, \
         MissingModule
 
     # Import the classes used to protect this data object from users.
-    from util.data.internals import Descriptor, Column, Row
+    from .internals import Descriptor, Column, Row
 
     # Protect the "names" and "types" attributes by using properties
     # to control the access and setting of these values.
@@ -204,6 +184,7 @@ class Data:
                     start = time.time()
                 self.append(row)
 
+
     # Overwrite the standard "[]" get operator to accept strings as well.
     # Given local-specific index, convert to Data index and return value.
     def __getitem__(self, index):
@@ -282,6 +263,7 @@ class Data:
                 return view[0]
             # Otherwise return the full view.
             return view
+
 
     # Overwrite the standard "[]" get operator to accept strings as well.
     # Given local-specific index, convert to Data index and return value.
@@ -362,6 +344,7 @@ class Data:
                 raise(Data.BadAssignment(f"Column assignment requires a column of length {len(self)}, provided values iterable was too long."))
             except StopIteration: pass
 
+
     # Printout a brief table-format summary of this data.
     def __str__(self, short=False):
         # Special case for being empty.
@@ -440,7 +423,7 @@ class Data:
             sample = self
         # For larger data, use a sample of reasonably small size.
         else:
-            from util.random import random_range
+            from .utilities import random_range
             # Get a sample of rows to check for missing values.
             indices_for_sample = sorted(random_range(len(self),count=MISSING_SAMPLE_SIZE//self.shape[1]))
             sample = self[indices_for_sample,:]
@@ -503,6 +486,7 @@ class Data:
             string += row  +  " "*(width - len(row))  +  "\n"
         # Return the final string.
         return string
+
 
     # Define a convenience funciton for concatenating another
     # similarly typed and named data to self.
@@ -581,6 +565,7 @@ class Data:
         # Return self
         return self
 
+
     # Define a convenience funciton for concatenating another
     # similarly typed and named data to self.
     def __add__(self, data):
@@ -588,11 +573,13 @@ class Data:
         d += data
         return d
 
+
     # Check whether or not the values match a row in data.
     def __contains__(self, row):
         # Use the "equality" operator to determine if something is contained.
         for i in (self == row): return True
         return False
+
 
     # Given a row, generate the list of indices in this data that equal the row.
     def __eq__(self, row):
@@ -607,10 +594,12 @@ class Data:
             # If the entire row is looped and no problems are encountered, it matches.
             else: yield row_idx
 
+
     # Overwrite the "len" operator.
     def __len__(self):
         if (self.view): return len(self._row_indices)
         else:           return len(self.data)
+
 
     # Return the index of a 'row' based on its contents.
     def index(self, search_row):
@@ -618,6 +607,7 @@ class Data:
             if all(((v == True) or (v is None))
                    for v in (self[i] == search_row)): return i
         else: raise(ValueError(f"{search_row} not found in this data."))
+
 
     # Define the "append" operator using the insert operation. On a
     # list, the  "insert" operation takes about twice as long when
@@ -628,6 +618,7 @@ class Data:
         # Call the standard append operator, adding the element to self
         return  self.insert(index, value)
 
+
     # Redefine the "insert" method for this data.
     def insert(self, index, element):
         # Check to see if this is a data view object.
@@ -637,7 +628,7 @@ class Data:
         try:    element = list(element)
         except: raise(Data.BadValue(f"Invalid element, failed conversion to list."))
         # Check length in case names already exist
-        if (self.names is not None):
+        if (not self.empty):
             if (len(element) != self.shape[1]):
                 raise(Data.BadElement(f"Only elements of length {self.shape[1]} can be added to this data."))
             # Try type casing the new element
@@ -666,6 +657,7 @@ class Data:
         # Call the standard insert operator, adding the element to self
         self.data.insert(index, Data.Row(self, element))
 
+
     # Make sure the copy of this data is a deep copy.
     def copy(self):
         import time
@@ -687,6 +679,7 @@ class Data:
             data.data.insert( len(data.data), row )
         # Return a new data object.
         return data
+
 
     # Overwrite the 'pop' method.
     def pop(self, index=-1):
@@ -718,6 +711,7 @@ class Data:
         else:
             raise(Data.BadIndex(f"Index {index} of type {type(index)} is not recognized."))
 
+
     # Overwrite the "sort" method to behave as expected.
     def sort(self, key=None):
         # If this is a view, sort the row indices.
@@ -731,9 +725,11 @@ class Data:
             if (key is None): key = lambda row: row.values
             self.data.sort(key=key)
 
+
     # ========================
     #      Custom Methods     
     # ========================
+
 
     # Custom function for mapping values to strings in the printout of self.
     def _val_to_str(self, v): 
@@ -748,6 +744,7 @@ class Data:
         if len(string) > self.max_str_len: 
             string = string[:self.max_str_len]+'..'
         return string
+
 
     # Given an index (of any acceptable type), convert it into an
     # iterable of integer rows and a list of integer columns.
@@ -869,12 +866,15 @@ class Data:
         # Return the final list of integer-valued rows and columns.
         return rows, cols
 
+
     # =======================================
     #      Saving and Loading from Files     
     # =======================================
 
+
     # Convenience method for loading from file.
     def load(path, *args, **read_data_kwargs):
+        from .read import read_data
         # Handle two different usages of the 'load' function.
         if (type(path) != str): 
             # If the user called "load" on an initialized data, ignore
@@ -955,6 +955,7 @@ class Data:
             raise(Data.Unsupported(f"Cannot load file with extension '{ext}'."))
         return self
 
+
     # Convenience method for saving to a file, offers automatic
     # creation of output folders (given they are not present).
     # WARNING: This method makes a temporary copy if `self.view`.
@@ -1009,9 +1010,11 @@ class Data:
             raise(Data.Unsupported(f"Cannot save {'compressed ' if compressed else ''}file with base extension '{ext}'."))
         return self
 
+
     # ====================================
     #      Reorganizing Existing Data     
     # ====================================
+
 
     # Given a (sub)set of column names in this data, reorder the data
     # making those names first (with unprovided names remaining in
@@ -1042,6 +1045,7 @@ class Data:
             # Directly update the row (bypassing validation) because
             # we know all values were already validated.
             self[row].values = [self[row,i] for i in order]
+
 
     # Given a new list of types, re-cast all elements of columns with
     # changed types into the newly specified type.
@@ -1085,6 +1089,7 @@ class Data:
                     self[i,c] = new_t(self[i,c])
                 except ValueError:
                     raise(Data.BadSpecifiedType(f"Type casting {new_t} for column {c} is not compatible with existing value '{self[i,c]}' on row {i}."))
+
 
     # Given a new column, add it to this Data.
     def add_column(self, column, name=None, index=None, new_type=type(None)):
@@ -1150,245 +1155,6 @@ class Data:
         # Finally, record the new type
         self.types.insert(index, new_type)
 
-    # Generate a pair of functions. The first function will map rows
-    # of Data to a real-valued list. The second function will map
-    # real-valued lists back to rows in the original data object.
-    def generate_mapping(self):
-        if self.empty: raise(Data.ImproperUsage("Cannot map empty Data."))
-        # Make sure we can handle this type of data
-        if not all(t in {int,float,str} for t in self.types):
-            raise(Data.Unsupported("A mapping is only designed for Data composed of <float>, <int>, and <str> typed values."))
-        # Get those categoricals that need to be converted to reals
-        names = list(self.names)
-        types = list(self.types)
-        cat_constants = {}
-        cat_names = [n for (n,t) in zip(names,types) if (t == str)]
-        cat_values = {n:sorted(set(self[n])-{None}) for n in cat_names}
-        # Get the categorical simplex mappings.
-        cat_mappings = {n:regular_simplex(len(cat_values[n]))
-                        for n in cat_names}
-        # Get the real values that have more than one unique value.
-        real_values = {n:None for n in names if n not in cat_values}
-        for n in real_values:
-            unique = set()
-            # Identify those columns (of reals) that have >1 unique value.
-            for v in self[n]:
-                unique.add(v)
-                if len(unique) > 1: break
-            else: real_values[n] = unique.pop()
-        # Initialize stoarge for the indices
-        num_inds = []
-        cat_inds = []
-        # Calculate the dimension of the real space (and the column names)
-        real_names = []
-        counter = 0
-        for (n,t) in zip(names, types):
-            if (t == str):
-                real_names += [f"{n}-{i+1}" for i in range(len(cat_values[n])-1)]
-                # Record the indices of categorical mappings
-                cat_inds += list(counter+i for i in range(len(cat_values[n])-1))
-                if (len(cat_inds) > 0): counter = cat_inds[-1] + 1
-            elif (real_values[n] == None):
-                real_names.append( n )
-                # Record the indices of numerical values
-                num_inds.append( counter )
-                counter += 1
-
-        # Generate a function that takes a row in the original space
-        # and generates a row in the associated real-valued space.
-        def to_real(row, fill=False):
-            # Check for row length
-            if (len(row) != len(names)):
-                raise(Data.BadElement(f"Provided row has {len(row)} elements, expected {len(names)}."))
-            # Bulid the real-valued vector
-            real_row = []
-            for (n,t,v) in zip(names, types, row):
-                # Check for the type of the elements of the row
-                if (v is None):
-                    if (t == str):
-                        real_row += [None] * len(cat_mappings[n][0])
-                    elif (real_values[n] == None):
-                        real_row += [None]
-                    continue
-                elif (type(v) != t) and (t != type(None)):
-                    try:    v = t(v)
-                    except: raise(Data.BadValue(f"Value '{v}' in provided row has wrong type. Got {type(v)}, expected {t} and could not succesfully cast."))
-                # Handle the addition of a proper value
-                if (t == str):
-                    # WARNING: Not handling "unrecognized categories"
-                    if v in cat_values[n]:
-                        cat_index = cat_values[n].index(v)
-                        mapped_vec = cat_mappings[n][cat_index]
-                        real_row += list(mapped_vec)
-                    elif (not fill):
-                        # Only raise an error if it's wanted
-                        raise(Data.BadValue(f"Unrecognized categorical value {v} for column {n}."))
-                    else:
-                        # Put a filler value in for the unknown (middle category)
-                        real_row += [0.] * (len(cat_values[n]) - 1)
-                elif (real_values[n] == None):
-                    real_row += [float(v)]
-            # Check for row length
-            if (len(real_row) != len(real_names)):
-                raise(Data.BadElement(f"Provided row has {len(row)} elements, translation to {len(real_names)} unsuccesful, only created {len(real_row)}."))
-            # Return the real-valued vector
-            return real_row
-
-        # Generate a function that takes a row in the real-valued
-        # space and generates a row in the original space.
-        def from_real(real_row, bias={}):
-            import numpy as np
-            # Verify length of real-vector
-            real_row = list(real_row)
-            if (len(real_row) != len(real_names)):
-                raise(Data.BadElement(f"Provided real vector has {len(real_row)} elements, expected {len(real_names)}."))
-            # Build the original row
-            row = []
-            for (n,t) in zip(names, types):
-                if (t == str):
-                    num_categories = len(cat_values[n])
-                    vec = np.array(real_row[:num_categories-1])
-                    # Get the weights for each of the categorical values.
-                    cat_weights = np.array(
-                        [(bias[n][c] if (n in bias and c in bias[n]) else 1.0)
-                         for c in cat_values[n]])
-                    # Handle reverse-categorical mapping
-                    closest_cat = np.argmin(np.sum((cat_mappings[n] - vec)**2, axis=1) / cat_weights)
-                    category = cat_values[n][closest_cat]
-                    row += [category]
-                    # Reduce the length of the real-valued row
-                    real_row = real_row[num_categories-1:]
-                elif (real_values[n] == None):
-                    if (t == int):
-                        # Use the rounded version of the integer
-                        row += [int(real_row.pop(0) + .5)]
-                    else:
-                        # Use the float representation of the numpy floatf
-                        row += [float(real_row.pop(0))]
-                else:
-                    # Fill with the only value that was provided.
-                    row += [real_values[n]]
-            if (len(real_row) > 0):
-                raise("Left over values!")
-            # Check for row length
-            if (len(row) != len(names)):
-                raise(Data.BadElement(f"Provided row has {len(real_row)} elements, translation to {len(names)} unsuccesful, only created {len(row)}."))
-            return row
-        # Return the two mapping functions and some info
-        return to_real, from_real, real_names, num_inds, cat_inds
-
-    # Convert this Data automatically to a real-valued array.
-    # Return real-valued array, function for going to real from
-    # elements of this Data, function for going back to elements of
-    # this data from a real vector.
-    def to_matrix(self, print_column_width=70):
-        import time
-        start = time.time()
-        import numpy as np
-        to_real, from_real, real_names, num_inds, cat_inds = self.generate_mapping()
-        data = []
-        for i,row in enumerate(self):
-            # Update user on progress if too much time has elapsed..
-            if (time.time() - start) > self.max_wait:
-                print(f" {100.*i/len(self):.2f}% to matrix", end="\r", flush=True)
-                start = time.time()
-            # How to handle rows with missing values? Add column for "is missing"?
-            if (None in row): continue
-            data.append( to_real(row) )
-        if (len(data) == 0):
-            raise(Data.BadData("No rows in this data are complete, resulting matrix empty."))
-
-        # Place all data into a specialized container and return.
-        from util.data.numeric import Numeric
-        numeric = Numeric((len(data),len(data[0])))
-        numeric[:] = data
-        numeric.print_column_width = print_column_width
-        numeric.to_real = to_real
-        numeric.from_real = from_real
-        numeric.names = real_names
-        numeric.nums = num_inds
-        numeric.cats = cat_inds
-        # Compute the shift and scale for normalization (of numeric values)
-        numeric.shift = np.min(numeric, axis=0)
-        numeric.scale = np.max(numeric, axis=0) - numeric.shift
-        numeric.shift[cat_inds] = 0.
-        numeric.scale[cat_inds] = 1.
-        # Return the container object
-        return numeric
-
-    # Generate a compact numpy structured array from the contents of self.
-    def to_struct(self):
-        import time
-        start = time.time()
-        import numpy as np
-        # Generate the dtypes
-        dtypes = []
-        for i,(n,t) in enumerate(zip(self.names,self.types)):
-            # Update user on progress if too much time has elapsed..
-            if (time.time() - start) > self.max_wait:
-                print(f" {100.*i/len(self):.2f}% to struct", end="\r", flush=True)
-                start = time.time()
-            if (t != str):
-                pair = (n,) + NP_TYPES[t]
-            else:
-                max_len = max(len(s) for s in self[n] if type(s) == str)
-                pair = (n,) + NP_TYPES[t][:1]+(max_len,)
-            dtypes.append(pair)
-        dtypes = np.dtype(dtypes)
-        # Return the numpy structured array
-        return np.array([tuple(row) for row in self if (None not in row)], 
-                        dtype=dtypes)
-
-    # Collect the dictionaries of unique values (with counts) for each column.
-    def counts(self, columns=None):
-        import time
-        start = time.time()
-        if (columns is None): columns = self.names
-        column_info = {n:{} for n in columns}
-        for i,row in enumerate(self):
-            # Update user on progress if too much time has elapsed..
-            if (time.time() - start) > self.max_wait:
-                print(f" {100.*i/len(self):.2f}% counts", end="\r", flush=True)
-                start = time.time()
-            for n,val in zip(columns, row):
-                # If this column has been removed (because it is
-                # unhashable), then skip it in the processing
-                if n not in column_info: pass
-                # Try to add the new value
-                try:
-                    column_info[n][val] = column_info[n].get(val,0) + 1
-                except TypeError:
-                    # Cannot hash an element of self[n], disable tracking
-                    column_info.pop(n)
-        return column_info
-
-    # Generate a "view" on this data object that only has the first
-    # occurrence of its unique rows and return it.
-    def unique(self):
-        import time, hashlib, pickle
-        # Generate hash values using a near-zero probability of conflict
-        # hashing mechanism that can handle non-hashable types. Does this
-        # by hashing the raw bytes (from pickle) with sha256.
-        def hash(something):
-            return hashlib.sha256(pickle.dumps(something)).hexdigest()
-        # Cycle rows, finding unique ones.
-        rows = []
-        found = set()
-        start = time.time()
-        for i,row in enumerate(self):
-            # Update user on progress if too much time has elapsed..
-            if (time.time() - start) > self.max_wait:
-                print(f" {100.*i/len(self):.2f}% unique", end="\r", flush=True)
-                start = time.time()
-            # Get the hashed value by consecutively hashing all of the
-            # values within this row. Hashing the entire row sometimes
-            # produces changing hashes (likely based on memory locations).
-            hashed = hash(list(row))
-            if hashed not in found:
-                found.add(hashed)
-                rows.append(i)
-        return self[rows]
-
 
     # Given a column made of iterables, unpack all elements and make
     # as many columns are necessary to suit the largest length. Make
@@ -1445,6 +1211,7 @@ class Data:
         # Pop out the last added column, because it only contains empty elements.
         self.pop(column_name)
 
+
     # Reverse the 'unpack' operation, using the same expected naming scheme.
     def pack(self, name):
         if (self.view): raise(Data.Unsupported(f"This Data is a view and cannot be packed."))
@@ -1476,24 +1243,13 @@ class Data:
         # Pop out all of the old columns and add one new column.
         self.add_column(row_generator(), name=name)
 
-    # DEPRECATION WARNING -- THIS IS ONLY FOR BACKWARDS COMPATIBILITY
-    def deflate(self, name):
-        import warnings
-        warnings.warn("\n  The 'deflate' function is being deprecated, use 'pack' instead.")
-        return self.pack(name)
-
-    # DEPRECATION WARNING -- THIS IS ONLY FOR BACKWARDS COMPATIBILITY
-    def inflate(self, column):
-        import warnings
-        warnings.warn("\n  The 'inflate' function is being deprecated, use 'unpack' instead.")
-        return self.unnpack(column)
 
     # Given a list of column names, modify this Data so that all
     # specified column names are stacked in lists associated with
     # unique combinations of unspecified column names.
     def stack(self, columns):
         if (self.view): raise(Data.Unsupported("Cannot 'stack' a data view, either 'stack' original data or copy and then 'stack'."))
-        from util.system import hash
+        from .utilities import hash
         import time
         start = time.time()
         # Adjust for usage (where user provides only one column).
@@ -1561,7 +1317,7 @@ class Data:
     def unstack(self, columns):
         if (self.view): raise(Data.Unsupported("Cannot 'unstack' a data view, either 'unstack' original data or copy and then 'unstack'."))
         import time
-        from util.system import hash
+        from .utilities import hash
         start = time.time()
         # Adjust for usage (where user provides only one column).
         if (type(columns) != list): columns = [columns]
@@ -1620,6 +1376,7 @@ class Data:
         # Pop out all of the old columns.
         for c in old_col_names: self.pop(c)
 
+
     # Given a Data that has at least one column with the same names as
     # a column in self, collect all those values in non-mutual names
     # in lists of values where the shared columns had the same content.
@@ -1641,7 +1398,7 @@ class Data:
     #   which may make it more flexible for dynamic data collection.
     def collect(self, data):
         import time
-        from util.system import hash
+        from .utilities import hash
         # Get the names of shared columns and indices in each.
         match_names = set(n for n in self.names if n in data.names)
         self_columns = [i for (i,n) in enumerate(self.names) if n in match_names]
@@ -1683,6 +1440,138 @@ class Data:
         # Return the self (that has been modified)
         return self
 
+
+    # =======================================
+    #      Converting to pure matrix
+    # =======================================
+
+
+    # Generate a pair of functions. The first function will map rows
+    # of Data to a real-valued list. The second function will map
+    # real-valued lists back to rows in the original data object.
+    def _generate_numeric_mapping(self, max_categories=float('inf')):
+        if self.empty: raise(Data.ImproperUsage("Cannot map empty Data."))
+        import time
+        from .utilities import regular_simplex
+        start = time.time()
+        # Get those categoricals that need to be converted to reals
+        num_cols = [i for (i,t) in enumerate(self.types)
+                    if (t in {float, int})]
+        num_values = {i:set() for i in num_cols}
+        num_means = [0.0 for i in num_cols]
+        num_counts = [0 for i in num_cols]
+        cat_cols = [i for (i,t) in enumerate(self.types)
+                    if (t not in {float, int})]
+        cat_value_counts = {i:{} for i in cat_cols}
+        # Iterate over self getting all unique hash values for non-numeric columns.
+        for i,row in enumerate(self):
+            # Update user on progress if too much time has elapsed..
+            if (time.time() - start) > self.max_wait:
+                print(f" {100.*i/len(self):.2f}% generating mapping", end="\r", flush=True)
+                start = time.time()
+            # Update the counts of the unique values.
+            for i in cat_cols:
+                # Store the counts.
+                v = row[i]
+                cat_value_counts[i][v] = cat_value_counts[i].get(v,0) + 1
+            # Check for new numeric values in numeric columns.
+            for j,i in enumerate(num_cols):
+                if (i in num_values):
+                    num_values[i].add(row[i])
+                    if (len(num_values[i]) > 1):
+                        num_values.pop(i)
+                # If the value is not None, update running mean.
+                if (row[i] is not None):
+                    num_counts[j] += 1
+                    num_means[j] += (row[i] - num_means[j]) / num_counts[j]
+        # Find columns with only one unique value, they will be dropped.
+        to_drop = {j for j in num_values} | {
+            i for i in cat_value_counts if len(cat_value_counts[i]) <= 1}
+        # Compute the real vector mappings for all column values.
+        mappings = {}
+        for i in cat_cols:
+            encodings = regular_simplex(min(len(cat_value_counts[i]), max_categories))
+            counts = sorted(cat_value_counts[i].items(), key=lambda v:-v[1])
+            col_map = {}
+            for c,(value,count) in enumerate(counts):
+                if (c < max_categories-1):
+                    col_map[value] = list(encodings[c])
+                else:
+                    col_map[EXTRA_CATEGORY_KEY] = list(encodings[-1])
+            # Store the value map for this column.
+            mappings[self.names[i]] = col_map
+        # Store the mapped value for None types in numeric columns.
+        for j,i in enumerate(num_cols):
+            mappings[self.names[i]] = {None:[num_means[j]]}
+        # Compute the names and output indices of numeric and categorical columns.
+        groups = {}
+        real_names = []
+        num_inds = []
+        cat_inds = []
+        counter = 0
+        for i,n in enumerate(self.names):
+            groups[n] = []
+            if (i in to_drop):
+                continue
+            elif (i in cat_cols):
+                for i in range(len(mappings[n])-1):
+                    real_names.append( f"{n}-{i+1}" )
+                    cat_inds.append( counter )
+                    groups[n].append( counter )
+                    counter += 1
+            elif (i in num_cols):
+                real_names.append( n )
+                # Record the indices of numerical values
+                num_inds.append( counter )
+                groups[n].append( counter )
+                counter += 1
+        # Return the two mapping functions and some info
+        return mappings, groups, to_drop, real_names, num_inds, cat_inds
+
+
+    # Convert this Data automatically to a real-valued array.
+    # Return real-valued array, function for going to real from
+    # elements of this Data, function for going back to elements of
+    # this data from a real vector.
+    def to_matrix(self, max_categories=float('inf'), print_column_width=70):
+        import time
+        start = time.time()
+        # Get the information required to construct a numeric object.
+        mappings, groups, dropped, real_names, num_inds, cat_inds = (
+            self._generate_numeric_mapping(max_categories) )
+        # Place all data into a specialized container and return.
+        from .numeric import Numeric
+        numeric = Numeric(
+            (self.shape[0], len(real_names)),
+            list(self.names),
+            list(self.types),
+            mappings,
+            groups,
+            dropped,
+            real_names,
+            num_inds,
+            cat_inds,
+            print_column_width,
+        )
+        # Convert all rows in this data matrix to numeric format.
+        for i,row in enumerate(self):
+            # Update user on progress if too much time has elapsed..
+            if (time.time() - start) > self.max_wait:
+                print(f" {100.*i/len(self):.2f}% to matrix", end="\r", flush=True)
+                start = time.time()
+            # How to handle rows with missing values? Add column for "is missing"?
+            numeric[i,:] = numeric.to_real(row)
+        # Update the shift and scale variables for the numeric object.
+        numeric.compute_shift_and_scale()
+        # Return the container object
+        return numeric
+
+
+    # ==============================
+    #      Statistical utilities
+    # ==============================
+
+
     # Return an iterator that provides "k" {(k-1)/k, 1/k} paired Data
     # from this Data. Randomly shuffle indices with seed "seed".
     def k_fold(self, k=10, seed=0, only_indices=False):
@@ -1708,215 +1597,6 @@ class Data:
             if only_indices: yield rest, fold
             else:            yield source[rest], source[fold]
 
-    # Use a prediction model to fill missing values in a provided row.
-    def fill(self, row, model=None, weights=None, bias={}):
-        import numpy as np
-        numeric = self.to_matrix()
-        # Pick the filling model based on data size.
-        if (model is None):
-            # Use Voronoi if there are fewer than 10000 points.
-            if (len(self) <= 5000):
-                from util.approximate import Voronoi, unique
-                model = unique(Voronoi)()
-            # Otherwise use nearest neighbor (can't get points + weights from NN)
-            else:
-                from util.approximate import unique, condition
-                samples = min(numeric.shape[0], 10000)
-                dim = min(numeric.shape[1], 1000)
-                # Use nearest neighbor (can't get points + weights from NN)
-                from util.approximate import NearestNeighbor
-                model = condition(unique(NearestNeighbor), dim=dim, samples=samples)()
-        # Set the weights accordingly
-        if (weights is None):
-            weights = np.ones(numeric.shape[1])
-        elif (len(weights) != self.shape[1]):
-            raise(Data.BadValue("Weights vector is length {len(weights)}, expected length {self.shape[1]}."))
-        else:
-            # Convert the provided weight to the correct shape.
-            col_weights, weights = weights, []
-            col_inds = list(range(len(numeric.names)))
-            while (len(col_inds) > 0):
-                if (col_inds[0] not in numeric.cats):
-                    col_inds.pop(0)
-                    weights.append( col_weights.pop(0) )
-                else:
-                    for i in range(1,len(col_inds)):
-                        not_categorical = (col_inds[i] not in numeric.cats)
-                        beginning_of_next = ("1" == 
-                            numeric.names[col_inds[i]].split('-')[-1])
-                        if (not_categorical or beginning_of_next): break
-                    else: i += 1
-                    col_inds = col_inds[i:]
-                    weights += [col_weights.pop(0)] * i
-            weights = np.array(weights)
-        # Get the indices of the known and unknown values in this row.
-        row_known = [i for i in range(len(row)) if (row[i] is not None)]
-        row_unknown = [i for i in range(len(row)) if (row[i] is None)]
-        if len(row_unknown) == 0: raise(Data.BadValue("Provided row had no missing values."))
-        # Get the numeric version of the provided row.
-        numeric_row = numeric.to_real(row, fill=True)
-        # Identify the indices of known values and unknown values.
-        known_values = np.array([i for i in range(len(numeric_row))
-                                 if (numeric_row[i] is not None)])
-        unknown_values = np.array([i for i in range(len(numeric_row))
-                                   if (numeric_row[i] is None)])
-        # Get the part of the numeric row
-        no_none_numeric_row = np.array([numeric_row[i] for i in known_values])
-        # Normalize the numeric row (to debias numeric scale differences)
-        no_none_numeric_row = ((no_none_numeric_row - numeric.shift[known_values])
-                               / numeric.scale[known_values]) * weights[known_values]
-        # Get the normalized training point locations.
-        normalized_numeric_data = ((numeric - numeric.shift)
-                                   / numeric.scale) * weights
-        # Fit the model and make a prediction for this row.
-        if hasattr(model, "WeightedApproximator"):
-            # Fit the model (just to the points)
-            that_type = type(normalized_numeric_data[:,known_values])
-            model.fit(normalized_numeric_data[:,known_values])
-            del(normalized_numeric_data)
-            # Get the source points and source weights for the prediction
-            pts, wts = model.predict(np.array(no_none_numeric_row))
-            # Compute the fill row by performing the weighted sum.
-            fill_row = np.sum((numeric[pts,:][:,unknown_values].T * wts), axis=1)
-            # Convert points and weights into python list (in case they're not)
-            pts = list(pts)
-            wts = list(wts)
-        else:
-            # The model makes predictions using all points.
-            # Fit the model to the input points and output points.
-            model.fit(normalized_numeric_data[:,known_values], 
-                      normalized_numeric_data[:,unknown_values])
-            del(normalized_numeric_data)
-            pts = list(range(numeric.data.shape[0]))
-            wts = [1 / len(pts)] * len(pts)
-            # Use the model to make a prediction.
-            fill_row = model.predict(no_none_numeric_row)
-            # De-normalize the predicted output.
-            fill_row = ((fill_row / weights[unknown_values]) * 
-                        numeric.scale[unknown_values] - 
-                        numeric.shift[unknown_values])
-        # Pad fill row with 0's so that it is the correct length for conversion.
-        fill_row = [0.] * len(known_values) + list(fill_row)
-        # Transfer the filled numeric row into the original row
-        fill_row = numeric.from_real(fill_row, bias=bias)
-        for i,val in enumerate(fill_row):
-            if (row[i] is None):
-                # Set the value in the row to be the predicted fill value.
-                row[i] = val
-            else:
-                # Backwards correct predicted output to have known values.
-                fill_row[i] = row[i]
-        prediction_model = str(model)
-        # Construct a "Prediction" object with info about the prediction.
-        class Prediction:
-            parent = self
-            model = prediction_model
-            given = row_known
-            filled = row_unknown
-            predictors = pts
-            weights = wts
-            data = fill_row
-            def __str__(self): 
-                string =  f"Prediction made with {self.model}\n"
-                string += f"  Given {[self.parent.names[i] for i in self.given]}\n"
-                string += f"   {[self.data[i] for i in self.given]}\n"
-                string += f"  Filled {[self.parent.names[i] for i in self.filled]}\n"
-                string += f"   {[self.data[i] for i in self.filled]}\n"
-                string += f"  Indices of source row (collections)\n"
-                string += f"   {self.predictors}\n"
-                string += f"  Weights of source row (collections)\n"
-                string += f"   {self.weights}\n"
-                return string
-        return Prediction()
-
-    # Given a set of columns of this data to try and predict, run a
-    # k-fold cross validation over predictions using 'fill'.
-    def predict(self, target_columns, model=None, weights=None, bias={}, k=10):
-        import numpy as np
-        # Get the numeric representation of self.
-        numeric = self.to_matrix()
-        # Pick the filling model based on data size.
-        if (model is None):
-            from util.approximate import unique, condition
-            samples = min(numeric.data.shape[0], 10000)
-            dim = min(numeric.data.shape[1], 1000)
-            # Use nearest neighbor (can't get points + weights from NN)
-            from util.approximate import NearestNeighbor
-            model = condition(unique(NearestNeighbor), dim=dim, samples=samples)()
-        # Set the weights accordingly
-        if (weights is None):
-            weights = np.ones(numeric.data.shape[1])
-        elif (len(weights) != self.shape[1]):
-            raise(Data.BadValue("Weights vector is length {len(weights)}, expected length {self.shape[1]}."))
-        else:
-            # Convert the provided weight to the correct shape.
-            col_weights, weights = weights, []
-            col_inds = list(range(len(numeric.names)))
-            while (len(col_inds) > 0):
-                if (col_inds[0] not in numeric.cats):
-                    col_inds.pop(0)
-                    weights.append( col_weights.pop(0) )
-                else:
-                    for i in range(1,len(col_inds)):
-                        not_categorical = (col_inds[i] not in numeric.cats)
-                        beginning_of_next = ("1" == 
-                            numeric.names[col_inds[i]].split('-')[-1])
-                        if (not_categorical or beginning_of_next): break
-                    else: i += 1
-                    col_inds = col_inds[i:]
-                    weights += [col_weights.pop(0)] * i
-            weights = np.array(weights)
-        # Make sure the targets are in a list
-        if type(target_columns) == str: 
-            target_columns = [target_columns]
-        elif type(target_columns) != list: 
-            raise(Data.BadTarget("Target must either be a string (column name) or list of strings (column names)."))
-        # Get the data all normalized (and weighted)
-        normalized_data = weights * (numeric.data - numeric.shift) / numeric.scale
-        print("normalized_data.shape: ",normalized_data.shape)
-        # Identify those columns that are being predicted
-        target_column_indices = [self.names.index(c) for c in target_columns]
-        print("target_column_indices: ",target_column_indices)
-        results = Data(names=[c + " Predicted" for c in target_columns]+["Prediction Index"],
-                       types=[self.types[i] for i in target_column_indices]+[int])
-        # Identify the numeric ranges of those columns
-        indices = set(target_column_indices)
-        print("target names: ",[self.names[i] for i in target_column_indices])
-        sample = numeric.to_real([
-            (v if i in indices else None)
-            for i,v in enumerate(self[0])])
-        del(indices)
-        train_cols = np.array([i for (i,v) in enumerate(sample) if (v is None)])
-        test_cols =  np.array([i for (i,v) in enumerate(sample) if (v is not None)])
-        print("train_cols: ",train_cols)
-        print("test_cols: ",test_cols)
-        del(sample)
-        # Cycle through and make predictions.
-        for i,(train_rows, test_rows) in enumerate(
-                Data.k_fold(range(numeric.data.shape[0]), k=k)):
-            print(f"  Fold {i+1} of {k}.. ", end="", flush=True)
-            train_data = normalized_data[train_rows]
-            print(f"fitting {i+1} of {k}.. ", end="", flush=True)
-            model.fit( normalized_data[train_rows,:][:,train_cols], 
-                       normalized_data[train_rows,:][:,test_cols]   )
-            print(f"predicting {i+1} of {k}.. ", end="", flush=True)
-            predictions = model.predict( normalized_data[test_rows,:][:,train_cols] )
-            # De-normalize predictions
-            predictions = ( (predictions / weights[test_cols]) * 
-                            numeric.scale[test_cols] + 
-                            numeric.shift[test_cols] )
-            print(f"storing.. {i+1} of {k}", end="\r", flush=True)
-            # Store the prediction results.
-            for j,i in enumerate(test_rows):
-                row = list(numeric.data[i,train_cols]) + list(predictions[j,:])
-                row = numeric.from_real(row, bias=bias)
-                results.append( [row[i] for i in target_column_indices] + [i] )
-            print(" "*70,end="\r",flush=True)
-        # Sort results by the original index
-        results.sort(key=lambda r: r[-1])
-        results.pop("Prediction Index")
-        # Return the results in a new Data object.
-        return results
 
     # Compute the pairwise effects between columns. Use the following:
     # 
@@ -1930,7 +1610,7 @@ class Data:
     # showing the highest effects first, the smallest last.
     def effect(self, compare_with=None, method="mean", display=True, **kwargs):
         from itertools import combinations
-        from util.stats import effect
+        from .utilities import effect
         if (compare_with is None):         compare_with = set(self.names)
         elif (type(compare_with) == list): compare_with = set(compare_with)
         else:                              compare_with = {compare_with}
@@ -1977,6 +1657,61 @@ class Data:
         for row in rows: print(row)
         # Return the sorted effect triple list [(col 1, col 2, effect)].
         return effs
+
+
+    # ============================
+    #      Summarizing values
+    # ============================
+
+
+    # Generate a "view" on this data object that only has the first
+    # occurrence of its unique rows and return it.
+    def unique(self):
+        import time
+        from .utilities import hash
+        # Cycle rows, finding unique ones.
+        rows = []
+        found = set()
+        start = time.time()
+        for i,row in enumerate(self):
+            # Update user on progress if too much time has elapsed..
+            if (time.time() - start) > self.max_wait:
+                print(f" {100.*i/len(self):.2f}% unique", end="\r", flush=True)
+                start = time.time()
+            # Get the hashed value by consecutively hashing all of the
+            # values within this row. Hashing the entire row sometimes
+            # produces changing hashes (likely based on memory locations).
+            hashed = hash(list(row))
+            if hashed not in found:
+                found.add(hashed)
+                rows.append(i)
+        return self[rows]
+
+
+    # Collect the dictionaries of unique values (with counts) for each column.
+    def counts(self, columns=None):
+        import time
+        from .utilities import hash
+        start = time.time()
+        if (columns is None): columns = self.names
+        column_info = {n:{} for n in columns}
+        for i,row in enumerate(self):
+            # Update user on progress if too much time has elapsed..
+            if (time.time() - start) > self.max_wait:
+                print(f" {100.*i/len(self):.2f}% counts", end="\r", flush=True)
+                start = time.time()
+            for n,val in zip(columns, row):
+                # If this column has been removed (because it is
+                # unhashable), then skip it in the processing
+                if n not in column_info: pass
+                # Try to add the new value
+                try:
+                    column_info[n][val] = column_info[n].get(val,0) + 1
+                except TypeError:
+                    # Cannot hash an element of self[n], disable tracking
+                    column_info.pop(n)
+        return column_info
+
 
     # Give an overview (more detailed than just "str") of the contents
     # of this data. Useful for quickly understanding how data looks.

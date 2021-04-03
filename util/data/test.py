@@ -192,13 +192,7 @@ def test_data():
     # Verify the ability to construct real-valued arrays (and go back)
     numeric = a.to_matrix()
     c = Data(map(numeric.from_real, numeric))
-    assert(tuple(a[:-1]["1"]) == tuple(c["1"]))
-
-    # Verify conversion into numpy structured array (without "None")
-    b = a.to_struct()
-    assert(type(b) == np.ndarray)
-    assert(type(b.dtype.names) == tuple)
-    assert(tuple(b['1']) == tuple(a['1'][:-1]))
+    assert(tuple(a[:-1]["1"]) == tuple(c[:-1]["1"]))
 
     # Verify column item retrieval and assignment
     assert(a["0"][0] == a[0][0])
@@ -464,26 +458,6 @@ Size: (11 x 3)
 ========================
 '''
     assert( str(b) == b_printout)
-
-    # Test the 'fill' method.
-    b = a[:]
-    b[-2,1] = 'd'
-    b.append( b[0] )
-    assert(str(b.fill(b[-2]).data) == str([-1,'a',1.7999999999999998]))
-    assert(str(a.fill(a[-1][:]).data) == str([-1,'2',2.1]))
-
-    # Test cases for using "fill" with weights.
-    b.pop(-2)
-    b["3"] = b["2"]
-    b["2"] = b["1"]
-    b[-1,-2] = 'b'
-    b[-1,-1] = None
-    condense = lambda v: str(v)[:4]
-    assert(tuple(map(condense, b.fill(b[-1], weights=[1., 2., 3., 4.]).data))
-           == ('1', 'a', 'b', '2.50'))
-    b[-1,-1] = None
-    assert(tuple(map(condense, b.fill(b[-1], weights=[100., 10., 1., 1000.]).data))
-           == ('1', 'a', 'b', '1.21'))
 
     # Verify that the names and types attributes are the correct type.
     assert("Descriptor" in str(type(a.types)))
