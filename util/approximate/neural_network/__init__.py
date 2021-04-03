@@ -27,7 +27,7 @@ class NeuralNetwork(Approximator):
         defaults = dict(layers=(32,)*10, activation='relu',
                         optimizer='adam', loss='mse', epochs=500,
                         batch_size=None, log_dir=log_dir, verbose=0,
-                        show=False)
+                        show=False, workers=None)
         # Update the defaults with the user specs.
         defaults.update(kwargs)
         # Store the default settings for this neural network for fit-time.
@@ -57,13 +57,14 @@ class NeuralNetwork(Approximator):
         log_dir = kwargs.pop('log_dir')
         optimizer = kwargs.pop('optimizer')
         show = kwargs.pop('show')
+        workers = kwargs.pop('workers')
         # Retrieve a default optimizer if it exists.
         if (optimizer in self.optimizers):
             optimizers = self.optimizers[optimizer]
         # Go for a larger batch size (for speed), but don't use all
         # data (assume some stochasticity in the problem).
         if type(batch_size) == type(None):
-            batch_size = (len(x) // 4) + 1
+            batch_size = max(1000, (len(x) // 4) + 1)
         # Check to see if this is partially trained..
         if (hasattr(self, 'mlp') and
             (hasattr(self, 'x_shift') and (len(self.x_shift) == x.shape[1])) and
@@ -119,8 +120,12 @@ class NeuralNetwork(Approximator):
         # Use mean squared error, compile loss function.
         self.mlp.compile(optimizer=optimizer, loss=loss)
         # Fit the model on the new data.
+        import time
+        fit_start = time.time()
         self.mlp.fit(x, y, epochs=epochs, batch_size=batch_size,
-                     verbose=verbose, **tensorboard_callback)
+                     verbose=verbose, workers=workers, **tensorboard_callback)
+        fit_end = time.time()
+        self.fit_time = fit_end - fit_start
         # Kill the tensorboard visual.
         # Open a tensorboard visualizer to show how training went..
         if (show):
@@ -182,9 +187,11 @@ class NeuralNetwork(Approximator):
             raise(IOError("No directry exists.\n  '"+directory+"'"))            
         elif (not os.path.isdir(directory)):
             raise(IOError("Gave path to existing file, need a directry.\n  '"+directory+"'"))
+        # Disable info and warning logs.
+        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
         # Load the model.
         model_path = os.path.join(directory, 'model')
-        from keras.models import load_model
+        from tensorflow.keras.models import load_model
         self.mlp = load_model(model_path)
         # Load the scaling factors.
         scale_path = os.path.join(directory, 'scaling_factors.npz')
