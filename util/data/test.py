@@ -641,6 +641,11 @@ Size: (11 x 3)
 
 # Run test cases
 if __name__ == "__main__":
+    # Run the tests without coverage.
+    test_data()
+
+    exit()
+
     # Try to run the tests with code coverage, otherwise just run them.
     try: 
         # Get the path to be watching for code coverage.
@@ -671,7 +676,5 @@ if __name__ == "__main__":
         time.sleep(60*10)
         temp_dir.cleanup()
         del temp_dir
-
     except ModuleNotFoundError:
-        # Run the tests without coverage.
-        test_data()
+        pass

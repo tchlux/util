@@ -1,4 +1,4 @@
-from util.data import QUOTES, COMMON_SEPARATORS, DEFAULT_WAIT, \
+from . import QUOTES, COMMON_SEPARATORS, DEFAULT_WAIT, \
     MAX_ERROR_PRINTOUT, MAX_DISPLAY_COLS
 
 # =================================================
@@ -66,9 +66,8 @@ def split_with_quotes(line, sep):
 #       most occurring separator is used.
 def detect_separator(filename="<no_provided_file>", verbose=False, opened_file=None):
     import time
-    from util.system import AtomicOpen
     lines = []
-    if not opened_file: f = AtomicOpen(filename).file
+    if not opened_file: f = open(filename)
     else:               f = opened_file
     # Identify the potential separators from the first line
     first_line = remove_quoted_content(f.readline())
@@ -127,13 +126,12 @@ def detect_separator(filename="<no_provided_file>", verbose=False, opened_file=N
 def read_data(filename="<no_provided_file>", sep=None, types=None,
               verbose=False, opened_file=None, header=True, sample=None):
     import time
-    from util.system import AtomicOpen
-    from util.data.data import Data
+    from .data import Data
     if (sep is None): sep = detect_separator(filename, verbose, opened_file)
     # Get the opened file object
     if (not opened_file):
         # Open the file to get the data
-        f = AtomicOpen(filename).file
+        f = open(filename)
     else:
         f = opened_file
         file_name = f.name
@@ -197,7 +195,7 @@ def read_data(filename="<no_provided_file>", sep=None, types=None,
     if sample is None: iterator = enumerate(raw_data)
     else:
         # Randomly sample lines from the file, (we've already read one line).
-        from util.random import random_range
+        from .utilities import random_range
         iterator = ((i, raw_data[i]) for i in sorted(random_range(len(raw_data), count=sample-1)))
     # Cycle through the elements of "raw_data".
     for i,line in iterator:

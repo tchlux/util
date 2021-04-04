@@ -109,11 +109,14 @@ class Data:
     def types(self, values): self._types = Data.Descriptor(self, values)
     # Return True if empty.
     @property
-    def empty(self): return ((self.names is None) or (self.types is None))
+    def empty(self): return ((self.names is None) or (self.types is None) or (len(self) == 0))
     # Declare the "start" property / function to re-initialized when called.
     @property
     def shape(self):
-        if (self.empty):  return (0, 0)
+        if (len(self) == 0):
+            if   (self.types is not None): return (0, len(self.types.values))
+            elif (self.names is not None): return (0, len(self.names.values))
+            else: return (0,0)
         elif (self.view): return (len(self._row_indices), len(self._col_indices))
         else:             return (len(self), len(self.names.values)) # <- access values to save time
 
@@ -428,7 +431,9 @@ class Data:
             indices_for_sample = sorted(random_range(len(self),count=MISSING_SAMPLE_SIZE//self.shape[1]))
             sample = self[indices_for_sample,:]
         is_none = lambda v: (v is None)
-        missing_rows = {r+1:sum(map(is_none,v)) for (r,v) in enumerate(sample) if (None in v)}
+        missing_rows = {r+1:sum(map(is_none,v)) for (r,v) in enumerate(sample)}
+        no_none = [r for r in missing_rows if missing_rows[r] == 0]
+        for r in no_none: missing_rows.pop(r)
         # Print some info about missing values if they exist.
         if len(missing_rows) > 0:
             missing_cols = {}
@@ -616,7 +621,7 @@ class Data:
     def append(self, index, value=None):
         if (value is None): index, value = len(self), index
         # Call the standard append operator, adding the element to self
-        return  self.insert(index, value)
+        return self.insert(index, value)
 
 
     # Redefine the "insert" method for this data.
@@ -627,10 +632,10 @@ class Data:
         # Convert the element into a python list
         try:    element = list(element)
         except: raise(Data.BadValue(f"Invalid element, failed conversion to list."))
-        # Check length in case names already exist
-        if (not self.empty):
-            if (len(element) != self.shape[1]):
-                raise(Data.BadElement(f"Only elements of length {self.shape[1]} can be added to this data."))
+        # Check length in case types already exists.
+        if (self.types is not None):
+            if ((self.shape[1] > 0) and (len(element) != self.shape[1])):
+                raise(Data.BadElement(f"Only elements of length {self.shape[1]} can be added to this data, received length {len(element)}."))
             # Try type casing the new element
             for i, (val, typ) in enumerate(zip(element, self.types)):
                 # Ignore 'None' type values.
@@ -1110,8 +1115,8 @@ class Data:
             name = str(num)
         elif (type(name) != str):
             raise(Data.BadSpecifiedName(f"Only string names are allowed. Received name '{name}' with type {type(name)}."))
-        # Set the name
-        self.names.insert(index, name)
+        elif (name in self.names):
+            raise(Data.BadSpecifiedName(f"Attempting to add duplicate column name '{name}' that already exists in this Data."))
         # Verify the column type dynamically. Add new values to all rows.
         i = -1
         for i,val in enumerate(column):
@@ -1121,38 +1126,33 @@ class Data:
                 start = time.time()
             # Verify valid index first..
             if (self.shape[1] > 1) and (i >= len(self)):
-                # Remove the added name.
-                self.names.pop(index)
                 # Remove the added elements if the length was not right
                 for j in range(len(self)): self[j].pop(index)
                 # Raise error for too long of a column
                 raise(Data.BadData(f"Provided column has at least {i+1} elements, more than the length of this data ({len(self)})."))
             # If this is the first column in the data.
-            elif (self.shape[1] == 1):
+            elif (self.shape[1] == 0):
                 self.append(Data.Row(self, [val]))
             # Append the value to this row for normal operation.
             else: self[i].insert(index, val)
             # Only add to missing values entry if it's not already there
-            if (val is None):  pass
+            if (val is None): pass
             # Capture the new type (type must be right)
             elif (new_type == type(None)): new_type = type(val)
             # Error out otherwise.
             elif (type(val) != new_type):
-                # Remove the added name.
-                self.names.pop(index)
                 # Remove the added elements because a problem was encountered.
                 for j in range(i+1): self[j].pop(index)
                 # This is a new type, problem!
                 raise(Data.BadValue(f"Provided column has multiple types. Original type {new_type}, but '{val}' has type {type(val)}."))
         # Verify the column length
         if (i < len(self)-1):
-            # Remove the added name.
-            self.names.pop(index)
             # Remove the added elements if the length was not right
             for j in range(i+1): self[j].pop(index)
             # Raise error for too short of a column
             raise(Data.BadData(f"Provided column has length {i+1}, less than the length of this data ({len(self)})."))
-        # Finally, record the new type
+        # Set the name and type.
+        self.names.insert(index, name)
         self.types.insert(index, new_type)
 
 
@@ -1823,3 +1823,33 @@ class Data:
 
 
 
+
+
+# 2021-04-03 19:34:58
+# 
+                ############################
+                # # Remove the added name. #
+                # self.names.pop(index)    #
+                # # Remove the added type. #
+                # self.types.pop(index)    #
+                ############################
+
+
+# 2021-04-03 19:35:03
+# 
+                ############################
+                # # Remove the added name. #
+                # self.names.pop(index)    #
+                # # Remove the added type. #
+                # self.types.pop(index)    #
+                ############################
+
+
+# 2021-04-03 19:35:06
+# 
+            ############################
+            # # Remove the added name. #
+            # self.names.pop(index)    #
+            # # Remove the added type. #
+            # self.types.pop(index)    #
+            ############################

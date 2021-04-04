@@ -263,16 +263,12 @@ class Row:
     def insert(self, i, value):
         if (self.data.view):
             raise(self.data.ImproperUsage(f"This row is only a view and does not support insertion."))
-        if (len(self.values) != len(self) - 1):
-            raise(self.data.ImproperUsage(f"Invalid insertion operation on {type(self)}."))
         # Return the insertion of the new value.
         return self.values.insert(i, value)
     # Define a "pop" function.
     def pop(self, i):
         if (self.data.view):
             raise(self.data.ImproperUsage(f"This row is only a view and does not support 'pop'."))
-        if (len(self) != len(self.data.names)):
-            raise(self.data.ImproperUsage(f"Invalid pop operation on {type(self)}."))
         # Return the popped value.
         return self.values.pop(i)
 
