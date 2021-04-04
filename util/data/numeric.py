@@ -74,6 +74,22 @@ class Numeric(np.ndarray):
         # Compute the shift and scale for normalization (of numeric values)
         self.shift = getattr(obj, "shift", None)
         self.scale = getattr(obj, "scale", None)
+    # Define a reduce function that includes internal attributes.
+    def __reduce__(self):
+        cls, internal, state = super().__reduce__()
+        state = state + (
+            self.in_names, self.in_types, self.groups, self.mappings,
+            self.dropped, self.names, self.nums, self.cats,
+            self.print_column_width, self.np_mappings, self.shift, self.scale)
+        return (cls, internal, state)
+    # Define a setstate function that captures internal attributes.
+    def __setstate__(self, state):
+        np_state, custom_state = state[:-12], state[-12:]
+        self.in_names, self.in_types, self.groups, self.mappings, \
+            self.dropped, self.names, self.nums, self.cats, \
+            self.print_column_width, self.np_mappings, self.shift, \
+            self.scale = custom_state
+        super().__setstate__(np_state)
     # ----------------------------------------------------------------
 
     # Update the calculation of the shift and scale for this Numeric object.
