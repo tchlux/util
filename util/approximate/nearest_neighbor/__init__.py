@@ -156,9 +156,12 @@ if __name__ == "__main__":
         k = auto(points, values, display=True)
 
     # from util.approximate import condition
-    # m = condition(NearestNeighbor, method="MPCA", display=True)()
-    m = NearestNeighbor()
+    # m = condition(NearestNeighbor, method="PLR")()
+    # m = condition(NearestNeighbor, method="MPCA", dim=1)()
+    # m = condition(NearestNeighbor, method="MPCA", dim=2)()
+    # m = condition(NearestNeighbor, method="PCA", dim=2)()
+    # m = NearestNeighbor()
     from util.approximate.testing import test_plot
     # p,x,y = test_plot(m, N=30, fun=lambda x: x[0]**3, plot_points=4000)
-    p,x,y = test_plot(m, N=30)
+    p,x,y = test_plot(m, N=300)
     p.show()

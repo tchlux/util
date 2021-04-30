@@ -14,10 +14,15 @@ from util.approximate.base import Approximator
 class EmbeddingInterpolator(Approximator):
     def __init__(self, model=_default_interpolant):
         import fmodpy
-        self.plrm = fmodpy.fimport("plrm.f90", blas=True, omp=True, verbose=False).plrm
+        self.plrm = fmodpy.fimport("plrm.f90", blas=True, omp=False, verbose=False).plrm
         self.model = model
 
-    def _fit(self, x, y, ds=8, ns=4, seed=0, steps=500):
+    def _fit(self, x, y, ds=8, ns=4, seed=None, steps=500):
+        # If a random seed is provided, then only 2 threads can be used
+        #  because nondeterministic behavior is exhibited otherwise.
+        if (seed is not None): num_threads = 2
+        else:                  num_threads = None
+        # Core numpy utilities.
         from numpy import asarray, zeros
         # Store the X and Y data for this model.
         self.x_mean = x.mean(axis=0)
@@ -33,7 +38,7 @@ class EmbeddingInterpolator(Approximator):
         do = y.shape[1]
         self.plrm.new_model(di, ds, ns, do)
         self.plrm.init_model(inputs=x.T, outputs=y.T, seed=seed)
-        self.plrm.minimize_mse(x.T, y.T, steps=steps)
+        self.plrm.minimize_mse(x.T, y.T, steps=steps, num_threads=num_threads)
         # Embed to get the internal x.
         from numpy import zeros
         self.x = zeros((x.shape[0], ds), dtype="float32")

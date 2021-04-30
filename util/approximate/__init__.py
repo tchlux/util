@@ -20,8 +20,6 @@ from util.approximate.voronoi import Voronoi
 from util.approximate.box_mesh import BoxMesh
 from util.approximate.modified_shepard import ShepMod
 from util.approximate.shepard import Shepard
-# Specialized interpolant (uses small neural network to embed, then interpolates).
-from util.approximate.embedding_interpolator import EmbeddingInterpolator
 # Standard real approximator.
 from util.approximate.linear_shepard import LSHEP
 # Regression techniques.

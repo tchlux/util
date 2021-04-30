@@ -25,6 +25,7 @@ from . import DEFAULT_WAIT, DEFAULT_MAX_DISPLAY, \
 #        *empty* after it has been correctly initialized?
 # TODO:  Test the index of [int,str] on a view where the str is a
 #        column name in the data object, but not in the view.
+# TODO:  Add test case for loading a CSV that only has a header line.
 # 
 # 
 # TODO:  Implement "parallel read" that reads the file object 
@@ -203,8 +204,8 @@ class Data:
             if (index[1] not in self.names):
                 raise(Data.BadIndex(f"Column index {index[1]} is not a recognized column name."))
             return self.data[self.row(index[0])][self.names.index(index[1])]
+        # This index is accessing a row by integer index.
         elif (type(index) == int):
-            # This index is accessing a row by integer index.
             if (self.view): return Data.Row(self, self.data[self.row(index)])
             else:           return self.data[index]
         # This index is accessing a column

@@ -97,7 +97,7 @@ CONTAINS
     !       + m log_2(m)       ! sorting the pairwise distances
     !       + n                ! picking the box centers to keep
 
-    ! Pairwise L2 distance between points
+    ! Pairwise 2-norm distance between points
     step = 1
     pairwise_outer_loop : DO first = 1, UBOUND(x_data,2)-1
        pairwise_inner_loop : DO second = first+1, UBOUND(x_data,2)

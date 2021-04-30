@@ -1,3 +1,4 @@
+import os
 import numpy as np
 from util.math import abs_diff
 from util.approximate.base import Approximator
@@ -5,7 +6,9 @@ from util.approximate.base import Approximator
 MAX_DIM = None
 MAX_SAMPLES = None
 DEFAULT_COND_SCALE = True
-DEFAULT_CONDITIONER = "PCA" # MPCA
+DEFAULT_CONDITIONER = "PLR" # "PCA" # MPCA
+PATH_TO_PLRM = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "embedding_interpolator", "plrm.f90")
 
 class Split(Approximator):
     def __init__(self, model_type, k=5, seed=0, *args, **kwargs):
@@ -113,8 +116,13 @@ def unique(weighted_approximator):
 # methods while modifying the "fit" and "predict" methods.
 def condition(approximator, metric=abs_diff, method=DEFAULT_CONDITIONER,
               dim=MAX_DIM, samples=MAX_SAMPLES, scale=DEFAULT_COND_SCALE, 
-              display=False, **cond_kwargs):
-    if method == "PCA":
+              display=False, seed=None, **cond_kwargs):
+    if method == "PLR":
+        import fmodpy
+        plrm = fmodpy.fimport(PATH_TO_PLRM, blas=True, omp=True, verbose=False).plrm
+        if (seed is not None):
+            num_threads = 2
+    elif method == "PCA":
         from util.stats import pca, normalize_error
     elif method == "MPCA":
         from util.stats import mpca
@@ -122,12 +130,38 @@ def condition(approximator, metric=abs_diff, method=DEFAULT_CONDITIONER,
     class ConditionedApproximator(approximator):
         # Wrapped "fit" method, this incorporates dimension reduction
         # and approximation conditioning based on the selected method.
-        def fit(self, x, y, *args, num_comps=None, **kwargs):
+        def _fit(self, x, y, *args, num_comps=None, layers=4, steps=500, **kwargs):
             # Set the number of components appropriately.
-            if (num_comps is None): num_comps = min(x.shape)
+            if (num_comps is None): num_comps = min(x.shape + (8,))
             if (dim is not None):   num_comps = min(dim, num_comps)
             # Compute the components and the values.
-            if method == "PCA":
+            if method == "PLR":
+                original_y = y
+                if (len(y.shape) == 1): y = y[:,None]
+                self._num_comps = num_comps
+                # Use a trained piecewise linear regressor to condition.
+                self._x_mean = x.mean(axis=0)
+                self._x_stdev = x.std(axis=0)
+                # Normalize the X and Y data for this model.
+                x = np.asarray((x - self._x_mean) / self._x_stdev, dtype="float32", order="C")
+                y_mean = y.mean(axis=0)
+                y_stdev = y.std(axis=0)
+                y = np.asarray((y - y_mean) / y_stdev, dtype="float32")
+                # Fit neural network embedder.
+                di = x.shape[1]
+                do = y.shape[1]
+                ds = num_comps
+                ns = layers
+                plrm.new_model(di, ds, ns, do)
+                plrm.init_model(inputs=x.T, outputs=y.T, seed=seed)
+                plrm.minimize_mse(x.T, y.T, steps=steps, num_threads=num_threads)
+                # Embed to get the internal x.
+                x, old_x = np.zeros((x.shape[0], ds), dtype="float32"), x
+                plrm.evaluate(old_x.T, x.T)
+                # Convert back into 64 bit precision.
+                x = np.asarray(x, dtype=float)
+                return super()._fit(x, original_y, *args, **kwargs)
+            elif method == "PCA":
                 # Compute the principle components as the new axes.
                 components, values = pca(x, num_components=num_comps, display=display, **cond_kwargs)
                 # Compute the values so that the transformed points have unit metric slope.
@@ -150,11 +184,19 @@ def condition(approximator, metric=abs_diff, method=DEFAULT_CONDITIONER,
             # Generate the conditioning matrix.
             self.conditioner = np.matmul(np.diag(values), components).T
             # Return the normal fit operation.
-            return super().fit(np.matmul(x, self.conditioner), y, *args, **kwargs)
+            return super()._fit(np.matmul(x, self.conditioner), y, *args, **kwargs)
 
         # Return the predictions made on the similarly conditioned points.
-        def predict(self, x, *args, **kwargs):
-            return super().predict(np.matmul(x, self.conditioner), *args, **kwargs)
+        def _predict(self, x, *args, **kwargs):
+            if (method == "PLR"):
+                # Embed the incoming X values.
+                x = np.asarray((x - self._x_mean) / self._x_stdev, dtype="float32", order="C")
+                embedded_x = np.zeros((x.shape[0], self._num_comps), dtype="float32")
+                plrm.evaluate(x.T, embedded_x.T)
+                # Return the model approximation over embedded X.
+                return super()._predict(np.asarray(embedded_x, dtype=float), *args, **kwargs)
+            else:
+                return super()._predict(np.matmul(x, self.conditioner), *args, **kwargs)
     # ----------------------------------------------------------------
     return ConditionedApproximator
 

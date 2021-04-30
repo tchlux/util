@@ -450,7 +450,8 @@ class Vector(list):
 #   The level of continuity desired in the interpolating function.
 # 
 def fit(x, y, continuity=0):
-    assert( len(x) == len(y) )
+    assert (len(x) == len(y)), "Provided 'x' and 'y' must have equal length."
+    assert (len(x) > 1), "Provided 'x' and 'y' must have length of at least two."
     # Sort the "x" values if they were not given in sorted order.
     if not all(x[i] < x[i+1] for i in range(len(x)-1)):
         indices = sorted(range(len(x)), key=lambda i: x[i])

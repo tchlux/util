@@ -7,9 +7,9 @@ from . import QUOTES, COMMON_SEPARATORS, DEFAULT_WAIT, \
 
 # Return the type of a string (try converting to int and float)
 def get_type(obj):
-    # Special case for handling empty strings (default to base type, int).
+    # Special case for handling empty strings (default to base type NoneType).
     if (hasattr(obj, "__len__") and (len(obj) == 0)) or (obj is None):
-        return int
+        return type(None)
     # Detect type by tring to cast and seeing what works.
     try:
         int(obj)
@@ -146,20 +146,21 @@ def read_data(filename="<no_provided_file>", sep=None, types=None,
     if types is None:
         types = list(map(get_type, line))
         type_digression = True
-        # Padd the "types" with int's on the end (the first type).
-        types += [int] * (len(header) - len(types))
+        # Pad the "types" to match the length of the header.
+        types += [type(None)] * (len(header) - len(types))
     # If a singular type was provided, expand that out to fill the columns.
     elif (type(types) == type): types = [types] * len(header)
     # Initialize our data holder
     data = Data(names=header, types=types)
-    # Add the first line to the data store (after inserting "None")
+    # Clean up the first line of data (like the list of types was cleand).
     for i in range(len(line)):
         if (line[i] == ""): line[i] = None
     # Pad the end of the line with "None" values.
     if (len(line) < len(header)):
         line += [None] * max(0,len(header) - len(line))
-    # Append the line.
-    data.append(line)
+    # Add the first line to the data store (if it has any data in it).
+    if (any(v is not None for v in line)):
+        data.append(line)
     # Get the rest of the raw data from the file and close it
     raw_data = f.readlines()
     if (not opened_file):
@@ -205,6 +206,8 @@ def read_data(filename="<no_provided_file>", sep=None, types=None,
             print("\r%0.1f%% complete"% (100.0*i/len(raw_data)), flush=True, end="")
         # Clean up the line (in case there are nested separators)
         line = line.strip()
+        # Skip empty rows.
+        if (len(line) == 0): continue
         # Read the line of data into a list format (replace empty string with None)
         # Remove leading and trailing quotes from strings if necessary
         list_line = [el.strip() for el in split_with_quotes(line, sep)]
