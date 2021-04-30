@@ -119,7 +119,8 @@ def condition(approximator, metric=abs_diff, method=DEFAULT_CONDITIONER,
               display=False, seed=None, **cond_kwargs):
     if method == "PLR":
         import fmodpy
-        plrm = fmodpy.fimport(PATH_TO_PLRM, blas=True, omp=True, verbose=False).plrm
+        plrm = fmodpy.fimport(PATH_TO_PLRM, blas=True, omp=True, verbose=False,
+                              output_dir=os.path.dirname(PATH_TO_PLRM)).plrm
         if (seed is not None):
             num_threads = 2
     elif method == "PCA":
