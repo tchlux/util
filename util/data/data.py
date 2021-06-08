@@ -3,6 +3,7 @@ from . import DEFAULT_WAIT, DEFAULT_MAX_DISPLAY, \
     DEFAULT_MAX_STR_LEN, FILE_SAMPLE_SIZE, EXTRA_CATEGORY_KEY, \
     GENERATOR_TYPE, MISSING_SAMPLE_SIZE, NP_TYPES, SEPARATORS
 
+# TODO:  Add column to empty data should be allowed.
 # TODO:  Read data that has new lines in the column values.
 # TODO:  Instead of just checking file size, check number of columns too,
 #        use a sample by default if the #columns is large (speed!).
@@ -32,7 +33,7 @@ from . import DEFAULT_WAIT, DEFAULT_MAX_DISPLAY, \
 #        simultaneously into multiple Data objects, then merges the
 #        Data objects together (efficiently, fewest copies possible).
 # TODO:  Implement "C read" that gets the types of all columns using
-#        a C program (with pthreads for speed).
+#        a C program.
 # 
 # 
 # TODO:  Implmenent 'IndexedAudio' reader that mimics the
@@ -1610,19 +1611,47 @@ class Data:
     # Print out the sorted table of pairwise effects between columns,
     # showing the highest effects first, the smallest last.
     def effect(self, compare_with=None, method="mean", display=True, **kwargs):
+        import time
         from itertools import combinations
         from .utilities import effect
         if (compare_with is None):         compare_with = set(self.names)
         elif (type(compare_with) == list): compare_with = set(compare_with)
         else:                              compare_with = {compare_with}
+        # Record the starting time (for logging).
+        start = time.time()
         # Make sure all names provided are valid.
         for n in compare_with:
             if n not in self.names:
                 raise(Data.BadIndex(f"No column named '{n}' exists in this Data."))
         # Print out the effect in column form (not matrix form).
         effs = []
-        for (col_1, col_2) in combinations(self.names, 2):
-            if (col_1 in compare_with):
+        # Return `True` if the column has more than one unique element.
+        def has_more_than_one_unique_element(column):
+            from .utilities import hash
+            values = set()
+            for el in column:
+                values.add(hash(el))
+                if (len(values) > 1):
+                    return True
+            return False
+        # Get the names that have more than one unique element.
+        names_with_variance = {n for n in self.names if has_more_than_one_unique_element(self[name])}
+        # Cycle over all combinations of names and compute the effects.
+        all_pairs = combinations(self.names, 2)
+        for i, (col_1, col_2) in enumerate(all_pairs):
+            # Update user on progress if too much time has elapsed..
+            if (time.time() - start) > self.max_wait:
+                print(f" {100.*i/len(all_pairs):.2f}% effect ({col_1} - {col_2})..  ", end="\r", flush=True)
+                start = time.time()
+            # If either column only has 1 unique element, then there is no effect.
+            if ((col_1 not in names_with_variance) or
+                (col_2 not in names_with_variance)):
+                if (col_1 in compare_with):
+                    effs.append( (col_1, col_2, 'N/A') )
+                elif (col_2 in compare_with):
+                    effs.append( (col_2, col_1, 'N/A') )
+            # Otherwise, compute the effects.
+            elif (col_1 in compare_with):
                 eff = effect(list(self[col_1]), list(self[col_2]), method=method, **kwargs)
                 effs.append( (col_1, col_2, eff) )
             elif (col_2 in compare_with):
@@ -1630,8 +1659,9 @@ class Data:
                 effs.append( (col_2, col_1, eff) )
         # Convert an effect to a sortable number (lowest most important).
         def to_num(eff): 
-            if type(eff) == dict: return -sum(eff.values()) / len(eff)
-            else:                 return -abs(eff)
+            if   type(eff) == str:  return 0.0
+            elif type(eff) == dict: return -sum(eff.values()) / len(eff)
+            else:                   return -abs(eff)
         # Convert an effect to a printable string.
         def to_str(eff):
             if type(eff) == dict:
