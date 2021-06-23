@@ -26,6 +26,7 @@ from util.approximate.linear_shepard import LSHEP
 from util.approximate.mars import MARS
 from util.approximate.neural_network import NeuralNetwork
 from util.approximate.support_vector_machine import SVR, SVR_RBF
+from util.approximate.embedding_interpolator import PLRM
 # Import the decision tree as well, this needs to be wrapped (TODO).
 from util.approximate.decision_tree import DecisionTree
 

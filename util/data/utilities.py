@@ -255,6 +255,7 @@ def effect(seq_1, seq_2, method="mean", use_ks=False):
             if (len(main_nums) == 0) or (len(sub_nums) == 0):
                 dist_diff = 0.0
             elif (not use_ks):
+                from util.stats import epdf_diff
                 dist_diff = epdf_diff(main_nums, sub_nums)
             else:
                 # Use the KS-statistic to test the likelihood that the two

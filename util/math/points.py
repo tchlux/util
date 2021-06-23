@@ -14,12 +14,12 @@ def chebyshev(n, d=1, sample=None):
     return mesh(x, multiplier=d, sample=sample)
 
 
-# Compute a grid of "n" points in "d" dimensions. Randomly subsample
-# the full grid if it is larger than "n".
+# Compute a grid of "n" points in "d" dimensions over the unit cube.
+# Randomly subsample a larger dense grid if "n" isn't a power of "d".
 def grid(n, d):
+    from math import ceil
     from random import sample
-    per_dim = round( n**(1/d) + .5 )
-    if ((per_dim-1)**d == n): per_dim -= 1
+    per_dim = ceil(n**(1/d))
     pts = mesh(list(range(per_dim)), d) / (per_dim-1)
     if n < len(pts): return pts[sample(range(len(pts)), n)]
     else:            return pts

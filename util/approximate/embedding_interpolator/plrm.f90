@@ -12,7 +12,7 @@ MODULE PLRM
   IMPLICIT NONE
   ! Value used for rectification, default is 0.
   REAL(KIND=REAL32), PARAMETER :: DISCONTINUITY = 0.0_REAL32
-  REAL(KIND=REAL32), PARAMETER :: SMALL_SLOPE = 0.01_REAL32
+  REAL(KIND=REAL32), PARAMETER :: SMALL_SLOPE = 0.015625_REAL32
   ! Value for bias base (in terms of standard deviation for unit
   !  variance data), default value is 2.
   REAL(KIND=REAL32), PARAMETER :: BIAS_STDEVS = 2.0_REAL32
@@ -237,8 +237,7 @@ CONTAINS
   END SUBROUTINE INIT_MODEL
 
 
-  ! Evaluate the piecewise linear regression model, do not store any
-  !  of the intermediate states (used 
+  ! Evaluate the piecewise linear regression model.
   SUBROUTINE EVALUATE_ONE(INPUT, OUTPUT)
     REAL(KIND=REAL32), INTENT(IN), DIMENSION(:) :: INPUT
     ! Record of values after the last transformation.
@@ -271,8 +270,7 @@ CONTAINS
          MATMUL(INTERNAL_VALUES(:), OUTPUT_PARAMS(:,:))
   END SUBROUTINE EVALUATE_ONE
 
-  ! Evaluate the piecewise linear regression model, do not store any
-  !  of the intermediate states (used 
+  ! Evaluate the piecewise linear regression model.
   SUBROUTINE EVALUATE(INPUTS, OUTPUTS)
     REAL(KIND=REAL32), INTENT(IN), DIMENSION(:,:) :: INPUTS
     REAL(KIND=REAL32), INTENT(OUT), DIMENSION(:,:) :: OUTPUTS

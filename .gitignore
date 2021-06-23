@@ -4,5 +4,6 @@ __pycache__
 *.so
 /util/approximate/voronoi/voronoi
 /util/approximate/delaunay/delsparse
+/util/approximate/modified_shepard/modified_shepard
 /util/approximate/linear_shepard/linear_shepard
 /util/approximate/embedding_interpolator/plrm
