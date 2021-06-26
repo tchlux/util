@@ -34,18 +34,17 @@ class PLRM(Approximator):
         if (seed is not None): num_threads = 2
         else:                  num_threads = None
         # Core numpy utilities.
-        from numpy import asarray, zeros, where
+        from numpy import where
         # Store the X and Y data for this model.
         self.x_mean = x.mean(axis=0)
         self.x_stdev = x.std(axis=0)
-        self.y = y.copy()
         # Normalize the X and Y data for this model.
-        x = asarray((x - self.x_mean) / self.x_stdev, dtype="float32")
+        x = ((x - self.x_mean) / self.x_stdev).astype("float32")
         self.y_mean = y.mean(axis=0)
         self.y_stdev = y.std(axis=0)
         self.y_stdev = where(self.y_stdev == 0, 1.0, self.y_stdev)
-        y = asarray((y - self.y_mean) / self.y_stdev, dtype="float32")
-        # Fit internal neural network embedder.
+        y = ((y - self.y_mean) / self.y_stdev).astype("float32")
+        # Fit internal piecewise linear regression model.
         di = x.shape[1]
         do = y.shape[1]
         self.plrm.new_model(di, ds, ns, do)
@@ -55,9 +54,10 @@ class PLRM(Approximator):
 
     def _predict(self, x):
         # Embed the incoming X values.
-        from numpy import asarray, zeros
-        x = asarray((x - self.x_mean) / self.x_stdev, dtype="float32")
+        from numpy import zeros
+        x = ((x - self.x_mean) / self.x_stdev).astype("float32")
         y = zeros((x.shape[0], self.y_mean.shape[0]), dtype="float32")
+        # Call the unerlying library.
         self.plrm.evaluate(x.T, y.T)
         # Denormalize the output values and return them.
         y = (y * self.y_stdev) + self.y_mean
@@ -114,8 +114,8 @@ class EmbeddingInterpolator(Approximator):
 
 if __name__ == "__main__":
     from util.approximate.testing import test_plot
-    m = EmbeddingInterpolator()
-    # m = PLRM()
+    # m = EmbeddingInterpolator()
+    m = PLRM()
     p, x, y = test_plot(m, random=True, N=40, plot_points=5000)
     p.show()
 

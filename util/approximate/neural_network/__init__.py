@@ -24,7 +24,7 @@ class NeuralNetwork(Approximator):
         # Set some default parameters.
         home_dir = os.path.expanduser('~')
         log_dir = os.path.join(home_dir, '.tf_log')
-        defaults = dict(layers=(32,)*10, activation='relu',
+        defaults = dict(layers=(64,)*8, activation='relu',
                         optimizer='adam', loss='mse', epochs=500,
                         batch_size=None, log_dir=log_dir, verbose=0,
                         show=False, workers=None)

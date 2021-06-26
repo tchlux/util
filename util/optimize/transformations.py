@@ -115,6 +115,8 @@ def rotate(rotation_ratio, dimension):
         obj_func.func = func
         # Return new function
         return obj_func
+    # Store the rotation matrix in the returned decorator function.
+    decorator.rotation_matrix = rotation_matrix
     # Return decorator function
     return decorator
 

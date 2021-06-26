@@ -27,11 +27,13 @@ if __name__ == "__main__":
     from util.plot import Plot
 
     random.seed(0)
-    N = 2**14
+    N = 8
+    # N = 2**14
     # N = 2**15
     # x = linspace(.001, 2*pi-.001, N)[:,None]
-    D = 2**10
+    D = 1
     # D = 2**9
+    # D = 2**10
     # D = 2**12
     x = 2 * pi * random.random(size=(N, D))
     y = sin(linalg.norm(x,axis=-1)).reshape(-1,1)
@@ -56,19 +58,16 @@ if __name__ == "__main__":
     do = y.shape[-1]
     ds = 8
     ns = 4
-    steps = 500
-    steps_per_plot = 1000
-    # ds = 3
-    # ns = 2
+    steps = 10000
+    steps_per_plot = 100
 
     print("creating model..")
     # plrm.new_model(di, ds, ns, do)
-    # plrm.init_model(inputs=x.T, outputs=y.T, seed=0)
     print("(x.T).shape: ",(x.T).shape)
     print("(y.T).shape: ",(y.T).shape)
 
 
-    COMPARE_WITH_TF = True
+    COMPARE_WITH_TF = False
     TEST_PLOT_MODEL = True and (x.shape[1] == 1)
     TEST_MODEL_CONSISTENCY = False
     frames = min(steps, 500)
@@ -93,7 +92,7 @@ if __name__ == "__main__":
         # --------------------
         t.start()
         plrm.new_model(di, ds, ns, do)
-        plrm.init_model(inputs=x.T, outputs=y.T, seed=0)
+        plrm.init_model(seed=0)
         plrm.minimize_mse(x.T, y.T, steps=steps_1)
         t.stop()
         f_time_1 = t.total
@@ -143,9 +142,9 @@ if __name__ == "__main__":
 
     if TEST_PLOT_MODEL:
         # Initialize the model if it has not been initialized yet.
-        if (plrm.input_params is None):
+        if (plrm.input_vecs is None):
             plrm.new_model(di, ds, ns, do)
-            plrm.init_model(inputs=x.T, outputs=y.T, seed=0)
+            plrm.init_model(seed=0)
 
         # Create a function for evaluating the model.
         def f(xi):
@@ -182,19 +181,19 @@ if __name__ == "__main__":
     if TEST_MODEL_CONSISTENCY:
         def get_plrm_model():
             # Get the input parameters (in numpy / jax model format)
-            params = plrm.get_input_params()
+            vecs = plrm.get_input_vecs()
             bias = plrm.get_input_bias()
-            input_params = append(params, bias.reshape(1,*bias.shape), axis=0)
+            input_vecs = append(vecs, bias.reshape(1,*bias.shape), axis=0)
             # Get the internal parameters (in numpy / jax model format)
-            params = plrm.get_internal_params()
+            vecs = plrm.get_internal_vecs()
             bias = plrm.get_internal_bias()
-            internal_params = append(params, bias.reshape(1,*bias.shape), axis=0)
+            internal_vecs = append(vecs, bias.reshape(1,*bias.shape), axis=0)
             # Get the output parameters (in numpy / jax model format)
-            params = plrm.get_output_params()
+            vecs = plrm.get_output_vecs()
             bias = plrm.get_output_bias()
-            output_params = append(params, bias.reshape(1,*bias.shape), axis=0)
+            output_vecs = append(vecs, bias.reshape(1,*bias.shape), axis=0)
             # Return the paremeters.
-            return input_params, internal_params, output_params, zeros((ds,ns), dtype="float32")
+            return input_vecs, internal_vecs, output_vecs, zeros((ds,ns), dtype="float32")
 
         def get_plrm_grads(x, y):
             # Initialize
@@ -208,11 +207,11 @@ if __name__ == "__main__":
             # Compute the gradient of all parameters with respect to SSE.
             sse = plrm.sse_gradient(x, y, sse, ip, ib, mp, mb, op, ob)[0]
             # Concatenate parameters to same shape as numpy.
-            input_params = append(ip, ib.reshape(1,*ib.shape), axis=0)
-            internal_params = append(mp, mb.reshape(1,*mb.shape), axis=0)
-            output_params = append(op, ob.reshape(1,*ob.shape), axis=0)
+            input_vecs = append(ip, ib.reshape(1,*ib.shape), axis=0)
+            internal_vecs = append(mp, mb.reshape(1,*mb.shape), axis=0)
+            output_vecs = append(op, ob.reshape(1,*ob.shape), axis=0)
             # Return the three matrices of weights.
-            return input_params, internal_params, output_params
+            return input_vecs, internal_vecs, output_vecs
 
         # Create known models with the same parameters as the fortran code.
         from v1_numpy import NN as numpy_nn
