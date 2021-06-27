@@ -1,11 +1,12 @@
 ! TODO:
-! - Study convergence pattern, it's not as reliable as I hoped.
-! - Compare loss per step and loss per unit time with old version.
+! - Consider convergence when adding new vectors.
+! - Compute the "importance" of different vectors.
+! - 
+! 
 ! - Implement custom block matrix multiplication routines.
-! - Training logs.
-! - Save model and load model (during training).
 ! - Well-spaced validation data (multiply distances in input and output).
 ! - Validation-based training (and greedy saving).
+! - Save model and load model (during training).
 ! - Embedding support, for integer valued inputs.
 ! - Embedding support for vector of assigned neighbors for each point.
 ! - Train only the output, internal, or input layers.
@@ -21,21 +22,15 @@ MODULE PLRM
   USE ISO_FORTRAN_ENV, RT => REAL32
   IMPLICIT NONE
   ! Value used for rectification, default is 0.
-  REAL(KIND=RT), PARAMETER :: INITIAL_SHIFT_RANGE = 2.0_RT
-  REAL(KIND=RT), PARAMETER :: INITIAL_FLEX = 1.0_RT
   REAL(KIND=RT), PARAMETER :: DISCONTINUITY = 0.0_RT
+  REAL(KIND=RT), PARAMETER :: INITIAL_SHIFT_RANGE = 2.0_RT
+  REAL(KIND=RT), PARAMETER :: INITIAL_FLEX = 0.001_RT
   REAL(KIND=RT), PARAMETER :: INITIAL_OUTPUT_SCALE = 0.001_RT
-  REAL(KIND=RT), PARAMETER :: DEFAULT_INITIAL_STEP = 0.001_RT
+  REAL(KIND=RT), PARAMETER :: INITIAL_STEP = 0.001_RT
+  REAL(KIND=RT), PARAMETER :: INITIAL_STEP_MEAN_CHANGE = 0.1_RT  
+  REAL(KIND=RT), PARAMETER :: INITIAL_STEP_VAR_CHANGE = 0.001_RT  
   REAL(KIND=RT), PARAMETER :: STEP_COMPOUND_RATE = 1.001_RT
-  REAL(KIND=RT), PARAMETER :: STEP_MEAN_CHANGE = 0.1_RT  
-  REAL(KIND=RT), PARAMETER :: STEP_MEAN_REMAIN = 0.9_RT  
-  REAL(KIND=RT), PARAMETER :: STEP_VAR_CHANGE = 0.01_RT  
-  REAL(KIND=RT), PARAMETER :: STEP_VAR_REMAIN = 0.99_RT  
-  INTEGER,       PARAMETER :: MIN_STEPS_TO_STABILITY = 10
-  INTEGER,       PARAMETER :: DEFAULT_STEPS = 100
-
-  ! Value for bias base (in terms of standard deviation for unit
-  !  variance data), default value is 2.
+  INTEGER,       PARAMETER :: MIN_STEPS_TO_STABILITY = 1
 
   ! MDI = Model dimension -- input
   ! MDS = Model dimension -- states (internal)
@@ -423,9 +418,13 @@ CONTAINS
          LP1 = L+1
          DO D = 1, MDS
             ! Compute the flexure gradient.
-            INTERNAL_FLEX_GRADIENT(D,L) = SUM(&
-                 INTERNAL_TEMP(:,D) * INTERNAL_VALUES(:,D,LP1), 1, &
-                 LT_DISCONTINUITY(:,D,LP1)) / INTERNAL_FLEX(D,L)            
+            IF (INTERNAL_FLEX(D,L) .NE. 0.0_RT) THEN
+               INTERNAL_FLEX_GRADIENT(D,L) = SUM(&
+                    INTERNAL_TEMP(:,D) * INTERNAL_VALUES(:,D,LP1), 1, &
+                    LT_DISCONTINUITY(:,D,LP1)) / INTERNAL_FLEX(D,L)            
+            ELSE
+               INTERNAL_FLEX_GRADIENT(D,L) = 0.0_RT
+            END IF
             ! Propogate the error gradient back to the preceding vectors.
             WHERE (LT_DISCONTINUITY(:,D,LP1))
                INTERNAL_VALUES(:,D,LP1) = INTERNAL_TEMP(:,D) * INTERNAL_FLEX(D,L)
@@ -450,9 +449,13 @@ CONTAINS
       ! Compute the gradients going into the first layer.
       DO D = 1, MDS
          ! Compute the flexure gradient.
-         INPUT_FLEX_GRADIENT(D) = SUM(&
-              INTERNAL_TEMP(:,D) * INTERNAL_VALUES(:,D,1), 1, &
-              LT_DISCONTINUITY(:,D,1)) / INPUT_FLEX(D)
+         IF (INPUT_FLEX(D) .NE. 0.0_RT) THEN
+            INPUT_FLEX_GRADIENT(D) = SUM(&
+                 INTERNAL_TEMP(:,D) * INTERNAL_VALUES(:,D,1), 1, &
+                 LT_DISCONTINUITY(:,D,1)) / INPUT_FLEX(D)
+         ELSE
+            INPUT_FLEX_GRADIENT(D) = 0.0_RT
+         END IF
          ! Propogate the error gradient back to the preceding vectors.
          WHERE (LT_DISCONTINUITY(:,D,1))
             INTERNAL_VALUES(:,D,1) = INTERNAL_TEMP(:,D) * INPUT_FLEX(D)
@@ -476,13 +479,15 @@ CONTAINS
 
   ! Fit input / output pairs by minimizing mean squared error.
   SUBROUTINE MINIMIZE_MSE(X, Y, STEPS, BATCH_SIZE, NUM_THREADS, &
-       STEP_SIZE, KEEP_BEST, MEAN_SQUARED_ERROR)
+       STEP_SIZE, KEEP_BEST, MEAN_SQUARED_ERROR, RECORD)
     REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: X
     REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: Y
-    INTEGER,           INTENT(IN), OPTIONAL :: STEPS, BATCH_SIZE, NUM_THREADS
+    INTEGER,       INTENT(IN) :: STEPS
+    INTEGER,       INTENT(IN), OPTIONAL :: BATCH_SIZE, NUM_THREADS
     REAL(KIND=RT), INTENT(IN), OPTIONAL :: STEP_SIZE
-    LOGICAL,           INTENT(IN), OPTIONAL :: KEEP_BEST
+    LOGICAL,       INTENT(IN), OPTIONAL :: KEEP_BEST
     REAL(KIND=RT), INTENT(OUT) :: MEAN_SQUARED_ERROR
+    REAL(KIND=RT), INTENT(OUT), DIMENSION(STEPS), OPTIONAL :: RECORD
     !  gradient step arrays, 4 copies of internal model (total of 5).
     REAL(KIND=RT), DIMENSION(MDI,MDS)       :: V1_GRAD, V1_MEAN, V1_VAR, BEST_V1
     REAL(KIND=RT), DIMENSION(MDS)           :: S1_GRAD, S1_MEAN, S1_VAR, BEST_S1
@@ -494,8 +499,10 @@ CONTAINS
     REAL(KIND=RT), DIMENSION(MDO)           :: S3_GRAD, S3_MEAN, S3_VAR, BEST_S3
     !  local integers
     LOGICAL :: REVERT_TO_BEST
-    INTEGER :: BS, I, J, L, NX, NT, S, BATCH_START, BATCH_END
-    REAL(KIND=RT) :: RNX, BATCHES, STEP_FACTOR, PREV_MSE, BEST_MSE, SCALAR
+    INTEGER :: BS, I, J, L, NX, NT, BATCH_START, BATCH_END
+    REAL(KIND=RT) :: RNX, BATCHES, PREV_MSE, BEST_MSE, SCALAR
+    REAL(KIND=RT) :: STEP_FACTOR, STEP_MEAN_CHANGE, STEP_MEAN_REMAIN, &
+         STEP_VAR_CHANGE, STEP_VAR_REMAIN
     ! Function that is defined by OpenMP.
     INTERFACE
        FUNCTION OMP_GET_MAX_THREADS()
@@ -505,12 +512,6 @@ CONTAINS
     ! Number of points.
     NX = SIZE(X,2)
     RNX = REAL(NX, RT)
-    ! Set the number of steps.
-    IF (PRESENT(STEPS)) THEN
-       S = STEPS
-    ELSE
-       S = DEFAULT_STEPS
-    END IF
     ! Set the number of threads.
     IF (PRESENT(NUM_THREADS)) THEN
        NT = NUM_THREADS
@@ -527,14 +528,19 @@ CONTAINS
     IF (PRESENT(STEP_SIZE)) THEN
        STEP_FACTOR = STEP_SIZE
     ELSE
-       STEP_FACTOR = DEFAULT_INITIAL_STEP
+       STEP_FACTOR = INITIAL_STEP
     END IF
     ! Set the "keep best" boolean.
     IF (PRESENT(KEEP_BEST)) THEN
        REVERT_TO_BEST = KEEP_BEST
     ELSE
-       REVERT_TO_BEST = (S .GE. MIN_STEPS_TO_STABILITY)
+       REVERT_TO_BEST = (STEPS .GE. MIN_STEPS_TO_STABILITY)
     END IF
+    ! Initial rates of change of mean and variance values.
+    STEP_MEAN_CHANGE = INITIAL_STEP_MEAN_CHANGE
+    STEP_MEAN_REMAIN = 1.0_RT - STEP_MEAN_CHANGE
+    STEP_VAR_CHANGE = INITIAL_STEP_VAR_CHANGE
+    STEP_VAR_REMAIN = 1.0_RT - STEP_VAR_CHANGE
     ! Initial mean squared error is "max float value".
     PREV_MSE = HUGE(PREV_MSE)
     BEST_MSE = HUGE(BEST_MSE)
@@ -557,7 +563,7 @@ CONTAINS
     V3_VAR(:,:)   = 0.0_RT
     S3_VAR(:)     = 0.0_RT
     ! Iterate, taking steps with the average gradient over all data.
-    fit_loop : DO I = 1, S
+    fit_loop : DO I = 1, STEPS
        ! Compute the average gradient over all points.
        MEAN_SQUARED_ERROR = 0.0_RT
        ! Set gradients to zero initially.
@@ -573,7 +579,8 @@ CONTAINS
        BATCHES = 0.0_RT
        !$OMP PARALLEL DO NUM_THREADS(NT) PRIVATE(BATCH_END) &
        !$OMP&  REDUCTION(+: BATCHES, MEAN_SQUARED_ERROR, &
-       !$OMP&  V1_GRAD, S1_GRAD, V2_GRAD, S2_GRAD, V3_GRAD, S3_GRAD)
+       !$OMP&  V1_GRAD, S1_GRAD, F1_GRAD, V2_GRAD, S2_GRAD, F2_GRAD, &
+       !$OMP&  V3_GRAD, S3_GRAD)
        DO BATCH_START = 1, NX, BS
           BATCHES = BATCHES + 1.0_RT
           BATCH_END = MIN(NX, BATCH_START+BS-1)
@@ -601,9 +608,20 @@ CONTAINS
        ! Update the step factor based on model improvement.
        IF (MEAN_SQUARED_ERROR .LT. PREV_MSE) THEN
           STEP_FACTOR = STEP_FACTOR * STEP_COMPOUND_RATE
+          STEP_MEAN_CHANGE = STEP_MEAN_CHANGE * STEP_COMPOUND_RATE
+          STEP_MEAN_REMAIN = 1.0_RT - STEP_MEAN_CHANGE
+          STEP_VAR_CHANGE = STEP_VAR_CHANGE * STEP_COMPOUND_RATE
+          STEP_VAR_REMAIN = 1.0_RT - STEP_VAR_CHANGE
        ELSE
           STEP_FACTOR = STEP_FACTOR / STEP_COMPOUND_RATE
+          STEP_MEAN_CHANGE = STEP_MEAN_CHANGE / STEP_COMPOUND_RATE
+          STEP_MEAN_REMAIN = 1.0_RT - STEP_MEAN_CHANGE
+          STEP_VAR_CHANGE = STEP_VAR_CHANGE / STEP_COMPOUND_RATE
+          STEP_VAR_REMAIN = 1.0_RT - STEP_VAR_CHANGE
        END IF
+       ! Store this error if a record is being kept.
+       IF (PRESENT(RECORD)) RECORD(I) = MEAN_SQUARED_ERROR
+       ! Store the previous error for tracking the best-so-far.
        PREV_MSE = MEAN_SQUARED_ERROR
        ! Convert the average gradients.
        V1_GRAD = V1_GRAD / BATCHES
@@ -637,7 +655,7 @@ CONTAINS
 
        ! Maintain a constant max-norm across the magnitue of internal vectors.
        DO L = 1, MNS-1
-          SCALAR = MAXVAL(SUM(INTERNAL_VECS(:,:,L)**2, 1))
+          SCALAR = SQRT(MAXVAL(SUM(INTERNAL_VECS(:,:,L)**2, 1)))
           INTERNAL_VECS(:,:,L) = INTERNAL_VECS(:,:,L) / SCALAR
        END DO
 
@@ -662,7 +680,7 @@ CONTAINS
       REAL(KIND=RT), DIMENSION(1:N), INTENT(INOUT) :: STEP_MEAN
       REAL(KIND=RT), DIMENSION(1:N), INTENT(INOUT) :: STEP_VAR
       ! Update sliding window mean and variance calculations.
-      STEP_MEAN = STEP_MEAN_CHANGE * CURR_STEP              + STEP_MEAN_REMAIN * STEP_MEAN
+      STEP_MEAN = STEP_MEAN_CHANGE * CURR_STEP                + STEP_MEAN_REMAIN * STEP_MEAN
       STEP_VAR = STEP_VAR_CHANGE * (STEP_MEAN - CURR_STEP)**2 + STEP_VAR_REMAIN * STEP_VAR
       STEP_VAR = MAX(STEP_VAR, EPSILON(STEP_FACTOR))
       ! Take averaged gradient descent step.

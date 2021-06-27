@@ -20,20 +20,6 @@
 MODULE PLRM
   USE ISO_FORTRAN_ENV, RT => REAL32
   IMPLICIT NONE
-  ! Value used for rectification, default is 0.
-  REAL(KIND=RT), PARAMETER :: INITIAL_SHIFT_RANGE = 2.0_RT
-  REAL(KIND=RT), PARAMETER :: INITIAL_FLEX = 0.01_RT
-  REAL(KIND=RT), PARAMETER :: DISCONTINUITY = 0.0_RT
-  REAL(KIND=RT), PARAMETER :: INITIAL_OUTPUT_SCALE = 0.001_RT
-  REAL(KIND=RT), PARAMETER :: DEFAULT_INITIAL_STEP = 0.001_RT
-  REAL(KIND=RT), PARAMETER :: STEP_COMPOUND_RATE = 1.001_RT
-  REAL(KIND=RT), PARAMETER :: INITIAL_STEP_MEAN_CHANGE = 0.1_RT  
-  REAL(KIND=RT), PARAMETER :: INITIAL_STEP_VAR_CHANGE = 0.001_RT  
-  INTEGER,       PARAMETER :: MIN_STEPS_TO_STABILITY = 0
-  INTEGER,       PARAMETER :: DEFAULT_STEPS = 100
-
-  ! Value for bias base (in terms of standard deviation for unit
-  !  variance data), default value is 2.
 
   ! MDI = Model dimension -- input
   ! MDS = Model dimension -- states (internal)
@@ -43,19 +29,15 @@ MODULE PLRM
   ! Model parameters, for evaluation.
   REAL(KIND=RT), DIMENSION(:,:),   ALLOCATABLE :: INPUT_VECS
   REAL(KIND=RT), DIMENSION(:),     ALLOCATABLE :: INPUT_SHIFT
-  REAL(KIND=RT), DIMENSION(:),     ALLOCATABLE :: INPUT_FLEX
   REAL(KIND=RT), DIMENSION(:,:,:), ALLOCATABLE :: INTERNAL_VECS
   REAL(KIND=RT), DIMENSION(:,:),   ALLOCATABLE :: INTERNAL_SHIFT
-  REAL(KIND=RT), DIMENSION(:,:),   ALLOCATABLE :: INTERNAL_FLEX
   REAL(KIND=RT), DIMENSION(:,:),   ALLOCATABLE :: OUTPUT_VECS
-  REAL(KIND=RT), DIMENSION(:),     ALLOCATABLE :: OUTPUT_SHIFT
   
   PUBLIC :: NEW_MODEL, INIT_MODEL, MINIMIZE_MSE, EVALUATE_ONE
   PRIVATE :: SSE_GRADIENT
 
   ! Externally provided matrix-matrix multiplication routine.
   EXTERNAL :: SGEMM
-  ! EXTERNAL :: DGEMM
 
 CONTAINS
 
@@ -75,22 +57,16 @@ CONTAINS
     ! Deallocate any of the internal arrays if they have already been allocated.
     IF (ALLOCATED(INPUT_VECS))     DEALLOCATE(INPUT_VECS)
     IF (ALLOCATED(INPUT_SHIFT))    DEALLOCATE(INPUT_SHIFT)
-    IF (ALLOCATED(INPUT_FLEX))     DEALLOCATE(INPUT_FLEX)
     IF (ALLOCATED(INTERNAL_VECS))  DEALLOCATE(INTERNAL_VECS)
     IF (ALLOCATED(INTERNAL_SHIFT)) DEALLOCATE(INTERNAL_SHIFT)
-    IF (ALLOCATED(INTERNAL_FLEX))  DEALLOCATE(INTERNAL_FLEX)
     IF (ALLOCATED(OUTPUT_VECS))    DEALLOCATE(OUTPUT_VECS)
-    IF (ALLOCATED(OUTPUT_SHIFT))   DEALLOCATE(OUTPUT_SHIFT)
     ! Allocate space for all model parameters.
     ALLOCATE( &
          INPUT_VECS(DI,DS), &
          INPUT_SHIFT(DS), &
-         INPUT_FLEX(DS), &
          INTERNAL_VECS(DS, DS, NS-1), &
          INTERNAL_SHIFT(DS, NS-1), &
-         INTERNAL_FLEX(DS, NS-1), &
-         OUTPUT_VECS(DS, DO), &
-         OUTPUT_SHIFT(DO) &
+         OUTPUT_VECS(DS, DO) &
          )
   END SUBROUTINE NEW_MODEL
 
@@ -100,7 +76,6 @@ CONTAINS
     INTEGER, INTENT(IN), OPTIONAL :: SEED
     !  Storage for seeding the random number generator (for repeatability).
     INTEGER, DIMENSION(:), ALLOCATABLE :: SEED_ARRAY
-    ! Local iterator.
     INTEGER :: I
     ! Set a random seed, if one was provided (otherwise leave default).
     IF (PRESENT(SEED)) THEN
@@ -109,27 +84,21 @@ CONTAINS
        SEED_ARRAY(:) = SEED
        CALL RANDOM_SEED(PUT=SEED_ARRAY(:))
     END IF
-    ! Generate well spaced random unit-length vectors (no scaling biases)
-    !  for all initial parameters in the input, internal, and output.
+    ! Generate random unit-length vectors (no scaling shiftes) for
+    !  all initial parameters in the input, internal, and output.
     CALL RANDOM_UNIT_VECTORS(INPUT_VECS(:,:))
     DO I = 1, MNS-1
        CALL RANDOM_UNIT_VECTORS(INTERNAL_VECS(:,:,I))
     END DO
     CALL RANDOM_UNIT_VECTORS(OUTPUT_VECS(:,:))
-    ! Make the output vectors have very small magnitude initially.
-    OUTPUT_VECS(:,:) = OUTPUT_VECS(:,:) * INITIAL_OUTPUT_SCALE
-    ! Generate random biases for inputs and internal layers, zero
-    !  bias for the output layer (first two will be rescaled).
+    ! Generate random shiftes for inputs and internal layers, zero
+    !  shift for the output layer (first two will be rescaled).
     CALL RANDOM_NUMBER(INPUT_SHIFT(:))
     CALL RANDOM_NUMBER(INTERNAL_SHIFT(:,:))
-    OUTPUT_SHIFT(:) = 0.0_RT
     ! Values are in range [-2,2], assuming no scaling changes,
     !  this will capture 2 standard deviations in either direction.
-    INPUT_SHIFT(:) = INITIAL_SHIFT_RANGE * (INPUT_SHIFT(:) * 2.0_RT - 1.0_RT)
-    INTERNAL_SHIFT(:,:) = INITIAL_SHIFT_RANGE * (INTERNAL_SHIFT(:,:) * 2.0_RT - 1.0_RT)
-    ! Set initial *_FLEX to be equal to default small value.
-    INPUT_FLEX(:) = INITIAL_FLEX
-    INTERNAL_FLEX(:,:) = INITIAL_FLEX
+    INPUT_SHIFT(:) = 2.0_RT * (INPUT_SHIFT(:) * 2.0_RT - 1.0_RT)
+    INTERNAL_SHIFT(:,:) = 2.0_RT * (INTERNAL_SHIFT(:,:) * 2.0_RT - 1.0_RT)
 
   CONTAINS
 
@@ -223,7 +192,7 @@ CONTAINS
     REAL(KIND=RT), INTENT(OUT), DIMENSION(:) :: OUTPUT
     ! Internal values.
     REAL(KIND=RT), DIMENSION(MDS) :: INTERNAL_VALUES
-    ! Compute the number of nodes (to know where "bias" value is).
+    ! Compute the number of nodes (to know where "shift" value is).
     INTEGER :: I, IP1
     ! Make sure that this model has been initialized.
     IF (.NOT. ALLOCATED(INPUT_VECS)) THEN
@@ -231,22 +200,15 @@ CONTAINS
        RETURN
     END IF
     ! Compute the input layer.
-    INTERNAL_VALUES(:) = INPUT_SHIFT(:) + MATMUL(INPUT(:), INPUT_VECS(:,:))
-    WHERE (INTERNAL_VALUES(:) .LT. DISCONTINUITY)
-       INTERNAL_VALUES(:) = INTERNAL_VALUES(:) * INPUT_FLEX(:)
-    END WHERE
+    INTERNAL_VALUES(:) = MAX(0.0_RT, INPUT_SHIFT(:) + MATMUL(INPUT(:), INPUT_VECS(:,:)))
     ! Compute the next set of internal values with a rectified activation.
     DO I = 1, MNS-1
        IP1 = I+1
-       INTERNAL_VALUES(:) = INTERNAL_SHIFT(:,I) + &
-            MATMUL(INTERNAL_VALUES(:), INTERNAL_VECS(:,:,I))
-       WHERE (INTERNAL_VALUES(:) .LT. DISCONTINUITY)
-          INTERNAL_VALUES(:) = INTERNAL_VALUES(:) * INTERNAL_FLEX(:,I)
-       END WHERE
+       INTERNAL_VALUES(:) = MAX(0.0_RT, INTERNAL_SHIFT(:,I) + &
+            MATMUL(INTERNAL_VALUES(:), INTERNAL_VECS(:,:,I)))
     END DO
     ! Compute the output.
-    OUTPUT(:) = OUTPUT_SHIFT(:) + &
-         MATMUL(INTERNAL_VALUES(:), OUTPUT_VECS(:,:))
+    OUTPUT(:) = MATMUL(INTERNAL_VALUES(:), OUTPUT_VECS(:,:))
   END SUBROUTINE EVALUATE_ONE
 
   ! Evaluate the piecewise linear regression model.
@@ -255,8 +217,8 @@ CONTAINS
     REAL(KIND=RT), INTENT(OUT), DIMENSION(:,:) :: OUTPUTS
     ! Internal values.
     REAL(KIND=RT), DIMENSION(:,:), ALLOCATABLE :: TEMP_VALUES, INTERNAL_VALUES
-    ! Compute the number of nodes (to know where "bias" value is).
-    INTEGER :: I, D, L, N
+    ! Compute the number of nodes (to know where "shift" value is).
+    INTEGER :: D, L, N
     ! Make sure that this model has been initialized.
     IF (.NOT. ALLOCATED(INPUT_VECS)) THEN
        OUTPUTS(:,:) = 0.0
@@ -272,10 +234,7 @@ CONTAINS
          INPUT_VECS(:,:), SIZE(INPUT_VECS,1), &
          0.0_RT, INTERNAL_VALUES(:,:), SIZE(INTERNAL_VALUES,1))
     DO D = 1, MDS
-       INTERNAL_VALUES(:,D) = INPUT_SHIFT(D) + INTERNAL_VALUES(:,D)
-       WHERE (INTERNAL_VALUES(:,D) .LT. DISCONTINUITY)
-          INTERNAL_VALUES(:,D) = INTERNAL_VALUES(:,D) * INPUT_FLEX(D)
-       END WHERE
+       INTERNAL_VALUES(:,D) = MAX(0.0_RT, INPUT_SHIFT(D) + INTERNAL_VALUES(:,D))
     END DO
     ! Compute the next set of internal values with a rectified activation.
     DO L = 1, MNS-1
@@ -285,15 +244,12 @@ CONTAINS
             0.0_RT, TEMP_VALUES(:,:), SIZE(TEMP_VALUES,1))
        INTERNAL_VALUES(:,:) = TEMP_VALUES(:,:)
        DO D = 1, MDS
-          INTERNAL_VALUES(:,D) =  INTERNAL_SHIFT(D,L) + INTERNAL_VALUES(:,D)
-          WHERE (INTERNAL_VALUES(:,D) .LT. DISCONTINUITY)
-             INTERNAL_VALUES(:,D) = INTERNAL_VALUES(:,D) * INTERNAL_FLEX(D,L)
-          END WHERE
+          INTERNAL_VALUES(:,D) =  MAX(0.0, INTERNAL_SHIFT(D,L) + INTERNAL_VALUES(:,D))
        END DO
     END DO
     ! Return the final embedded layer if the outputs have the size of the embedding.
     IF ((MDS .NE. MDO) .AND. (SIZE(OUTPUTS,1) .EQ. MDS)) THEN
-       ! Do the necessary transpose operation one dimension at a time, produce embedding.
+       ! Do the necessary transpose operation one dimension at a time.
        DO L = 1, MDS
           OUTPUTS(L,1:N) = INTERNAL_VALUES(1:N,L)
        END DO
@@ -303,9 +259,6 @@ CONTAINS
             OUTPUT_VECS(:,:), SIZE(OUTPUT_VECS,1), &
             INTERNAL_VALUES(:,:), SIZE(INTERNAL_VALUES,1), &
             0.0_RT, OUTPUTS(:,:), SIZE(OUTPUTS,1))
-       DO D = 1, MDO
-          OUTPUTS(:,D) = OUTPUT_SHIFT(D) + OUTPUTS(:,D)
-       END DO
     END IF
     ! Deallocate temporary variables.
     DEALLOCATE(INTERNAL_VALUES, TEMP_VALUES)
@@ -315,9 +268,9 @@ CONTAINS
   ! Compute the gradient of the sum of squared error of this regression
   ! model with respect to its parameters given input and output pairs.
   SUBROUTINE SSE_GRADIENT(INPUTS, OUTPUTS, SUM_SQUARED_ERROR, &
-       INPUT_VECS_GRADIENT, INPUT_SHIFT_GRADIENT, INPUT_FLEX_GRADIENT,&
-       INTERNAL_VECS_GRADIENT, INTERNAL_SHIFT_GRADIENT, INTERNAL_FLEX_GRADIENT,&
-       OUTPUT_VECS_GRADIENT, OUTPUT_SHIFT_GRADIENT)
+       INPUT_VECS_GRADIENT, INPUT_SHIFT_GRADIENT, &
+       INTERNAL_VECS_GRADIENT, INTERNAL_SHIFT_GRADIENT, &
+       OUTPUT_VECS_GRADIENT)
     ! Data values stored with contiguous points: shape = (MDI,N)
     REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: INPUTS
     REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: OUTPUTS
@@ -326,17 +279,13 @@ CONTAINS
     ! Model parameter gradients.
     REAL(KIND=RT), INTENT(INOUT), DIMENSION(:,:)   :: INPUT_VECS_GRADIENT
     REAL(KIND=RT), INTENT(INOUT), DIMENSION(:)     :: INPUT_SHIFT_GRADIENT
-    REAL(KIND=RT), INTENT(INOUT), DIMENSION(:)     :: INPUT_FLEX_GRADIENT
     REAL(KIND=RT), INTENT(INOUT), DIMENSION(:,:,:) :: INTERNAL_VECS_GRADIENT
     REAL(KIND=RT), INTENT(INOUT), DIMENSION(:,:)   :: INTERNAL_SHIFT_GRADIENT
-    REAL(KIND=RT), INTENT(INOUT), DIMENSION(:,:)   :: INTERNAL_FLEX_GRADIENT
     REAL(KIND=RT), INTENT(INOUT), DIMENSION(:,:)   :: OUTPUT_VECS_GRADIENT
-    REAL(KIND=RT), INTENT(INOUT), DIMENSION(:)     :: OUTPUT_SHIFT_GRADIENT     
     ! Internal values and lists of which ones are nonzero.
     REAL(KIND=RT), DIMENSION(SIZE(INPUTS,2),MDO)     :: OUTPUT_GRADIENT
     REAL(KIND=RT), DIMENSION(SIZE(INPUTS,2),MDS,MNS) :: INTERNAL_VALUES
-    LOGICAL,       DIMENSION(SIZE(INPUTS,2),MDS,MNS) :: LT_DISCONTINUITY
-    REAL(KIND=RT), DIMENSION(SIZE(INPUTS,2),MDS)     :: INTERNAL_TEMP
+    LOGICAL, DIMENSION(SIZE(INPUTS,2),MDS) :: LT_DISCONTINUITY
     ! Number of points.
     REAL(KIND=RT) :: N
     INTEGER :: D
@@ -367,11 +316,7 @@ CONTAINS
            INPUT_VECS(:,:), SIZE(INPUT_VECS,1), &
            0.0_RT, INTERNAL_VALUES(:,:,1), SIZE(INTERNAL_VALUES,1))
       DO D = 1, MDS
-         INTERNAL_VALUES(:,D,1) = INTERNAL_VALUES(:,D,1) + INPUT_SHIFT(D)
-         LT_DISCONTINUITY(:,D,1) = INTERNAL_VALUES(:,D,1) .LT. DISCONTINUITY
-         WHERE (LT_DISCONTINUITY(:,D,1))
-            INTERNAL_VALUES(:,D,1) = INTERNAL_VALUES(:,D,1) * INPUT_FLEX(D)
-         END WHERE
+         INTERNAL_VALUES(:,D,1) = MAX(0.0_RT, INPUT_SHIFT(D) + INTERNAL_VALUES(:,D,1))
       END DO
       ! Compute the next set of internal values with a rectified activation.
       DO L = 1, MNS-1
@@ -381,11 +326,7 @@ CONTAINS
               INTERNAL_VECS(:,:,L), SIZE(INTERNAL_VECS,1), &
               0.0_RT, INTERNAL_VALUES(:,:,LP1), SIZE(INTERNAL_VALUES,1))
          DO D = 1, MDS
-            INTERNAL_VALUES(:,D,LP1) = INTERNAL_VALUES(:,D,LP1) + INTERNAL_SHIFT(D,L)
-            LT_DISCONTINUITY(:,D,LP1) = INTERNAL_VALUES(:,D,LP1) .LT. DISCONTINUITY
-            WHERE (LT_DISCONTINUITY(:,D,LP1))
-               INTERNAL_VALUES(:,D,LP1) = INTERNAL_VALUES(:,D,LP1) * INTERNAL_FLEX(D,L)
-            END WHERE
+            INTERNAL_VALUES(:,D,LP1) =  MAX(0.0_RT, INTERNAL_SHIFT(D,L) + INTERNAL_VALUES(:,D,LP1))
          END DO
       END DO
       ! Compute the output.
@@ -393,48 +334,29 @@ CONTAINS
            INTERNAL_VALUES(:,:,L), SIZE(INTERNAL_VALUES,1), &
            OUTPUT_VECS(:,:), SIZE(OUTPUT_VECS,1), &
            0.0_RT, OUTPUT_GRADIENT(:,:), SIZE(OUTPUT_GRADIENT,1))
-      DO D = 1, MDO
-         OUTPUT_GRADIENT(:,D) = OUTPUT_SHIFT(D) + OUTPUT_GRADIENT(:,D)
-      END DO
     END SUBROUTINE EVALUATE_BATCH
 
     SUBROUTINE GRADIENT_BATCH()
-      ! D   - dimension index
       ! L   - layer index
       ! LP1 - layer index "plus 1" -> "P1"
-      INTEGER :: D, L, LP1
-      ! Compute the average output gradient.
-      OUTPUT_SHIFT_GRADIENT(:) = SUM(OUTPUT_GRADIENT(:,:), 1) / N &
-           + OUTPUT_SHIFT_GRADIENT(:)
+      INTEGER :: L, LP1
       ! Compute output parameter gradients.
       CALL SGEMM('T', 'N', MDS, MDO, SIZE(INPUTS,2), 1.0_RT / N, &
            INTERNAL_VALUES(:,:,MNS), SIZE(INTERNAL_VALUES,1), &
            OUTPUT_GRADIENT(:,:), SIZE(OUTPUT_GRADIENT,1), &
            1.0_RT, OUTPUT_VECS_GRADIENT(:,:), SIZE(OUTPUT_VECS_GRADIENT,1))
-      ! Propogate the gradient back to the last internal vector space.
+      ! Compute the gradient for the last internal vector space values.
+      LT_DISCONTINUITY(:,:) = INTERNAL_VALUES(:,:,MNS) .LT. 0.0_RT
       CALL SGEMM('N', 'T', SIZE(INPUTS,2), MDS, MDO, 1.0_RT, &
            OUTPUT_GRADIENT(:,:), SIZE(OUTPUT_GRADIENT,1), &
            OUTPUT_VECS(:,:), SIZE(OUTPUT_VECS,1), &
-           0.0_RT, INTERNAL_TEMP(:,:), SIZE(INTERNAL_TEMP,1))
+           0.0_RT, INTERNAL_VALUES(:,:,MNS), SIZE(INTERNAL_VALUES,1))
+      WHERE (LT_DISCONTINUITY(:,:))
+         INTERNAL_VALUES(:,:,MNS) = 0.0_RT
+      END WHERE
       ! Cycle over all internal layers.
       INTERNAL_REPRESENTATIONS : DO L = MNS-1, 1, -1
          LP1 = L+1
-         DO D = 1, MDS
-            ! Compute the flexure gradient.
-            IF (INTERNAL_FLEX(D,L) .NE. 0.0_RT) THEN
-               INTERNAL_FLEX_GRADIENT(D,L) = SUM(&
-                    INTERNAL_TEMP(:,D) * INTERNAL_VALUES(:,D,LP1), 1, &
-                    LT_DISCONTINUITY(:,D,LP1)) / INTERNAL_FLEX(D,L)            
-            ELSE
-               INTERNAL_FLEX_GRADIENT(D,L) = 0.0_RT
-            END IF
-            ! Propogate the error gradient back to the preceding vectors.
-            WHERE (LT_DISCONTINUITY(:,D,LP1))
-               INTERNAL_VALUES(:,D,LP1) = INTERNAL_TEMP(:,D) * INTERNAL_FLEX(D,L)
-            ELSEWHERE
-               INTERNAL_VALUES(:,D,LP1) = INTERNAL_TEMP(:,D)
-            END WHERE
-         END DO
          ! Compute the shift gradient.
          INTERNAL_SHIFT_GRADIENT(:,L) = SUM(INTERNAL_VALUES(:,:,LP1), 1) / N &
               + INTERNAL_SHIFT_GRADIENT(:,L)
@@ -443,30 +365,17 @@ CONTAINS
               INTERNAL_VALUES(:,:,L), SIZE(INTERNAL_VALUES,1), &
               INTERNAL_VALUES(:,:,LP1), SIZE(INTERNAL_VALUES,1), &
               1.0_RT, INTERNAL_VECS_GRADIENT(:,:,L), SIZE(INTERNAL_VECS_GRADIENT,1))
-         ! Propogate the gradient to the immediately preceding layer's flexure.
+         ! Propogate the gradient to the immediately preceding layer.
+         LT_DISCONTINUITY(:,:) = INTERNAL_VALUES(:,:,L) .LT. 0.0_RT
          CALL SGEMM('N', 'T', SIZE(INPUTS,2), MDS, MDS, 1.0_RT, &
               INTERNAL_VALUES(:,:,LP1), SIZE(INTERNAL_VALUES,1), &
               INTERNAL_VECS(:,:,L), SIZE(INTERNAL_VECS,1), &
-              0.0_RT, INTERNAL_TEMP(:,:), SIZE(INTERNAL_TEMP,1))
-      END DO INTERNAL_REPRESENTATIONS
-      ! Compute the gradients going into the first layer.
-      DO D = 1, MDS
-         ! Compute the flexure gradient.
-         IF (INPUT_FLEX(D) .NE. 0.0_RT) THEN
-            INPUT_FLEX_GRADIENT(D) = SUM(&
-                 INTERNAL_TEMP(:,D) * INTERNAL_VALUES(:,D,1), 1, &
-                 LT_DISCONTINUITY(:,D,1)) / INPUT_FLEX(D)
-         ELSE
-            INPUT_FLEX_GRADIENT(D) = 0.0_RT
-         END IF
-         ! Propogate the error gradient back to the preceding vectors.
-         WHERE (LT_DISCONTINUITY(:,D,1))
-            INTERNAL_VALUES(:,D,1) = INTERNAL_TEMP(:,D) * INPUT_FLEX(D)
-         ELSEWHERE
-            INTERNAL_VALUES(:,D,1) = INTERNAL_TEMP(:,D)
+              0.0_RT, INTERNAL_VALUES(:,:,L), SIZE(INTERNAL_VALUES,1))
+         WHERE (LT_DISCONTINUITY(:,:))
+            INTERNAL_VALUES(:,:,L) = 0.0_RT
          END WHERE
-      END DO
-      ! Compute the input parameter gradients.
+      END DO INTERNAL_REPRESENTATIONS
+      ! Compute the input parameter shift values.
       INPUT_SHIFT_GRADIENT(:) = SUM(INTERNAL_VALUES(:,:,1), 1) / N &
            + INPUT_SHIFT_GRADIENT(:)
       ! Compute the gradient of all input parameters.
@@ -481,31 +390,24 @@ CONTAINS
 
 
   ! Fit input / output pairs by minimizing mean squared error.
-  SUBROUTINE MINIMIZE_MSE(X, Y, STEPS, BATCH_SIZE, NUM_THREADS, &
-       STEP_SIZE, KEEP_BEST, MEAN_SQUARED_ERROR, RECORD)
+  SUBROUTINE MINIMIZE_MSE(X, Y, STEPS, STEP_SIZE, BATCH_SIZE, & 
+       NUM_THREADS, MEAN_SQUARED_ERROR, RECORD)
     REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: X
     REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: Y
     INTEGER,       INTENT(IN) :: STEPS
-    INTEGER,       INTENT(IN), OPTIONAL :: BATCH_SIZE, NUM_THREADS
     REAL(KIND=RT), INTENT(IN), OPTIONAL :: STEP_SIZE
-    LOGICAL,       INTENT(IN), OPTIONAL :: KEEP_BEST
+    INTEGER,       INTENT(IN), OPTIONAL :: BATCH_SIZE, NUM_THREADS
     REAL(KIND=RT), INTENT(OUT) :: MEAN_SQUARED_ERROR
     REAL(KIND=RT), INTENT(OUT), DIMENSION(STEPS), OPTIONAL :: RECORD
     !  gradient step arrays, 4 copies of internal model (total of 5).
     REAL(KIND=RT), DIMENSION(MDI,MDS)       :: V1_GRAD, V1_MEAN, V1_VAR, BEST_V1
     REAL(KIND=RT), DIMENSION(MDS)           :: S1_GRAD, S1_MEAN, S1_VAR, BEST_S1
-    REAL(KIND=RT), DIMENSION(MDS)           :: F1_GRAD, F1_MEAN, F1_VAR, BEST_F1
     REAL(KIND=RT), DIMENSION(MDS,MDS,MNS-1) :: V2_GRAD, V2_MEAN, V2_VAR, BEST_V2
     REAL(KIND=RT), DIMENSION(MDS,MNS-1)     :: S2_GRAD, S2_MEAN, S2_VAR, BEST_S2
-    REAL(KIND=RT), DIMENSION(MDS,MNS-1)     :: F2_GRAD, F2_MEAN, F2_VAR, BEST_F2
     REAL(KIND=RT), DIMENSION(MDS,MDO)       :: V3_GRAD, V3_MEAN, V3_VAR, BEST_V3
-    REAL(KIND=RT), DIMENSION(MDO)           :: S3_GRAD, S3_MEAN, S3_VAR, BEST_S3
     !  local integers
-    LOGICAL :: REVERT_TO_BEST
-    INTEGER :: BS, I, J, L, NX, NT, BATCH_START, BATCH_END
-    REAL(KIND=RT) :: RNX, BATCHES, PREV_MSE, BEST_MSE, SCALAR
-    REAL(KIND=RT) :: STEP_FACTOR, STEP_MEAN_CHANGE, STEP_MEAN_REMAIN, &
-         STEP_VAR_CHANGE, STEP_VAR_REMAIN
+    INTEGER :: BS, I, L, NX, NT, BATCH_START, BATCH_END
+    REAL(KIND=RT) :: RNX, BATCHES, STEP_FACTOR, SCALAR
     ! Function that is defined by OpenMP.
     INTERFACE
        FUNCTION OMP_GET_MAX_THREADS()
@@ -531,40 +433,20 @@ CONTAINS
     IF (PRESENT(STEP_SIZE)) THEN
        STEP_FACTOR = STEP_SIZE
     ELSE
-       STEP_FACTOR = DEFAULT_INITIAL_STEP
+       STEP_FACTOR = 0.001
     END IF
-    ! Set the "keep best" boolean.
-    IF (PRESENT(KEEP_BEST)) THEN
-       REVERT_TO_BEST = KEEP_BEST
-    ELSE
-       REVERT_TO_BEST = (STEPS .GE. MIN_STEPS_TO_STABILITY)
-    END IF
-    ! Initial rates of change of mean and variance values.
-    STEP_MEAN_CHANGE = INITIAL_STEP_MEAN_CHANGE
-    STEP_MEAN_REMAIN = 1.0_RT - STEP_MEAN_CHANGE
-    STEP_VAR_CHANGE = INITIAL_STEP_VAR_CHANGE
-    STEP_VAR_REMAIN = 1.0_RT - STEP_VAR_CHANGE
-    ! Initial mean squared error is "max float value".
-    PREV_MSE = HUGE(PREV_MSE)
-    BEST_MSE = HUGE(BEST_MSE)
     ! Set the average step sizes.
     V1_MEAN(:,:)   = 0.0_RT
     S1_MEAN(:)     = 0.0_RT
-    F1_MEAN(:)     = 0.0_RT
     V2_MEAN(:,:,:) = 0.0_RT
     S2_MEAN(:,:)   = 0.0_RT
-    F2_MEAN(:,:)   = 0.0_RT
     V3_MEAN(:,:)   = 0.0_RT
-    S3_MEAN(:)     = 0.0_RT
     ! Set the average step size variances.
     V1_VAR(:,:)   = 0.0_RT
     S1_VAR(:)     = 0.0_RT
-    F1_VAR(:)     = 0.0_RT
     V2_VAR(:,:,:) = 0.0_RT
     S2_VAR(:,:)   = 0.0_RT
-    F2_VAR(:,:)   = 0.0_RT
     V3_VAR(:,:)   = 0.0_RT
-    S3_VAR(:)     = 0.0_RT
     ! Iterate, taking steps with the average gradient over all data.
     fit_loop : DO I = 1, STEPS
        ! Compute the average gradient over all points.
@@ -572,108 +454,54 @@ CONTAINS
        ! Set gradients to zero initially.
        V1_GRAD(:,:)   = 0.0_RT
        S1_GRAD(:)     = 0.0_RT
-       F1_GRAD(:)     = 0.0_RT
        V2_GRAD(:,:,:) = 0.0_RT
        S2_GRAD(:,:)   = 0.0_RT
-       F2_GRAD(:,:)   = 0.0_RT
        V3_GRAD(:,:)   = 0.0_RT
-       S3_GRAD(:)     = 0.0_RT
        ! Count the number of batches.
        BATCHES = 0.0_RT
        !$OMP PARALLEL DO NUM_THREADS(NT) PRIVATE(BATCH_END) &
        !$OMP&  REDUCTION(+: BATCHES, MEAN_SQUARED_ERROR, &
-       !$OMP&  V1_GRAD, S1_GRAD, F1_GRAD, V2_GRAD, S2_GRAD, F2_GRAD, &
-       !$OMP&  V3_GRAD, S3_GRAD)
+       !$OMP&  V1_GRAD, S1_GRAD, V2_GRAD, S2_GRAD, V3_GRAD)
        DO BATCH_START = 1, NX, BS
           BATCHES = BATCHES + 1.0_RT
           BATCH_END = MIN(NX, BATCH_START+BS-1)
           ! Compute the gradient from all data.
           CALL SSE_GRADIENT(X(:,BATCH_START:BATCH_END), &
                Y(:,BATCH_START:BATCH_END), MEAN_SQUARED_ERROR, &
-               V1_GRAD, S1_GRAD, F1_GRAD, V2_GRAD, S2_GRAD, F2_GRAD, &
-               V3_GRAD, S3_GRAD)
+               V1_GRAD, S1_GRAD, V2_GRAD, S2_GRAD, V3_GRAD)
        END DO
        !$OMP END PARALLEL DO
        ! Convert the sum of squared errors into the mean squared error.
        MEAN_SQUARED_ERROR = MEAN_SQUARED_ERROR / RNX
-       ! Update the saved "best" model based on error (only when dropout is disabled).
-       IF (MEAN_SQUARED_ERROR .LT. BEST_MSE) THEN
-          BEST_MSE = MEAN_SQUARED_ERROR
-          BEST_V1 = INPUT_VECS
-          BEST_S1 = INPUT_SHIFT
-          BEST_F1 = INPUT_FLEX
-          BEST_V2 = INTERNAL_VECS
-          BEST_S2 = INTERNAL_SHIFT
-          BEST_F2 = INTERNAL_SHIFT
-          BEST_V3 = OUTPUT_VECS
-          BEST_S3 = OUTPUT_SHIFT
-       END IF
-       ! Update the step factor based on model improvement.
-       IF (MEAN_SQUARED_ERROR .LT. PREV_MSE) THEN
-          STEP_FACTOR = STEP_FACTOR * STEP_COMPOUND_RATE
-          STEP_MEAN_CHANGE = STEP_MEAN_CHANGE * STEP_COMPOUND_RATE
-          STEP_MEAN_REMAIN = 1.0_RT - STEP_MEAN_CHANGE
-          STEP_VAR_CHANGE = STEP_VAR_CHANGE * STEP_COMPOUND_RATE
-          STEP_VAR_REMAIN = 1.0_RT - STEP_VAR_CHANGE
-       ELSE
-          STEP_FACTOR = STEP_FACTOR / STEP_COMPOUND_RATE
-          STEP_MEAN_CHANGE = STEP_MEAN_CHANGE / STEP_COMPOUND_RATE
-          STEP_MEAN_REMAIN = 1.0_RT - STEP_MEAN_CHANGE
-          STEP_VAR_CHANGE = STEP_VAR_CHANGE / STEP_COMPOUND_RATE
-          STEP_VAR_REMAIN = 1.0_RT - STEP_VAR_CHANGE
-       END IF
-       ! Store this error if a record is being kept.
+       ! Store this mean squared error in the history if desired.
        IF (PRESENT(RECORD)) RECORD(I) = MEAN_SQUARED_ERROR
-       ! Store the previous error for tracking the best-so-far.
-       PREV_MSE = MEAN_SQUARED_ERROR
        ! Convert the average gradients.
        V1_GRAD = V1_GRAD / BATCHES
        S1_GRAD = S1_GRAD / BATCHES
-       F1_GRAD = F1_GRAD / BATCHES
        V2_GRAD = V2_GRAD / BATCHES
        S2_GRAD = S2_GRAD / BATCHES
-       F2_GRAD = F2_GRAD / BATCHES
        V3_GRAD = V3_GRAD / BATCHES
-       S3_GRAD = S3_GRAD / BATCHES
        ! Update the steps for all different parameters.
        CALL COMPUTE_STEP(SIZE(V1_GRAD(:,:)), V1_GRAD(:,:), V1_MEAN(:,:), V1_VAR(:,:))
        CALL COMPUTE_STEP(SIZE(S1_GRAD(:)), S1_GRAD(:), S1_MEAN(:), S1_VAR(:))
-       CALL COMPUTE_STEP(SIZE(F1_GRAD(:)), F1_GRAD(:), F1_MEAN(:), F1_VAR(:))
        DO L = 1, MNS-1
           CALL COMPUTE_STEP(SIZE(V2_GRAD(:,:,L)), V2_GRAD(:,:,L), V2_MEAN(:,:,L), V2_VAR(:,:,L))
           CALL COMPUTE_STEP(SIZE(S2_GRAD(:,L)), S2_GRAD(:,L), S2_MEAN(:,L), S2_VAR(:,L))
-          CALL COMPUTE_STEP(SIZE(F2_GRAD(:,L)), F2_GRAD(:,L), F2_MEAN(:,L), F2_VAR(:,L))
        END DO
        CALL COMPUTE_STEP(SIZE(V3_GRAD(:,:)), V3_GRAD(:,:), V3_MEAN(:,:), V3_VAR(:,:))
-       CALL COMPUTE_STEP(SIZE(S3_GRAD), S3_GRAD, S3_MEAN, S3_VAR)
        ! Take the gradient steps (based on the computed "step" above).
        INPUT_VECS(:,:)      = INPUT_VECS(:,:)      - V1_GRAD(:,:)
        INPUT_SHIFT(:)       = INPUT_SHIFT(:)       - S1_GRAD(:)
-       INPUT_FLEX(:)        = INPUT_FLEX(:)        - F1_GRAD(:)
        INTERNAL_VECS(:,:,:) = INTERNAL_VECS(:,:,:) - V2_GRAD(:,:,:)
        INTERNAL_SHIFT(:,:)  = INTERNAL_SHIFT(:,:)  - S2_GRAD(:,:)
-       INTERNAL_FLEX(:,:)   = INTERNAL_FLEX(:,:)   - F2_GRAD(:,:)
        OUTPUT_VECS(:,:)     = OUTPUT_VECS(:,:)     - V3_GRAD(:,:)
-       OUTPUT_SHIFT(:)      = OUTPUT_SHIFT(:)      - S3_GRAD(:)
-
        ! Maintain a constant max-norm across the magnitue of internal vectors.
        DO L = 1, MNS-1
           SCALAR = SQRT(MAXVAL(SUM(INTERNAL_VECS(:,:,L)**2, 1)))
           INTERNAL_VECS(:,:,L) = INTERNAL_VECS(:,:,L) / SCALAR
        END DO
-
-    END DO fit_loop
-    ! Restore the best model seen so far (if a reasonable number of steps were taken).
-    IF (REVERT_TO_BEST) THEN
-       MEAN_SQUARED_ERROR = BEST_MSE
-       INPUT_VECS = BEST_V1
-       INPUT_SHIFT = BEST_S1
-       INTERNAL_VECS = BEST_V2
-       INTERNAL_SHIFT = BEST_S2
-       OUTPUT_VECS = BEST_V3
-       OUTPUT_SHIFT = BEST_S3
-    END IF
-  CONTAINS
+     END DO fit_loop
+   CONTAINS
 
     ! Compute the current step factor as the running average step,
     ! inversely scaled by the average magnitude of the step.
@@ -683,15 +511,11 @@ CONTAINS
       REAL(KIND=RT), DIMENSION(1:N), INTENT(INOUT) :: STEP_MEAN
       REAL(KIND=RT), DIMENSION(1:N), INTENT(INOUT) :: STEP_VAR
       ! Update sliding window mean and variance calculations.
-      STEP_MEAN = STEP_MEAN_CHANGE * CURR_STEP                + STEP_MEAN_REMAIN * STEP_MEAN
-      STEP_VAR = STEP_VAR_CHANGE * (STEP_MEAN - CURR_STEP)**2 + STEP_VAR_REMAIN * STEP_VAR
+      STEP_MEAN = 0.1_RT * CURR_STEP + 0.9_RT * STEP_MEAN
+      STEP_VAR = 0.001_RT * (STEP_MEAN - CURR_STEP)**2 + 0.999_RT * STEP_VAR
       STEP_VAR = MAX(STEP_VAR, EPSILON(STEP_FACTOR))
-      ! Take averaged gradient descent step.
-      CURR_STEP = STEP_FACTOR * STEP_MEAN
-      ! Start scaling by step magnitude by variance once enough data is collected.
-      IF (I .GT. MIN_STEPS_TO_STABILITY) THEN
-         CURR_STEP = CURR_STEP / SQRT(STEP_VAR)
-      END IF
+      ! Rescale the step by the means and variances.
+      CURR_STEP = STEP_FACTOR * STEP_MEAN / SQRT(STEP_VAR)
     END SUBROUTINE COMPUTE_STEP
 
   END SUBROUTINE MINIMIZE_MSE
