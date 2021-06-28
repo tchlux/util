@@ -131,9 +131,9 @@ def condition(approximator, metric=abs_diff, method=DEFAULT_CONDITIONER,
     class ConditionedApproximator(approximator):
         # Wrapped "fit" method, this incorporates dimension reduction
         # and approximation conditioning based on the selected method.
-        def _fit(self, x, y, *args, num_comps=None, layers=4, steps=500, **kwargs):
+        def _fit(self, x, y, *args, num_comps=None, layers=8, steps=1000, **kwargs):
             # Set the number of components appropriately.
-            if (num_comps is None): num_comps = min(x.shape + (8,))
+            if (num_comps is None): num_comps = min(x.shape + (16,))
             if (dim is not None):   num_comps = min(dim, num_comps)
             # Compute the components and the values.
             if method == "PLR":
@@ -154,7 +154,7 @@ def condition(approximator, metric=abs_diff, method=DEFAULT_CONDITIONER,
                 ds = num_comps
                 ns = layers
                 plrm.new_model(di, ds, ns, do)
-                plrm.init_model(inputs=x.T, outputs=y.T, seed=seed)
+                plrm.init_model(seed=seed)
                 plrm.minimize_mse(x.T, y.T, steps=steps, num_threads=num_threads)
                 # Embed to get the internal x.
                 x, old_x = np.zeros((x.shape[0], ds), dtype="float32"), x

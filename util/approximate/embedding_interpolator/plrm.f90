@@ -1,7 +1,8 @@
 ! TODO:
 ! - Consider convergence when adding new vectors.
 ! - Compute the "importance" of different vectors.
-! - 
+! - Visualize loss function with respect to parameters in each layer.
+! - Visualize loss function with respect to different types of parameters.
 ! 
 ! - Implement custom block matrix multiplication routines.
 ! - Well-spaced validation data (multiply distances in input and output).
@@ -29,7 +30,8 @@ MODULE PLRM
   REAL(KIND=RT), PARAMETER :: INITIAL_STEP = 0.001_RT
   REAL(KIND=RT), PARAMETER :: INITIAL_STEP_MEAN_CHANGE = 0.1_RT  
   REAL(KIND=RT), PARAMETER :: INITIAL_STEP_VAR_CHANGE = 0.001_RT  
-  REAL(KIND=RT), PARAMETER :: STEP_COMPOUND_RATE = 1.001_RT
+  REAL(KIND=RT), PARAMETER :: STEP_GROWTH_RATE = 1.001_RT
+  REAL(KIND=RT), PARAMETER :: STEP_SHRINK_RATE = 0.999_RT
   INTEGER,       PARAMETER :: MIN_STEPS_TO_STABILITY = 1
 
   ! MDI = Model dimension -- input
@@ -607,16 +609,16 @@ CONTAINS
        END IF
        ! Update the step factor based on model improvement.
        IF (MEAN_SQUARED_ERROR .LT. PREV_MSE) THEN
-          STEP_FACTOR = STEP_FACTOR * STEP_COMPOUND_RATE
-          STEP_MEAN_CHANGE = STEP_MEAN_CHANGE * STEP_COMPOUND_RATE
+          STEP_FACTOR = STEP_FACTOR * STEP_GROWTH_RATE
+          STEP_MEAN_CHANGE = STEP_MEAN_CHANGE * STEP_GROWTH_RATE
           STEP_MEAN_REMAIN = 1.0_RT - STEP_MEAN_CHANGE
-          STEP_VAR_CHANGE = STEP_VAR_CHANGE * STEP_COMPOUND_RATE
+          STEP_VAR_CHANGE = STEP_VAR_CHANGE * STEP_GROWTH_RATE
           STEP_VAR_REMAIN = 1.0_RT - STEP_VAR_CHANGE
        ELSE
-          STEP_FACTOR = STEP_FACTOR / STEP_COMPOUND_RATE
-          STEP_MEAN_CHANGE = STEP_MEAN_CHANGE / STEP_COMPOUND_RATE
+          STEP_FACTOR = STEP_FACTOR * STEP_SHRINK_RATE
+          STEP_MEAN_CHANGE = STEP_MEAN_CHANGE * STEP_SHRINK_RATE
           STEP_MEAN_REMAIN = 1.0_RT - STEP_MEAN_CHANGE
-          STEP_VAR_CHANGE = STEP_VAR_CHANGE / STEP_COMPOUND_RATE
+          STEP_VAR_CHANGE = STEP_VAR_CHANGE * STEP_SHRINK_RATE
           STEP_VAR_REMAIN = 1.0_RT - STEP_VAR_CHANGE
        END IF
        ! Store this error if a record is being kept.
