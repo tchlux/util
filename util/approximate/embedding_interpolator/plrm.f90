@@ -20,7 +20,7 @@
 
 ! A piecewise linear regression model.
 MODULE PLRM
-  USE ISO_FORTRAN_ENV, RT => REAL32
+  USE ISO_FORTRAN_ENV, ONLY: RT => REAL32
   IMPLICIT NONE
   ! Value used for rectification, default is 0.
   REAL(KIND=RT), PARAMETER :: DISCONTINUITY = 0.0_RT
