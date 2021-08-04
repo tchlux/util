@@ -8,7 +8,7 @@ MAX_SAMPLES = None
 DEFAULT_COND_SCALE = True
 DEFAULT_CONDITIONER = "PLR" # "PCA" # MPCA
 PATH_TO_PLRM = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                            "embedding_interpolator", "plrm.f90")
+                            "plrm", "plrm.f90")
 
 class Split(Approximator):
     def __init__(self, model_type, k=5, seed=0, *args, **kwargs):
@@ -118,9 +118,8 @@ def condition(approximator, metric=abs_diff, method=DEFAULT_CONDITIONER,
               dim=MAX_DIM, samples=MAX_SAMPLES, scale=DEFAULT_COND_SCALE, 
               display=False, seed=None, **cond_kwargs):
     if method == "PLR":
-        import fmodpy
-        plrm = fmodpy.fimport(PATH_TO_PLRM, blas=True, omp=True, verbose=False,
-                              output_dir=os.path.dirname(PATH_TO_PLRM)).plrm
+        print("Loading PLRM for conditioning..")
+        from util.approximate.plrm.plrm import plrm
         if (seed is not None):
             num_threads = 2
     elif method == "PCA":

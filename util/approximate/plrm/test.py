@@ -1,17 +1,4 @@
 
-# import fmodpy
-
-# f_compiler_args = ['-fPIC', '-shared', '-O2','-lblas', '-fopenmp']
-# f_compiler_args = ['-fPIC', '-shared', '-O2',
-#                    '-L', '/usr/local/Cellar/openblas/0.3.13/lib',
-#                    '-lopenblas', '-fopenmp']
-# f_compiler_args = ['-fPIC', '-shared', '-O2', '-fopenmp',
-#                    '/Users/thomaslux/Downloads/ATLAS-10.3/Macman/lib/libatlas.a',
-#                    '/Users/thomaslux/Downloads/ATLAS-10.3/Macman/lib/libf77blas.a']
-
-# plrm = fmodpy.fimport("plrm.f90", verbose=True,
-#                       f_compiler_args=f_compiler_args).plrm
-
 import os
 if os.path.exists("plrm/plrm.so"):
     os.remove("plrm/plrm.so")
@@ -56,10 +43,10 @@ if __name__ == "__main__":
     # Create a new model.
     di = x.shape[-1]
     do = y.shape[-1]
-    ds = 8
-    ns = 4
-    steps = 10000
-    steps_per_plot = 100
+    ds = 64 # 8
+    ns = 8 # 4
+    steps = 1000
+    steps_per_plot = 10
 
     print("creating model..")
     # plrm.new_model(di, ds, ns, do)
@@ -67,7 +54,7 @@ if __name__ == "__main__":
     print("(y.T).shape: ",(y.T).shape)
 
 
-    COMPARE_WITH_TF = False
+    COMPARE_WITH_TF = True
     TEST_PLOT_MODEL = True and (x.shape[1] == 1)
     TEST_MODEL_CONSISTENCY = False
     frames = min(steps, 500)
@@ -129,7 +116,7 @@ if __name__ == "__main__":
             def eval_fort(x):
                 x = asarray(x.reshape((di,)), dtype="float32")
                 output = zeros(y.shape[-1], dtype="float32")
-                plrm.evaluate_one(x, output)
+                plrm.evaluate(x[:,None], output[None,:])
                 return output[0]
             def eval_tens(x):
                 x = asarray(x.reshape((di,)), dtype="float32")
@@ -150,7 +137,7 @@ if __name__ == "__main__":
         def f(xi):
             xi = asarray(xi, dtype="float32").reshape((di,))
             yi = zeros((do,), dtype="float32")
-            plrm.evaluate_one(xi,yi)
+            plrm.evaluate(xi[:,None],yi[:,None])
             return yi[0]
 
         # Create a plot.
