@@ -42,7 +42,9 @@ def test_plot(model, low=0, upp=1, plot_points=3000, p=None,
                       if classifier else
                       fun(v)+np.random.random()*noise for v in x])
     # Fit the model to the points
+    print("Fitting model..", flush=True)
     model.fit(x,y, classifier=classifier)
+    print("", "done.", flush=True)
     # Generate the plot
     from util.plot import Plot
     if type(p) == type(None): p = Plot()
@@ -51,6 +53,8 @@ def test_plot(model, low=0, upp=1, plot_points=3000, p=None,
                plot_points=plot_points, vectorized=True)
     # p.add_func("truth", fun, *([(low-.1,upp+.1)]*D),
     #            plot_points=plot_points)
+    # Reset the random seed for numpy.
+    np.random.seed()
     return p, x, y
 
 # Given a model, use the method "points_and_weights" to identify the

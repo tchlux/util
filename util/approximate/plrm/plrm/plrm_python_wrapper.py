@@ -3,21 +3,24 @@ for Fortran code made by 'fmodpy'. The original documentation
 for the Fortran source code follows.
 
 ! TODO:
-! - Consider convergence when adding new vectors.
-! - Compute the "importance" of different vectors.
-! - Visualize loss function with respect to parameters in each layer.
-! - Visualize loss function with respect to different types of parameters.
-!
+! - Compute value and error gradient with respect to a set of points
+!   for a single parameter in the model (vec, shift, or flex).
+! - Compute the "importance" of different vectors by zeroing them
+!   out and determining the magnitude change in mean squared error.
 ! - Well-spaced validation data (multiply distances in input and output).
-! - Validation-based training (and greedy saving).
-! - Save model and load model (during training).
-! - Embedding support, for integer valued inputs.
-! - Embedding support for vector of assigned neighbors for each point.
-! - Train only the output, internal, or input layers.
-! - Test larger networks on image data.
+! - Validation-based training and greedy saving / model selection.
 !
-! MAYBE TODO:
-! - Use ALLOCATE instead of automatic, because of large N seg faults.
+! - Setting that produces convergence status on timed interval (3 seconds?).
+! - Support for vectorizing integer valued inputs (initially regular simplex, trainable).
+! - Training support for vector of assigned neighbors for each point.
+! - Support for huge input spaces (1M+ components), automatically
+!   construct vectors that select a subset of input components to
+!   process.
+!
+! - Save model and load model (during training).
+! - Support for vectorizing integer valued outputs. (use regular simplex)
+! - Train only the output, internal, or input layers.
+! - Consider convergence when adding new vectors.
 ! - Implement similar code in C, compare speeds.
 '''
 
@@ -29,11 +32,12 @@ import numpy
 #               CONFIGURATION
 # 
 _verbose = True
+_fort_compiler = "gfortran"
 _shared_object_name = "plrm.so"
 _this_directory = os.path.dirname(os.path.abspath(__file__))
 _path_to_lib = os.path.join(_this_directory, _shared_object_name)
-_command1 = f"gfortran -O3 -lblas -fopenmp -fPIC -shared -o {_shared_object_name} plrm.f90 plrm_c_wrapper.f90"
-_command2 = f"gfortran -O3 -fopenmp -c plrm.f90 plrm_c_wrapper.f90 ; gfortran -fPIC -shared -I/opt/intel/oneapi/intelpython/latest/include -L/opt/intel/oneapi/intelpython/latest/lib -liomp5 -lmkl_rt -o {_shared_object_name} plrm.o plrm_c_wrapper.o"
+_compile_options = ['-fPIC', '-shared', '-O3', '-lblas', '-fopenmp']
+_ordered_dependencies = ['plrm.f90', 'plrm_c_wrapper.f90']
 # 
 # --------------------------------------------------------------------
 #               AUTO-COMPILING
@@ -45,25 +49,16 @@ except:
     # Remove the shared object if it exists, because it is faulty.
     if os.path.exists(_shared_object_name):
         os.remove(_shared_object_name)
+    # Compile a new shared object.
+    _command = " ".join([_fort_compiler] + _compile_options + ["-o", _shared_object_name] + _ordered_dependencies)
+    if _verbose:
+        print("Running system command with arguments")
+        print("  ", _command)
     # Run the compilation command.
     import subprocess
-    try:
-        # Compile a new shared object.
-        if _verbose:
-            print("Running system command with arguments")
-            print("  ", _command1)
-        subprocess.run(_command1, shell=True, cwd=_this_directory)
-        # Import the shared object file as a C library with ctypes.
-        clib = ctypes.CDLL(_path_to_lib)
-    except:
-        # Compile a new shared object.
-        if _verbose:
-            print("Running system command with arguments")
-            print("  ", _command2)
-        subprocess.run(_command2, shell=True, cwd=_this_directory)
-        # Import the shared object file as a C library with ctypes.
-        clib = ctypes.CDLL(_path_to_lib)
-
+    subprocess.run(_command, shell=True, cwd=_this_directory)
+    # Import the shared object file as a C library with ctypes.
+    clib = ctypes.CDLL(_path_to_lib)
 # --------------------------------------------------------------------
 
 
@@ -577,4 +572,113 @@ class plrm:
         return mean_squared_error.value, (record if record_present else None)
 
 plrm = plrm()
+
+
+class vis_plrm:
+    '''! Use this module to visualize the values and error gradients within
+!  the PLRM model for different parameter types.'''
+
+    
+    # ----------------------------------------------
+    # Wrapper for the Fortran subroutine DISABLE_AND_COMPUTE_MSE
+    
+    def disable_and_compute_mse(self, layer, position, inputs, outputs):
+        '''! Disable the 'layer, position' node (1 indexed) in the network and
+!  compute the mean squared error "MSE". Use layer=-1 to compute
+!  MSE without disabling any of the internal representations.'''
+        
+        # Setting up "layer"
+        if (type(layer) is not ctypes.c_int): layer = ctypes.c_int(layer)
+        
+        # Setting up "position"
+        if (type(position) is not ctypes.c_int): position = ctypes.c_int(position)
+        
+        # Setting up "inputs"
+        if ((not issubclass(type(inputs), numpy.ndarray)) or
+            (not numpy.asarray(inputs).flags.f_contiguous) or
+            (not (inputs.dtype == numpy.dtype(ctypes.c_float)))):
+            import warnings
+            warnings.warn("The provided argument 'inputs' was not an f_contiguous NumPy array of type 'ctypes.c_float' (or equivalent). Automatically converting (probably creating a full copy).")
+            inputs = numpy.asarray(inputs, dtype=ctypes.c_float, order='F')
+        inputs_dim_1 = ctypes.c_int(inputs.shape[0])
+        inputs_dim_2 = ctypes.c_int(inputs.shape[1])
+        
+        # Setting up "outputs"
+        if ((not issubclass(type(outputs), numpy.ndarray)) or
+            (not numpy.asarray(outputs).flags.f_contiguous) or
+            (not (outputs.dtype == numpy.dtype(ctypes.c_float)))):
+            import warnings
+            warnings.warn("The provided argument 'outputs' was not an f_contiguous NumPy array of type 'ctypes.c_float' (or equivalent). Automatically converting (probably creating a full copy).")
+            outputs = numpy.asarray(outputs, dtype=ctypes.c_float, order='F')
+        outputs_dim_1 = ctypes.c_int(outputs.shape[0])
+        outputs_dim_2 = ctypes.c_int(outputs.shape[1])
+        
+        # Setting up "mse"
+        mse = ctypes.c_float()
+    
+        # Call C-accessible Fortran wrapper.
+        clib.c_disable_and_compute_mse(ctypes.byref(layer), ctypes.byref(position), ctypes.byref(inputs_dim_1), ctypes.byref(inputs_dim_2), ctypes.c_void_p(inputs.ctypes.data), ctypes.byref(outputs_dim_1), ctypes.byref(outputs_dim_2), ctypes.c_void_p(outputs.ctypes.data), ctypes.byref(mse))
+    
+        # Return final results, 'INTENT(OUT)' arguments only.
+        return mse.value
+
+    
+    # ----------------------------------------------
+    # Wrapper for the Fortran subroutine COMPUTE_VALUES
+    
+    def compute_values(self, layer, position, inputs, outputs, vals, grads):
+        '''! Given index, compute value and gradient at internal position in model.
+! Arguments'''
+        
+        # Setting up "layer"
+        if (type(layer) is not ctypes.c_int): layer = ctypes.c_int(layer)
+        
+        # Setting up "position"
+        if (type(position) is not ctypes.c_int): position = ctypes.c_int(position)
+        
+        # Setting up "inputs"
+        if ((not issubclass(type(inputs), numpy.ndarray)) or
+            (not numpy.asarray(inputs).flags.f_contiguous) or
+            (not (inputs.dtype == numpy.dtype(ctypes.c_float)))):
+            import warnings
+            warnings.warn("The provided argument 'inputs' was not an f_contiguous NumPy array of type 'ctypes.c_float' (or equivalent). Automatically converting (probably creating a full copy).")
+            inputs = numpy.asarray(inputs, dtype=ctypes.c_float, order='F')
+        inputs_dim_1 = ctypes.c_int(inputs.shape[0])
+        inputs_dim_2 = ctypes.c_int(inputs.shape[1])
+        
+        # Setting up "outputs"
+        if ((not issubclass(type(outputs), numpy.ndarray)) or
+            (not numpy.asarray(outputs).flags.f_contiguous) or
+            (not (outputs.dtype == numpy.dtype(ctypes.c_float)))):
+            import warnings
+            warnings.warn("The provided argument 'outputs' was not an f_contiguous NumPy array of type 'ctypes.c_float' (or equivalent). Automatically converting (probably creating a full copy).")
+            outputs = numpy.asarray(outputs, dtype=ctypes.c_float, order='F')
+        outputs_dim_1 = ctypes.c_int(outputs.shape[0])
+        outputs_dim_2 = ctypes.c_int(outputs.shape[1])
+        
+        # Setting up "vals"
+        if ((not issubclass(type(vals), numpy.ndarray)) or
+            (not numpy.asarray(vals).flags.f_contiguous) or
+            (not (vals.dtype == numpy.dtype(ctypes.c_float)))):
+            import warnings
+            warnings.warn("The provided argument 'vals' was not an f_contiguous NumPy array of type 'ctypes.c_float' (or equivalent). Automatically converting (probably creating a full copy).")
+            vals = numpy.asarray(vals, dtype=ctypes.c_float, order='F')
+        vals_dim_1 = ctypes.c_int(vals.shape[0])
+        
+        # Setting up "grads"
+        if ((not issubclass(type(grads), numpy.ndarray)) or
+            (not numpy.asarray(grads).flags.f_contiguous) or
+            (not (grads.dtype == numpy.dtype(ctypes.c_float)))):
+            import warnings
+            warnings.warn("The provided argument 'grads' was not an f_contiguous NumPy array of type 'ctypes.c_float' (or equivalent). Automatically converting (probably creating a full copy).")
+            grads = numpy.asarray(grads, dtype=ctypes.c_float, order='F')
+        grads_dim_1 = ctypes.c_int(grads.shape[0])
+    
+        # Call C-accessible Fortran wrapper.
+        clib.c_compute_values(ctypes.byref(layer), ctypes.byref(position), ctypes.byref(inputs_dim_1), ctypes.byref(inputs_dim_2), ctypes.c_void_p(inputs.ctypes.data), ctypes.byref(outputs_dim_1), ctypes.byref(outputs_dim_2), ctypes.c_void_p(outputs.ctypes.data), ctypes.byref(vals_dim_1), ctypes.c_void_p(vals.ctypes.data), ctypes.byref(grads_dim_1), ctypes.c_void_p(grads.ctypes.data))
+    
+        # Return final results, 'INTENT(OUT)' arguments only.
+        return vals, grads
+
+vis_plrm = vis_plrm()
 

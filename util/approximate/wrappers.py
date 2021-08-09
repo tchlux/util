@@ -118,7 +118,6 @@ def condition(approximator, metric=abs_diff, method=DEFAULT_CONDITIONER,
               dim=MAX_DIM, samples=MAX_SAMPLES, scale=DEFAULT_COND_SCALE, 
               display=False, seed=None, **cond_kwargs):
     if method == "PLR":
-        print("Loading PLRM for conditioning..")
         from util.approximate.plrm.plrm import plrm
         if (seed is not None):
             num_threads = 2
