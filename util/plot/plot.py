@@ -61,7 +61,7 @@ PLOT_MARGIN = 50         # In pixels
 PLOT_POINTS = 1000       # Number of samples
 BRIGHTNESS_RANGE = 0.6   # For default shading of points
 RANDOM_SEED = 0          # Seed used for new color generation
-MIN_PALATTE_COLORS = 40  # Number of palatte entries to create
+MIN_PALETTE_COLORS = 40  # Number of palette entries to create
 PREVIOUS_FILE_NAMES = [] # <- for tracking auto-append.
 DEFAULT_CAMERA_POSITION = dict(
     up=dict(x=0, y=0, z=1),
@@ -70,9 +70,9 @@ DEFAULT_CAMERA_POSITION = dict(
 ) # ^^ When vieiwing 3D plots.
 
 
-# Save the color palatte for plotting a gradient
-# PALATTE SOURCE: colorlover as cl
-# PALATTE SOURCE: np.array(cl.to_numeric(cl.scales['11']['div']['Spectral']))[::-1]
+# Save the color palette for plotting a gradient
+# PALETTE SOURCE: colorlover as cl
+# PALETTE SOURCE: np.array(cl.to_numeric(cl.scales['11']['div']['Spectral']))[::-1]
 DEFAULT_GRADIENT = np.array([[  94.,   79.,  162.],
                              [  50.,  136.,  189.],
                              [ 102.,  194.,  165.],
@@ -85,29 +85,29 @@ DEFAULT_GRADIENT = np.array([[  94.,   79.,  162.],
                              [ 213.,   62.,   79.],
                              [ 158.,    1.,   66.]])
 
-# PALATTE SOURCE: colorlover as cl
-# PALATTE SOURCE: np.array(cl.to_numeric(cl.scales['5']['qual']['Set2']))
-PALATTE = np.array([[ 102.,  194.,  165.],
+# PALETTE SOURCE: colorlover as cl
+# PALETTE SOURCE: np.array(cl.to_numeric(cl.scales['5']['qual']['Set2']))
+PALETTE = np.array([[ 102.,  194.,  165.],
                     [ 252.,  141.,   98.],
                     [ 141.,  160.,  203.],
                     [ 231.,  138.,  195.],
                     [ 166.,  216.,   84.]])
-PALATTE = PALATTE**2
-PALATTE = PALATTE / np.max(PALATTE) * 255
-# Re-order the palatte so that the colors appear better
-PALATTE = np.concatenate((PALATTE[1:], [PALATTE[0]]))
+PALETTE = PALETTE**2
+PALETTE = PALETTE / np.max(PALETTE) * 255
+# Re-order the palette so that the colors appear better
+PALETTE = np.concatenate((PALETTE[1:], [PALETTE[0]]))
 
 
-# Expand the palatte using random combinations of existing colors
+# Expand the palette using random combinations of existing colors
 random.seed(RANDOM_SEED)
-palatte_size = len(PALATTE)
-for i in range(MIN_PALATTE_COLORS - palatte_size):
+palette_size = len(PALETTE)
+for i in range(MIN_PALETTE_COLORS - palette_size):
     # Create lots of extra colors
-    c = np.array([random.choice(PALATTE[:palatte_size,0]),
-                  random.choice(PALATTE[:palatte_size,1]),
-                  random.choice(PALATTE[:palatte_size,2])])
-    # Add this new random color to the palatte
-    PALATTE = np.concatenate( (PALATTE, [c]), axis=0 )
+    c = np.array([random.choice(PALETTE[:palette_size,0]),
+                  random.choice(PALETTE[:palette_size,1]),
+                  random.choice(PALETTE[:palette_size,2])])
+    # Add this new random color to the palette
+    PALETTE = np.concatenate( (PALETTE, [c]), axis=0 )
 # Re-seed the random number generator so that it is not tainted
 random.seed()
 
@@ -204,7 +204,7 @@ def same_as(to_copy, mention_usage=False):
 # 
 # PLOT CONTROL
 #  mode    -- The default plotly plot mode to be used.
-#  palatte -- A numpy array (N rows, 3 columns) of ordered plot
+#  palette -- A numpy array (N rows, 3 columns) of ordered plot
 #             series colors.
 # 
 # FONT CONTROL
@@ -213,7 +213,7 @@ def same_as(to_copy, mention_usage=False):
 #  font_size   -- The size of the font used for axes.
 class Plot:
     def __init__(self, title="", x_title="x", y_title="y",
-                 z_title="z", mode="markers", palatte=PALATTE,
+                 z_title="z", mode="markers", palette=PALETTE,
                  font_family=None, font_color=None, font_size=None):
         self.title = title
         self.x_title = x_title
@@ -230,8 +230,8 @@ class Plot:
         self.data = list()
         self.annotations = list()
         self.mode = mode
-        self.palatte = palatte
-        self.palatte_size = len(palatte)
+        self.palette = palette
+        self.palette_size = len(palette)
         # Font settings
         self.font_family = font_family
         self.font_color = font_color
@@ -407,14 +407,14 @@ class Plot:
     #      User accessible functions     
     # ===================================
 
-    # Interface to the automatic palatte-based color scheme for this
+    # Interface to the automatic palette-based color scheme for this
     # plot. This method produces an rgb string compatible with
     # standard plotly "rgba(%i,%i,%i,%f)"%(<red>,<green>,<blue>,<alpha>). 
     # 
     # This method takes the following arguments:
     #   Arg Name (Default) -- Description
     # 
-    #   number (None)      -- Index in the palatte of the desired color.
+    #   number (None)      -- Index in the palette of the desired color.
     #   brightness (1.0)   -- Value ranging from 0.0 to 1.0 that can
     #                         be used to produces shades of the same color.
     #   alpha (1.0)        -- Opacity of the color produced. Note, 0.0
@@ -430,16 +430,16 @@ class Plot:
         # Otherwise assume a number was sent.
         if type(color) == type(None):
             if (number == None): number = self.color_num
-            if (number < len(self.palatte)):
+            if (number < len(self.palette)):
                 # If we have fewer entries than the palette size
-                c = self.palatte[number]
+                c = self.palette[number]
             else:
                 # Otherwise we have to create a new palette entry
-                c = np.array([random.choice(self.palatte[:self.palatte_size,0]),
-                              random.choice(self.palatte[:self.palatte_size,1]),
-                              random.choice(self.palatte[:self.palatte_size,2])])
-                # Add this new random color to the palatte
-                self.palatte = np.concatenate( (self.palatte, [c]), axis=0 )
+                c = np.array([random.choice(self.palette[:self.palette_size,0]),
+                              random.choice(self.palette[:self.palette_size,1]),
+                              random.choice(self.palette[:self.palette_size,2])])
+                # Add this new random color to the palette
+                self.palette = np.concatenate( (self.palette, [c]), axis=0 )
         elif type(color) == str:
             # Get the color as a list of numbers
             c = color[color.index('(')+1:color.index(')')].split(',')
@@ -749,7 +749,7 @@ class Plot:
     #                    on magnitude.
     #  use_gradient   -- True or False if a gradient coloring should
     #                    be applied to the given data series.
-    #  palatte        -- The palatte to use when creating a gradient
+    #  palette        -- The palette to use when creating a gradient
     #                    of colors for the "use_gradient" option.
     #  text           -- A list of the text strings that should be
     #                    shown for each data point when a user hovers
@@ -786,7 +786,7 @@ class Plot:
     def add(self, name, x_values=None, y_values=None, z_values=None,
             mode=None, plot_type=None, group=None,
             show_in_legend=True, shade=False, use_gradient=None,
-            palatte=DEFAULT_GRADIENT, text=None, color=None,
+            palette=DEFAULT_GRADIENT, text=None, color=None,
             opacity=1.0, line_color=None, line_width=None, fill=None,
             fill_color=None, fill_opacity=0.6, symbol='circle',
             dash=None, marker_size=None, marker_colors=None,
@@ -823,7 +823,7 @@ class Plot:
 
         # Make a nice pretty gradient of color
         if use_gradient and (len(values) > 1):
-            marker_colors = color_data(values, palatte)
+            marker_colors = color_data(values, palette)
 
         # Define z-values if none were given and we need them, and plot type
         if self.is_3d:
@@ -1666,10 +1666,10 @@ def multiplot(plots, x_domains=None, y_domains=None, html=True,
 #      Helper functions needed for this module     
 # =================================================
 
-# Given some data, color the data according to a palatte with uniform
-# interpolation between the colors in the palatte from the minimum
+# Given some data, color the data according to a palette with uniform
+# interpolation between the colors in the palette from the minimum
 # value provided to the maximimum value provided
-def color_data(values, palatte=DEFAULT_GRADIENT, opacity=1.0):
+def color_data(values, palette=DEFAULT_GRADIENT, opacity=1.0):
     no_none = [v for v in values if type(v) != type(None)]
     shift = min(no_none)
     scale = (max(no_none) - shift) * 1.11
@@ -1677,15 +1677,15 @@ def color_data(values, palatte=DEFAULT_GRADIENT, opacity=1.0):
     def color(value):
         if value == None: return None
         # Generate the index as a float (for interpolating)
-        index = len(palatte) * (value-shift) / scale
+        index = len(palette) * (value-shift) / scale
         # Get the exact colors on either side of this index
         lower = int(index)
         upper = lower + 1
-        if (lower > len(palatte)-1): lower = len(palatte)-1
-        if (upper > len(palatte)-1): upper = len(palatte)-1
+        if (lower > len(palette)-1): lower = len(palette)-1
+        if (upper > len(palette)-1): upper = len(palette)-1
         index -= lower
         # Interpolate between the lower and upper colors
-        c = tuple(palatte[lower]*(1-index) + palatte[upper]*(index))
+        c = tuple(palette[lower]*(1-index) + palette[upper]*(index))
         # Return the interpolated color.
         return 'rgba(%i,%i,%i,%f)'%(c+(opacity,))
     return list(map(color, values))

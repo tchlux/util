@@ -15,6 +15,19 @@ from util.math.polynomial import inverse as polynomial_inverse
 SMALL = 2**(-26)
 #       ^^ SQRT(EPSILON( 0.0_REAL64 ))
 
+# Compute the order of magnitude error (powers of 2 between numbers).
+def oom_error(x, y):
+    if (x == y): return 0.0
+    from numpy import log2
+    if (y != 0): return abs(log2(x / y))
+    else:        return abs(log2(y / x))
+
+# Compute the number-of-bits of accuracy (upper bound on correct float mantissa bits).
+def bit_accuracy(x, y):
+    if (x == y): return float('inf')
+    from numpy import log2
+    return -log2(oom_error(x, y))
+
 # Given a list of lists, flatten it to one dimension.
 def flatten(l): return [v for row in l for v in row]
 
