@@ -3,24 +3,43 @@ for Fortran code made by 'fmodpy'. The original documentation
 for the Fortran source code follows.
 
 ! TODO:
-! - Compute value and error gradient with respect to a set of points
-!   for a single parameter in the model (vec, shift, or flex).
-! - Compute the "importance" of different vectors by zeroing them
-!   out and determining the magnitude change in mean squared error.
-! - Well-spaced validation data (multiply distances in input and output).
 ! - Validation-based training and greedy saving / model selection.
-!
-! - Setting that produces convergence status on timed interval (3 seconds?).
+! - Well-spaced validation data (multiply distances in input and output).
+! - batch reduction for accelerated training (well spaced in different layer values and large gradients)
 ! - Support for vectorizing integer valued inputs (initially regular simplex, trainable).
+! - Measure pairwise nearness between internal vectors based on point values.
+! - Setting that produces convergence status on timed interval (3 seconds?).
 ! - Training support for vector of assigned neighbors for each point.
 ! - Support for huge input spaces (1M+ components), automatically
 !   construct vectors that select a subset of input components to
 !   process.
+! - Support for huge number of input points (find well spaced sample, reduce).
 !
+! - Get stats on the internal values within the network during training.
+!   - shift values
+!   - vector magnitudes for each node
+!   - output weights magnitude for each node
+!   - internal node contributions to MSE
+!   - data distributions at internal nodes (% less and greater than 0)
+!
+! - Measure pairwise distance between vectors (including shift) at
+!   each data representation.
+! - Measure pairwise distance between vector *values* (after applying
+!   discontinuity) at each representation.
+! - Add forcing function that pushes vectors away from each other based
+!   on how similar their outputs at all data points are?
+! - Pick a point (with probability corresponding to ratio of total error)
+!   as the target for a new vector, pick the shift that captures it.
+!
+! - Keep the length of every internal vector fixed at 1.
+! - Orthogonalize all internal vectors at every step.
+! - Substitute least value vector at each layer with one that captures
+!   points with the current largest error (regress error given the
+!   representation at that level).
+!
+! - categorical outputs with trainable vector representations
 ! - Save model and load model (during training).
-! - Support for vectorizing integer valued outputs. (use regular simplex)
 ! - Train only the output, internal, or input layers.
-! - Consider convergence when adding new vectors.
 ! - Implement similar code in C, compare speeds.
 '''
 
@@ -60,6 +79,85 @@ except:
     # Import the shared object file as a C library with ctypes.
     clib = ctypes.CDLL(_path_to_lib)
 # --------------------------------------------------------------------
+
+
+class matrix_multiplication:
+    '''! Module for matrix multiplication (absolutely crucial for PLRM speed).'''
+
+    
+    # ----------------------------------------------
+    # Wrapper for the Fortran subroutine GEMM
+    
+    def gemm(self, op_a, op_b, out_rows, out_cols, inner_dim, ab_mult, a, a_rows, b, b_rows, c_mult, c, c_rows):
+        '''! Convenience wrapper routine for calling matrix multiply.'''
+        
+        # Setting up "op_a"
+        if (type(op_a) is not ctypes.c_char): op_a = ctypes.c_char(op_a)
+        
+        # Setting up "op_b"
+        if (type(op_b) is not ctypes.c_char): op_b = ctypes.c_char(op_b)
+        
+        # Setting up "out_rows"
+        if (type(out_rows) is not ctypes.c_int): out_rows = ctypes.c_int(out_rows)
+        
+        # Setting up "out_cols"
+        if (type(out_cols) is not ctypes.c_int): out_cols = ctypes.c_int(out_cols)
+        
+        # Setting up "inner_dim"
+        if (type(inner_dim) is not ctypes.c_int): inner_dim = ctypes.c_int(inner_dim)
+        
+        # Setting up "ab_mult"
+        if (type(ab_mult) is not ctypes.c_float): ab_mult = ctypes.c_float(ab_mult)
+        
+        # Setting up "a"
+        if ((not issubclass(type(a), numpy.ndarray)) or
+            (not numpy.asarray(a).flags.f_contiguous) or
+            (not (a.dtype == numpy.dtype(ctypes.c_float)))):
+            import warnings
+            warnings.warn("The provided argument 'a' was not an f_contiguous NumPy array of type 'ctypes.c_float' (or equivalent). Automatically converting (probably creating a full copy).")
+            a = numpy.asarray(a, dtype=ctypes.c_float, order='F')
+        a_dim_1 = ctypes.c_int(a.shape[0])
+        a_dim_2 = ctypes.c_int(a.shape[1])
+        
+        # Setting up "a_rows"
+        if (type(a_rows) is not ctypes.c_int): a_rows = ctypes.c_int(a_rows)
+        
+        # Setting up "b"
+        if ((not issubclass(type(b), numpy.ndarray)) or
+            (not numpy.asarray(b).flags.f_contiguous) or
+            (not (b.dtype == numpy.dtype(ctypes.c_float)))):
+            import warnings
+            warnings.warn("The provided argument 'b' was not an f_contiguous NumPy array of type 'ctypes.c_float' (or equivalent). Automatically converting (probably creating a full copy).")
+            b = numpy.asarray(b, dtype=ctypes.c_float, order='F')
+        b_dim_1 = ctypes.c_int(b.shape[0])
+        b_dim_2 = ctypes.c_int(b.shape[1])
+        
+        # Setting up "b_rows"
+        if (type(b_rows) is not ctypes.c_int): b_rows = ctypes.c_int(b_rows)
+        
+        # Setting up "c_mult"
+        if (type(c_mult) is not ctypes.c_float): c_mult = ctypes.c_float(c_mult)
+        
+        # Setting up "c"
+        if ((not issubclass(type(c), numpy.ndarray)) or
+            (not numpy.asarray(c).flags.f_contiguous) or
+            (not (c.dtype == numpy.dtype(ctypes.c_float)))):
+            import warnings
+            warnings.warn("The provided argument 'c' was not an f_contiguous NumPy array of type 'ctypes.c_float' (or equivalent). Automatically converting (probably creating a full copy).")
+            c = numpy.asarray(c, dtype=ctypes.c_float, order='F')
+        c_dim_1 = ctypes.c_int(c.shape[0])
+        c_dim_2 = ctypes.c_int(c.shape[1])
+        
+        # Setting up "c_rows"
+        if (type(c_rows) is not ctypes.c_int): c_rows = ctypes.c_int(c_rows)
+    
+        # Call C-accessible Fortran wrapper.
+        clib.c_gemm(ctypes.byref(op_a), ctypes.byref(op_b), ctypes.byref(out_rows), ctypes.byref(out_cols), ctypes.byref(inner_dim), ctypes.byref(ab_mult), ctypes.byref(a_dim_1), ctypes.byref(a_dim_2), ctypes.c_void_p(a.ctypes.data), ctypes.byref(a_rows), ctypes.byref(b_dim_1), ctypes.byref(b_dim_2), ctypes.c_void_p(b.ctypes.data), ctypes.byref(b_rows), ctypes.byref(c_mult), ctypes.byref(c_dim_1), ctypes.byref(c_dim_2), ctypes.c_void_p(c.ctypes.data), ctypes.byref(c_rows))
+    
+        # Return final results, 'INTENT(OUT)' arguments only.
+        return c
+
+matrix_multiplication = matrix_multiplication()
 
 
 class plrm:
@@ -119,14 +217,14 @@ class plrm:
         raise(NotImplementedError('Module attributes with PARAMETER status cannot be set.'))
     initial_step_mean_change = property(get_initial_step_mean_change, set_initial_step_mean_change)
 
-    # Declare 'initial_step_var_change'
-    def get_initial_step_var_change(self):
-        initial_step_var_change = ctypes.c_float()
-        clib.plrm_get_initial_step_var_change(ctypes.byref(initial_step_var_change))
-        return initial_step_var_change.value
-    def set_initial_step_var_change(self, initial_step_var_change):
+    # Declare 'initial_step_curv_change'
+    def get_initial_step_curv_change(self):
+        initial_step_curv_change = ctypes.c_float()
+        clib.plrm_get_initial_step_curv_change(ctypes.byref(initial_step_curv_change))
+        return initial_step_curv_change.value
+    def set_initial_step_curv_change(self, initial_step_curv_change):
         raise(NotImplementedError('Module attributes with PARAMETER status cannot be set.'))
-    initial_step_var_change = property(get_initial_step_var_change, set_initial_step_var_change)
+    initial_step_curv_change = property(get_initial_step_curv_change, set_initial_step_curv_change)
 
     # Declare 'step_growth_rate'
     def get_step_growth_rate(self):
@@ -455,6 +553,29 @@ class plrm:
 
     
     # ----------------------------------------------
+    # Wrapper for the Fortran subroutine RANDOM_UNIT_VECTORS
+    
+    def random_unit_vectors(self, column_vectors):
+        '''! Generate randomly distributed vectors on the N-sphere.'''
+        
+        # Setting up "column_vectors"
+        if ((not issubclass(type(column_vectors), numpy.ndarray)) or
+            (not numpy.asarray(column_vectors).flags.f_contiguous) or
+            (not (column_vectors.dtype == numpy.dtype(ctypes.c_float)))):
+            import warnings
+            warnings.warn("The provided argument 'column_vectors' was not an f_contiguous NumPy array of type 'ctypes.c_float' (or equivalent). Automatically converting (probably creating a full copy).")
+            column_vectors = numpy.asarray(column_vectors, dtype=ctypes.c_float, order='F')
+        column_vectors_dim_1 = ctypes.c_int(column_vectors.shape[0])
+        column_vectors_dim_2 = ctypes.c_int(column_vectors.shape[1])
+    
+        # Call C-accessible Fortran wrapper.
+        clib.c_random_unit_vectors(ctypes.byref(column_vectors_dim_1), ctypes.byref(column_vectors_dim_2), ctypes.c_void_p(column_vectors.ctypes.data))
+    
+        # Return final results, 'INTENT(OUT)' arguments only.
+        return column_vectors
+
+    
+    # ----------------------------------------------
     # Wrapper for the Fortran subroutine EVALUATE
     
     def evaluate(self, inputs, outputs):
@@ -490,8 +611,9 @@ class plrm:
     # ----------------------------------------------
     # Wrapper for the Fortran subroutine MINIMIZE_MSE
     
-    def minimize_mse(self, x, y, steps, batch_size=None, num_threads=None, step_size=None, keep_best=None, record=None):
-        '''! Fit input / output pairs by minimizing mean squared error.'''
+    def minimize_mse(self, x, y, steps, batch_size=None, num_threads=None, step_size=None, keep_best=None, record=None, logs=None):
+        '''! Fit input / output pairs by minimizing mean squared error.
+! Define an interface for the "LOG_STATUS" function.'''
         
         # Setting up "x"
         if ((not issubclass(type(x), numpy.ndarray)) or
@@ -564,19 +686,90 @@ class plrm:
             record_dim_1 = ctypes.c_int(record.shape[0])
         else:
             record_dim_1 = ctypes.c_int()
+        
+        # Setting up "logs"
+        logs_present = ctypes.c_bool(True)
+        if (logs is None):
+            logs_present = ctypes.c_bool(False)
+            logs = numpy.zeros(shape=(1,1,1,1), dtype=ctypes.c_float, order='F')
+        elif (type(logs) == bool) and (logs):
+            logs = numpy.zeros(shape=(8, self.mds, self.mns, steps), dtype=ctypes.c_float, order='F')
+        elif ((not issubclass(type(logs), numpy.ndarray)) or
+              (not numpy.asarray(logs).flags.f_contiguous) or
+              (not (logs.dtype == numpy.dtype(ctypes.c_float)))):
+            import warnings
+            warnings.warn("The provided argument 'logs' was not an f_contiguous NumPy array of type 'ctypes.c_float' (or equivalent). Automatically converting (probably creating a full copy).")
+            logs = numpy.asarray(logs, dtype=ctypes.c_float, order='F')
+        if (logs_present):
+            logs_dim_1 = ctypes.c_int(logs.shape[0])
+            logs_dim_2 = ctypes.c_int(logs.shape[1])
+            logs_dim_3 = ctypes.c_int(logs.shape[2])
+            logs_dim_4 = ctypes.c_int(logs.shape[3])
+        else:
+            logs_dim_1 = ctypes.c_int()
+            logs_dim_2 = ctypes.c_int()
+            logs_dim_3 = ctypes.c_int()
+            logs_dim_4 = ctypes.c_int()
     
         # Call C-accessible Fortran wrapper.
-        clib.c_minimize_mse(ctypes.byref(x_dim_1), ctypes.byref(x_dim_2), ctypes.c_void_p(x.ctypes.data), ctypes.byref(y_dim_1), ctypes.byref(y_dim_2), ctypes.c_void_p(y.ctypes.data), ctypes.byref(steps), ctypes.byref(batch_size_present), ctypes.byref(batch_size), ctypes.byref(num_threads_present), ctypes.byref(num_threads), ctypes.byref(step_size_present), ctypes.byref(step_size), ctypes.byref(keep_best_present), ctypes.byref(keep_best), ctypes.byref(mean_squared_error), ctypes.byref(record_present), ctypes.byref(record_dim_1), ctypes.c_void_p(record.ctypes.data))
+        clib.c_minimize_mse(ctypes.byref(x_dim_1), ctypes.byref(x_dim_2), ctypes.c_void_p(x.ctypes.data), ctypes.byref(y_dim_1), ctypes.byref(y_dim_2), ctypes.c_void_p(y.ctypes.data), ctypes.byref(steps), ctypes.byref(batch_size_present), ctypes.byref(batch_size), ctypes.byref(num_threads_present), ctypes.byref(num_threads), ctypes.byref(step_size_present), ctypes.byref(step_size), ctypes.byref(keep_best_present), ctypes.byref(keep_best), ctypes.byref(mean_squared_error), ctypes.byref(record_present), ctypes.byref(record_dim_1), ctypes.c_void_p(record.ctypes.data), ctypes.byref(logs_present), ctypes.byref(logs_dim_1), ctypes.byref(logs_dim_2), ctypes.byref(logs_dim_3), ctypes.byref(logs_dim_4), ctypes.c_void_p(logs.ctypes.data))
     
         # Return final results, 'INTENT(OUT)' arguments only.
-        return mean_squared_error.value, (record if record_present else None)
+        return mean_squared_error.value, (record if record_present else None), (logs if logs_present else None)
 
 plrm = plrm()
 
 
 class vis_plrm:
     '''! Use this module to visualize the values and error gradients within
-!  the PLRM model for different parameter types.'''
+!  the PLRM model for different variable types.'''
+
+    
+    # ----------------------------------------------
+    # Wrapper for the Fortran subroutine LOG_STATUS
+    
+    def log_status(self, x, y, log_vals=None):
+        '''! Given all vectors before and after the gradient update, generate
+!  the LOG info to record for this given step.'''
+        
+        # Setting up "x"
+        if ((not issubclass(type(x), numpy.ndarray)) or
+            (not numpy.asarray(x).flags.f_contiguous) or
+            (not (x.dtype == numpy.dtype(ctypes.c_float)))):
+            import warnings
+            warnings.warn("The provided argument 'x' was not an f_contiguous NumPy array of type 'ctypes.c_float' (or equivalent). Automatically converting (probably creating a full copy).")
+            x = numpy.asarray(x, dtype=ctypes.c_float, order='F')
+        x_dim_1 = ctypes.c_int(x.shape[0])
+        x_dim_2 = ctypes.c_int(x.shape[1])
+        
+        # Setting up "y"
+        if ((not issubclass(type(y), numpy.ndarray)) or
+            (not numpy.asarray(y).flags.f_contiguous) or
+            (not (y.dtype == numpy.dtype(ctypes.c_float)))):
+            import warnings
+            warnings.warn("The provided argument 'y' was not an f_contiguous NumPy array of type 'ctypes.c_float' (or equivalent). Automatically converting (probably creating a full copy).")
+            y = numpy.asarray(y, dtype=ctypes.c_float, order='F')
+        y_dim_1 = ctypes.c_int(y.shape[0])
+        y_dim_2 = ctypes.c_int(y.shape[1])
+        
+        # Setting up "log_vals"
+        if (log_vals is None):
+            log_vals = numpy.zeros(shape=(8, mds, mns), dtype=ctypes.c_float, order='F')
+        elif ((not issubclass(type(log_vals), numpy.ndarray)) or
+              (not numpy.asarray(log_vals).flags.f_contiguous) or
+              (not (log_vals.dtype == numpy.dtype(ctypes.c_float)))):
+            import warnings
+            warnings.warn("The provided argument 'log_vals' was not an f_contiguous NumPy array of type 'ctypes.c_float' (or equivalent). Automatically converting (probably creating a full copy).")
+            log_vals = numpy.asarray(log_vals, dtype=ctypes.c_float, order='F')
+        log_vals_dim_1 = ctypes.c_int(log_vals.shape[0])
+        log_vals_dim_2 = ctypes.c_int(log_vals.shape[1])
+        log_vals_dim_3 = ctypes.c_int(log_vals.shape[2])
+    
+        # Call C-accessible Fortran wrapper.
+        clib.c_log_status(ctypes.byref(x_dim_1), ctypes.byref(x_dim_2), ctypes.c_void_p(x.ctypes.data), ctypes.byref(y_dim_1), ctypes.byref(y_dim_2), ctypes.c_void_p(y.ctypes.data), ctypes.byref(log_vals_dim_1), ctypes.byref(log_vals_dim_2), ctypes.byref(log_vals_dim_3), ctypes.c_void_p(log_vals.ctypes.data))
+    
+        # Return final results, 'INTENT(OUT)' arguments only.
+        return log_vals
 
     
     # ----------------------------------------------
@@ -584,8 +777,7 @@ class vis_plrm:
     
     def disable_and_compute_mse(self, layer, position, inputs, outputs):
         '''! Disable the 'layer, position' node (1 indexed) in the network and
-!  compute the mean squared error "MSE". Use layer=-1 to compute
-!  MSE without disabling any of the internal representations.'''
+!  compute the mean squared error "MSE".'''
         
         # Setting up "layer"
         if (type(layer) is not ctypes.c_int): layer = ctypes.c_int(layer)
@@ -618,6 +810,42 @@ class vis_plrm:
     
         # Call C-accessible Fortran wrapper.
         clib.c_disable_and_compute_mse(ctypes.byref(layer), ctypes.byref(position), ctypes.byref(inputs_dim_1), ctypes.byref(inputs_dim_2), ctypes.c_void_p(inputs.ctypes.data), ctypes.byref(outputs_dim_1), ctypes.byref(outputs_dim_2), ctypes.c_void_p(outputs.ctypes.data), ctypes.byref(mse))
+    
+        # Return final results, 'INTENT(OUT)' arguments only.
+        return mse.value
+
+    
+    # ----------------------------------------------
+    # Wrapper for the Fortran subroutine COMPUTE_MSE
+    
+    def compute_mse(self, inputs, outputs):
+        '''! Compute the mean squared error (MSE) of the model given inputs and true outputs.'''
+        
+        # Setting up "inputs"
+        if ((not issubclass(type(inputs), numpy.ndarray)) or
+            (not numpy.asarray(inputs).flags.f_contiguous) or
+            (not (inputs.dtype == numpy.dtype(ctypes.c_float)))):
+            import warnings
+            warnings.warn("The provided argument 'inputs' was not an f_contiguous NumPy array of type 'ctypes.c_float' (or equivalent). Automatically converting (probably creating a full copy).")
+            inputs = numpy.asarray(inputs, dtype=ctypes.c_float, order='F')
+        inputs_dim_1 = ctypes.c_int(inputs.shape[0])
+        inputs_dim_2 = ctypes.c_int(inputs.shape[1])
+        
+        # Setting up "outputs"
+        if ((not issubclass(type(outputs), numpy.ndarray)) or
+            (not numpy.asarray(outputs).flags.f_contiguous) or
+            (not (outputs.dtype == numpy.dtype(ctypes.c_float)))):
+            import warnings
+            warnings.warn("The provided argument 'outputs' was not an f_contiguous NumPy array of type 'ctypes.c_float' (or equivalent). Automatically converting (probably creating a full copy).")
+            outputs = numpy.asarray(outputs, dtype=ctypes.c_float, order='F')
+        outputs_dim_1 = ctypes.c_int(outputs.shape[0])
+        outputs_dim_2 = ctypes.c_int(outputs.shape[1])
+        
+        # Setting up "mse"
+        mse = ctypes.c_float()
+    
+        # Call C-accessible Fortran wrapper.
+        clib.c_compute_mse(ctypes.byref(inputs_dim_1), ctypes.byref(inputs_dim_2), ctypes.c_void_p(inputs.ctypes.data), ctypes.byref(outputs_dim_1), ctypes.byref(outputs_dim_2), ctypes.c_void_p(outputs.ctypes.data), ctypes.byref(mse))
     
         # Return final results, 'INTENT(OUT)' arguments only.
         return mse.value
