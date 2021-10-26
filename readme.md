@@ -15,7 +15,7 @@ modules.
   Latest stable and tested release available by:
 
 ```bash
-pip install https://github.com/tchlux/util/archive/1.0.17.zip
+pip install https://github.com/tchlux/util/archive/1.0.18.zip
 ```
 
   Current cutting edge, (possibly unstable) code available by:
