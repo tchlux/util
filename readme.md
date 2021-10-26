@@ -27,7 +27,7 @@ pip install git+https://github.com/tchlux/util.git
   Include in a [`requirements.txt`](https://pip.pypa.io/en/stable/user_guide/#requirements-files) file as:
 
 ```
-util@https://github.com/tchlux/util/archive/1.0.17.zip
+util@https://github.com/tchlux/util/archive/1.0.18.zip
 ```
 
 ## DOCUMENTATION
