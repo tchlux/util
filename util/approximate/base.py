@@ -72,10 +72,11 @@ class Approximator:
                     np.argmax(category_ratio(guess)) ])
             response = np.array(class_response)
         # Reduce to one response value if that's what was trained.
-        if (self._response_dim == 1) and (len(response.shape) > 1):
+        if (self._response_dim == 1) and (len(response.shape) > 1) and (response.shape[1] == 1):
             response = response[:,0]
         # Reduce to one approximation point if that's what was provided.
-        if single_response:         response = response[0]
+        if single_response:
+            response = response[0]
         # Return the response
         return response
 

@@ -1,15 +1,42 @@
 ! TODO:
+! 
+! - Plot each internal activation with gradient information to see how
+!   well the pieces of the network are approximating the data.
+! 
+! - Propogate MSE contribution back from last layer and compare with
+!   the actual MSE contribution of the preceding layers.
+! 
+! - Implement better gradient estimate for shift term in linear
+!   functions that points towards a "global minimum".
+! -- Solve quadratic programming problem that fits two lines that
+!    intersect at a desired position.
+! 
+! - Implement a well-spaced data subselection scheme that incorporates
+!   gradient information into measure of "well spaced".
+! 
+! - Implement contextual approximation by stacking robust PLRM models
+!   in a specific arrangement. These models must have globally
+!   effective search strategies to avoid the pitfalls of difficult
+!   weight initialization and data normalization.
+! 
+! - Contextual approximation parameters:
+! -- number of tokens (integer MNT)
+! -- token size (integer MDT)
+! -- indices from input vector for each token's components (matrix of integer, MDT by MNT)
+! -- size of vector space representation for "learnable token location" (integer) added onto each input "token" (MTS) model token space.
+! -- shape of nonlinear "input token transformation" (MDT+MTS, IMNS, IMDS, TMDO)
+! -- shape of nonlinear "context approximation" (2 TMDO, CMNS, CMDS, CMDO)
+! -- shape of nonlinear "output token transformation" (CMDO, OMNS, OMDS, TMDO)
+! -- number of sequential stacks of the above (context and output transformation layers)
+! -- size of predicted output vector MDO (linearly reduce from last OMDO to MDO)
+! 
+! 
 ! - Validation-based training and greedy saving / model selection.
 ! - Well-spaced validation data (multiply distances in input and output).
 ! - batch reduction for accelerated training (well spaced in different layer values and large gradients)
 ! - Support for vectorizing integer valued inputs (initially regular simplex, trainable).
 ! - Measure pairwise nearness between internal vectors based on point values.
 ! - Setting that produces convergence status on timed interval (3 seconds?).
-! - Training support for vector of assigned neighbors for each point.
-! - Support for huge input spaces (1M+ components), automatically
-!   construct vectors that select a subset of input components to
-!   process.
-! - Support for huge number of input points (find well spaced sample, reduce).
 ! 
 ! - Get stats on the internal values within the network during training.
 !   - shift values
@@ -24,15 +51,14 @@
 !   discontinuity) at each representation.
 ! - Add forcing function that pushes vectors away from each other based
 !   on how similar their outputs at all data points are?
+! 
+! - Training support for vector of assigned neighbors for each point.
+! - Support for huge input spaces (1M+ components), automatically
+!   construct vectors that select a subset of input components to
+!   process.
+! - Support for huge number of input points (find well spaced sample, reduce).
 ! - Pick a point (with probability corresponding to ratio of total error)
 !   as the target for a new vector, pick the shift that captures it.
-! 
-! - Keep the length of every internal vector fixed at 1.
-! - Orthogonalize all internal vectors at every step.
-! - Substitute least value vector at each layer with one that captures
-!   points with the current largest error (regress error given the
-!   representation at that level).
-! 
 ! - categorical outputs with trainable vector representations
 ! - Save model and load model (during training).
 ! - Train only the output, internal, or input layers.
@@ -93,6 +119,8 @@ MODULE PLRM
   REAL(KIND=RT), DIMENSION(:,:,:), ALLOCATABLE :: INTERNAL_VECS  ! MDS, MDS, MNS-1
   REAL(KIND=RT), DIMENSION(:,:),   ALLOCATABLE :: INTERNAL_SHIFT ! MDS, MNS-1
   REAL(KIND=RT), DIMENSION(:,:),   ALLOCATABLE :: INTERNAL_FLEX  ! MDS, MNS-1
+  ! REAL(KIND=RT), DIMENSION(:,:),   ALLOCATABLE :: INTERNAL_MAX   ! MDS, MNS-1
+  ! REAL(KIND=RT), DIMENSION(:,:),   ALLOCATABLE :: INTERNAL_MIN   ! MDS, MNS-1
   REAL(KIND=RT), DIMENSION(:,:),   ALLOCATABLE :: OUTPUT_VECS    ! MDS, MDO
   REAL(KIND=RT), DIMENSION(:),     ALLOCATABLE :: OUTPUT_SHIFT   ! MDO
 
@@ -124,6 +152,8 @@ CONTAINS
     IF (ALLOCATED(INTERNAL_VECS))  DEALLOCATE(INTERNAL_VECS)
     IF (ALLOCATED(INTERNAL_SHIFT)) DEALLOCATE(INTERNAL_SHIFT)
     IF (ALLOCATED(INTERNAL_FLEX))  DEALLOCATE(INTERNAL_FLEX)
+    ! IF (ALLOCATED(INTERNAL_MAX))   DEALLOCATE(INTERNAL_MAX)
+    ! IF (ALLOCATED(INTERNAL_MIN))   DEALLOCATE(INTERNAL_MIN)
     IF (ALLOCATED(OUTPUT_VECS))    DEALLOCATE(OUTPUT_VECS)
     IF (ALLOCATED(OUTPUT_SHIFT))   DEALLOCATE(OUTPUT_SHIFT)
     ! Allocate space for all model variables.
@@ -134,6 +164,8 @@ CONTAINS
          INTERNAL_VECS(DS, DS, NS-1), &
          INTERNAL_SHIFT(DS, NS-1), &
          INTERNAL_FLEX(DS, NS-1), &
+         ! INTERNAL_MAX(DS, NS-1), &
+         ! INTERNAL_MIN(DS, NS-1), &
          OUTPUT_VECS(DS, DO), &
          OUTPUT_SHIFT(DO) &
          )
@@ -182,15 +214,16 @@ CONTAINS
   ! Generate randomly distributed vectors on the N-sphere.
   SUBROUTINE RANDOM_UNIT_VECTORS(COLUMN_VECTORS)
     REAL(KIND=RT), INTENT(OUT), DIMENSION(:,:) :: COLUMN_VECTORS
+    REAL(KIND=RT), DIMENSION(SIZE(COLUMN_VECTORS,1), SIZE(COLUMN_VECTORS,2)) :: TEMP_VECS
+    REAL(KIND=RT), PARAMETER :: PI = 3.141592653589793
     INTEGER :: I 
     ! Generate random numbers in the range [0,1].
     CALL RANDOM_NUMBER(COLUMN_VECTORS(:,:))
-    ! Map those random numbers to the range [-1,1].
-    COLUMN_VECTORS(:,:) = 2.0_RT * COLUMN_VECTORS(:,:) - 1.0_RT
+    CALL RANDOM_NUMBER(TEMP_VECS(:,:))
+    ! Map the random uniform numbers to a normal distribution.
+    COLUMN_VECTORS(:,:) = SQRT(-LOG(COLUMN_VECTORS(:,:))) * COS(PI * TEMP_VECS(:,:))
     ! Make the vectors uniformly distributed on the unit ball (for dimension > 1).
     IF (SIZE(COLUMN_VECTORS,1) .GT. 1) THEN
-       ! Compute the inverse hyperbolic tangent of all values.
-       COLUMN_VECTORS(:,:) = ATANH(COLUMN_VECTORS(:,:))
        ! Normalize all vectors to have unit length.
        DO I = 1, SIZE(COLUMN_VECTORS,2)
           COLUMN_VECTORS(:,I) = COLUMN_VECTORS(:,I) / NORM2(COLUMN_VECTORS(:,I))
@@ -654,22 +687,14 @@ CONTAINS
        PREV_MSE = MEAN_SQUARED_ERROR
        
        ! Update the steps for all of the model variables.
-       CALL COMPUTE_STEP(SIZE(INPUT_VECS(:,:)),      INPUT_VECS(:,:),      &
-            V1_GRAD(:,:),   V1_MEAN(:,:),   V1_CURV(:,:))
-       CALL COMPUTE_STEP(SIZE(INPUT_SHIFT(:)),       INPUT_SHIFT(:),       &
-            S1_GRAD(:),     S1_MEAN(:),     S1_CURV(:))
-       CALL COMPUTE_STEP(SIZE(INPUT_FLEX(:)),        INPUT_FLEX(:),        &
-            F1_GRAD(:),     F1_MEAN(:),     F1_CURV(:))
-       CALL COMPUTE_STEP(SIZE(INTERNAL_VECS(:,:,:)), INTERNAL_VECS(:,:,:), &
-            V2_GRAD(:,:,:), V2_MEAN(:,:,:), V2_CURV(:,:,:))
-       CALL COMPUTE_STEP(SIZE(INTERNAL_SHIFT(:,:)),  INTERNAL_SHIFT(:,:),  &
-            S2_GRAD(:,:),   S2_MEAN(:,:),   S2_CURV(:,:))
-       CALL COMPUTE_STEP(SIZE(INTERNAL_FLEX(:,:)),   INTERNAL_FLEX(:,:),   &
-            F2_GRAD(:,:),   F2_MEAN(:,:),   F2_CURV(:,:))
-       CALL COMPUTE_STEP(SIZE(OUTPUT_VECS(:,:)),     OUTPUT_VECS(:,:),     &
-            V3_GRAD(:,:),   V3_MEAN(:,:),   V3_CURV(:,:))
-       CALL COMPUTE_STEP(SIZE(OUTPUT_SHIFT(:)),      OUTPUT_SHIFT(:),      &
-            S3_GRAD(:),     S3_MEAN(:),     S3_CURV(:))
+       CALL COMPUTE_STEP(SIZE(INPUT_VECS(:,:)),      INPUT_VECS(:,:),      V1_GRAD(:,:),   V1_MEAN(:,:),   V1_CURV(:,:))
+       CALL COMPUTE_STEP(SIZE(INPUT_SHIFT(:)),       INPUT_SHIFT(:),       S1_GRAD(:),     S1_MEAN(:),     S1_CURV(:))
+       CALL COMPUTE_STEP(SIZE(INPUT_FLEX(:)),        INPUT_FLEX(:),        F1_GRAD(:),     F1_MEAN(:),     F1_CURV(:))
+       CALL COMPUTE_STEP(SIZE(INTERNAL_VECS(:,:,:)), INTERNAL_VECS(:,:,:), V2_GRAD(:,:,:), V2_MEAN(:,:,:), V2_CURV(:,:,:))
+       CALL COMPUTE_STEP(SIZE(INTERNAL_SHIFT(:,:)),  INTERNAL_SHIFT(:,:),  S2_GRAD(:,:),   S2_MEAN(:,:),   S2_CURV(:,:))
+       CALL COMPUTE_STEP(SIZE(INTERNAL_FLEX(:,:)),   INTERNAL_FLEX(:,:),   F2_GRAD(:,:),   F2_MEAN(:,:),   F2_CURV(:,:))
+       CALL COMPUTE_STEP(SIZE(OUTPUT_VECS(:,:)),     OUTPUT_VECS(:,:),     V3_GRAD(:,:),   V3_MEAN(:,:),   V3_CURV(:,:))
+       CALL COMPUTE_STEP(SIZE(OUTPUT_SHIFT(:)),      OUTPUT_SHIFT(:),      S3_GRAD(:),     S3_MEAN(:),     S3_CURV(:))
 
        ! Maintain a constant max-norm across the magnitue of input and internal vectors.
        SCALAR = SQRT(MAXVAL(SUM(INPUT_VECS(:,:)**2, 1)))

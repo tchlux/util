@@ -42,7 +42,7 @@ class PLRM(Approximator):
         mse, record, logs = self.plrm.minimize_mse(x.T, y.T, steps=steps,
                                                    num_threads=num_threads,
                                                    record=self.record,
-                                                   logs=self.logs,
+                                                   # logs=self.logs,
                                                    keep_best=False)
         print()
         print("MSE?")
@@ -55,15 +55,20 @@ class PLRM(Approximator):
             print(f"Something went wrong with the model..\n  {relative_error}\n  {max_allowed_error}")
 
 
-    def _predict(self, x):
+    def _predict(self, x, embed=False):
         from numpy import zeros, asarray
         # Evaluate the model at all data.
         x = asarray((x - self.x_mean) / self.x_stdev, dtype="float32", order='C')
-        y = zeros((x.shape[0], self.y_mean.shape[0]), dtype="float32", order='C')
+        if embed:
+            y = zeros((x.shape[0], self.plrm.mds), dtype="float32", order='C')
+            print(y.shape)
+        else:
+            y = zeros((x.shape[0], self.y_mean.shape[0]), dtype="float32", order='C')
         # Call the unerlying library.
         self.plrm.evaluate(x.T, y.T)
         # Denormalize the output values and return them.
-        y = (y * self.y_stdev) + self.y_mean
+        if (not embed):
+            y = (y * self.y_stdev) + self.y_mean
         return y
 
     def val_grad(self, layer, position, x, y):
@@ -114,8 +119,9 @@ if __name__ == "__main__":
     for layer in range(1, m.plrm.mns+1):
         print()
         print(f"layer {layer:2d}", layer)
-        p3 = Plot(f"Layer {layer}")
-        p4 = Plot(f"Layer {layer}")
+        p3 = Plot(f"Layer {layer}") # values WRT to input
+        p4 = Plot(f"Layer {layer}") # global contributions
+        p5 = Plot(f"Layer {layer} 1D slices") # 1D slices of fits
         # Get the previous layer to this component.
         if (layer == 1):
             prev_layer = m.plrm.input_vecs
@@ -158,6 +164,7 @@ if __name__ == "__main__":
                         vectorized=True, plot_points=5000,
                         mode="markers", marker_size=3,
                         marker_line_width=1, group=(layer,index))
+
             # Add all the log values.
             p4.add(f"{position:2d} MSE contribution",  steps, m.logs[0,position-1,layer-1,:], color=1, group=position, mode="lines", show_in_legend=True)
             # p4.add(f"{position:2d} Grad step MSE",     steps, m.logs[1,position-1,layer-1,:], color=2, group=position, mode="lines", show_in_legend=(index==position_indices[0]))
@@ -167,6 +174,12 @@ if __name__ == "__main__":
             p4.add(f"{position:2d} Angle change",      steps, cumulative_angle_change,        color=6, group=position, mode="lines", show_in_legend=(index==position_indices[0]))
             # p4.add(f"{position:2d} Flexure",           steps, m.logs[5,position-1,layer-1,:], color=6, group=position, mode="lines", show_in_legend=(index==position_indices[0]))
             # p4.add(f"{position:2d} Shift",             steps, m.logs[6,position-1,layer-1,:], color=7, group=position, mode="lines", show_in_legend=(index==position_indices[0]))
+
+            vals, grads = m.val_grad(layer, position, x, y[:,None])
+            print(vals.shape)
+            print(grads.shape)
+            exit()
+            p5.add()
 
             # # Add the gradient plot for this node.
             # def df(x):
@@ -197,147 +210,15 @@ if __name__ == "__main__":
 #   gfortran -fPIC -shared -I/opt/intel/oneapi/intelpython/latest/include -L/opt/intel/oneapi/intelpython/latest/lib -liomp5 -lmkl_rt -o plrm.so plrm.o plrm_c_wrapper.o"
 
 
-# The operator should be specified be giving arrays of indices from
-# the input that are taken as a single "context". Then all pairs of
-# input sets are ranked for value and new vector direction.
+# Should be able to reduce a large set of input tokens down to those
+# that are "most relevant" to a given prediction task. That ranking
+# process should be achievable at very large scale (and allow for the
+# idea of "focus" shifting around to relevant parts of the input space
+# over sequential predictions).
 # 
-# Then there are some additional parameters.
-#  - token size (integer)
-#  - indices from input vector for each token's components (matrix of integer)
-#  - integer number of "values" (different context estimates) for context operator
-#  - number of sequential representations (layers)
-#  - size of vector space representation for "learnable token location" (integer)
-#  - 
-#  - 
-# 
-# Something involving the reduction from multiple contextual
-# approximation vectors down to a single vector. Will have to consider
-# what circumstances make this more appropriate, versus feeding an
-# increasingly large number of contextual approximations into a large
-# PLRM model.
-# 
-# When a "context function" is learned, what pattern is it really
-# capturing?
-#
-#   What vector should represent this information given this point
-#   in the input space (pair of tokens)?
-# 
-# In the end, what function is approximated?
-# 
-#   Given this set of "representation vectors", predict the output.
-# 
-# What does it mean to have more vectors representing any given token?
-#
-#   Redundancy, diversity of represented information, should only
-#   provide an improvement if the given representation is locked into
-#   some useless directions (or equivalently, locked out of good
-#   directions).
-# 
-# Does the internal "token space" have to be the same size as the
-# input token space?
-#
-#   No, those two can be entirely different. It should also be
-#   possible to take a set of tokens and reduce them to a smaller set
-#   of tokens (same idea as principal component analysis, but for
-#   capturing unordered collections of information). In this case,
-#   each internal token should have it's own "value" component that
-#   determines the weight applied to different vectors. An affine
-#   combination of the inputs should suffice for combining arbitrary
-#   numbers of elements.
-# 
-# Could the "internal token space" be expanded and selectively
-# activated to give behavior similar to "concepts" in the human mind?
-#
-#   A selective activation algorithm would probably do something like
-#   nearest neighbor to decide what set of tokens to activate. Or
-#   perhaps it'd be easier to simply learn the distance measurement
-#   between concepts (fixed maximum, sparse weight matrix, rotate in
-#   new likely candidates and rotate out unused canddiates somehow).
-# 
-# Given the above, can "new concepts" be created easily?
-#
-#   A new concept could be created by taking the average of the vector
-#   representations of some collection of data points in the last
-#   layer before the one that approximates the values.
-# 
-# Do you need a number of values proportional to the number of
-# "concepts" (or internal tokens)? Does that mean that the size of the
-# internal representation space needs to be very large?
-# 
-#   It's possible to have a single dense space, and then use as many
-#   vectors as it takes to define a simplex in that dense space to
-#   represent a single value. That solution sounds more difficult to
-#   reliably converge on though.
-#
-# Can you estimate the "value of a node" in the PLRM by only looking
-# at the magnitude of its contribution to the representation in the
-# immediately proceeding layer of the model?
-#
-#   This is an experiment that needs to be done. Intuitively, the
-#   value of a node will correspond to the weighted error it
-#   introduces in the next layer (with the weights being the known
-#   values of the next layer).
-# 
-# Does it make sense to stack the "context" operator the same way that
-# it makes sense to stack the nonlinearities in a regular PLRM?
-#
-#   The reason it makes sense to stack the operators in the PLRM is
-#   because it increases the approximation fidelity while also
-#   reducing the number of local minima in the squared error function
-#   and replacing them saddle points.
-#
-#   Is this true?
-#
-#     It is possible that the layers just makes initialization of the
-#     values easier, or the distance from initialization to the
-#     solution shorter. It seems like both play a part. Ah, the
-#     distance between initialization and an arbitrary solution is
-#     closer. That might be proveable, because if a space was biased
-#     in a few directions, aiming one early layer at those few
-#     directions would make the remaining "well spaced" layers create
-#     a well spaced approximation over that subspace. THAT IS
-#     BRILLIANT, the proof only involves picking a direction that is
-#     biased and showing how the definition of well spaced changes.
-#     Picking the nonlinearity only changes the behavior of
-#     extrapoltion, and that's the heuristic that people are really
-#     using to decide what architecture is better.
-#
-#   So what does this mean for the "context approximation"?
-# 
-#     It depends entirely on the initialization function. For
-#     contextual updates it seems to make more sense for the initial
-#     function to be an identity function (when two tokens are the
-#     same, they produce the same output and a value of 1).
-#
-#   Can I produce a two dimensional example that nicely captures the
-#   "context function"? What about who wins a game of tic tac toe?
-#   Nah, what about, "what shape is drawn by this sequence of points?"
-#   
-#     That's a good function, because it's one where the value doesn't
-#     matter except in the relative sense. There's the concept of
-#     rotational and scalar invariance. A function that can take
-#     advantage of those invariances will generalize better, because
-#     it will approximate the underlying function more accurately.
-#     It is easy to define a data transformation that makes an
-#     accurate approximator trivial, and I can measure how capable the
-#     algorithm is of converging on that optimal data transformation.
-#     It is also easy to increase or decrease the fidelity of the
-#     measurement and discuss how well the algorithm can adapt to
-#     incrased fidelity.
-#
-#   The two concepts I see are the "relative context function" and the
-#   "fixed position context function". The fixed position contextual
-#   function can have two obvious forms, positions that are known
-#   beforehand and positions that are unknown beforehand. The relative
-#   context function doesn't have a concept of distance between
-#   specific tokens, they are all treated the same way. The positional
-#   context function incorporates the concept of distance between
-#   tokens into the contextual operator. The reason the same function
-#   is used for different pairs of objects, is it should be presumed
-#   that the underlying operator is actually a function of the
-#   difference between things.
-#
-# Proving the layering making the solution closer requires I have some
-# deterministic initialization for the model that ensures some level
-# of "well-spacedness". I also need to restrict the class of
-# models.
+# A "well spaced" set of tokens have varying types of overlap, but
+# also have varying input spatial patterns too: some clustering
+# locally, some covering broad ranges globally, ...
+
+# Need to use real normal distribution instead of ATANH, that is not
+#   radially symmetric (it is more dense on the corners still.
