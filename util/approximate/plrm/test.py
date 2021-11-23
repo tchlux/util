@@ -1,11 +1,12 @@
 
-import os
-if os.path.exists("plrm/plrm.so"):
-    os.remove("plrm/plrm.so")
-from plrm import plrm
+# import os
+# if os.path.exists("plrm/plrm.so"):
+#     os.remove("plrm/plrm.so")
+# from plrm import plrm
 
-# import fmodpy
-# plrm = fmodpy.fimport("plrm.f90", blas=True, omp=True, verbose=False).plrm
+
+import fmodpy
+plrm = fmodpy.fimport("stable_relu.f90", blas=True, omp=True, verbose=False).plrm
 
 
 if __name__ == "__main__":
@@ -14,12 +15,12 @@ if __name__ == "__main__":
     from util.plot import Plot
 
     random.seed(0)
-    N = 8
-    # N = 2**14
+    # N = 8
+    N = 2**14
     # N = 2**15
     # x = linspace(.001, 2*pi-.001, N)[:,None]
-    D = 1
-    # D = 2**9
+    # D = 1
+    D = 2**9
     # D = 2**10
     # D = 2**12
     x = 2 * pi * random.random(size=(N, D))
@@ -45,7 +46,7 @@ if __name__ == "__main__":
     do = y.shape[-1]
     ds = 64 # 8
     ns = 8 # 4
-    steps = 1000
+    steps = 100
     steps_per_plot = 10
 
     print("creating model..")
