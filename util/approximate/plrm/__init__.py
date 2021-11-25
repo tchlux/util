@@ -1,5 +1,9 @@
 from util.approximate.base import Approximator
 
+# SOURCE_FILE = "plrm.f90"
+# SOURCE_FILE = "stable_flexure.f90"
+SOURCE_FILE = "stable_relu.f90"
+
 class PLRM(Approximator):
 
     def __init__(self):
@@ -8,9 +12,9 @@ class PLRM(Approximator):
         import os
         import fmodpy
         this_dir = os.path.dirname(os.path.abspath(__file__))
-        source_code = os.path.join(this_dir, "stable_relu.f90")
+        source_code = os.path.join(this_dir, SOURCE_FILE)
         plrm = fmodpy.fimport(source_code, blas=True, omp=True, wrap=True,
-                              verbose=True, output_dir=this_dir)
+                              verbose=False, output_dir=this_dir)
         self.plrm = plrm.plrm
 
     def _fit(self, x, y, ds=32, ns=8, steps=1000, seed=None):
@@ -46,7 +50,6 @@ class PLRM(Approximator):
         x = asarray((x - self.x_mean) / self.x_stdev, dtype="float32", order='C')
         if embed:
             y = zeros((x.shape[0], self.plrm.mds), dtype="float32", order='C')
-            print(y.shape)
         else:
             y = zeros((x.shape[0], self.y_mean.shape[0]), dtype="float32", order='C')
         # Call the unerlying library.
