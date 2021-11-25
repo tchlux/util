@@ -301,6 +301,7 @@ def pdf_fit(data, smooth=.05, n=1000, **cdf_fit_kwargs):
             # Handle the vector valued case.
             len(x)                
             # Return array of results.
+            import numpy as np
             return np.array([pdf_func(v) for v in x])
         except TypeError:
             # Return the PDF function evaluation.

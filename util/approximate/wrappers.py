@@ -118,7 +118,7 @@ def condition(approximator, metric=abs_diff, method=DEFAULT_CONDITIONER,
               dim=MAX_DIM, samples=MAX_SAMPLES, scale=DEFAULT_COND_SCALE, 
               display=False, seed=None, **cond_kwargs):
     if method == "PLR":
-        from util.approximate.plrm.plrm import plrm
+        from util.approximate import PLRM
         if (seed is not None):
             num_threads = 2
     elif method == "PCA":
@@ -139,24 +139,10 @@ def condition(approximator, metric=abs_diff, method=DEFAULT_CONDITIONER,
                 if (len(y.shape) == 1): y = y[:,None]
                 self._num_comps = num_comps
                 # Use a trained piecewise linear regressor to condition.
-                self._x_mean = x.mean(axis=0)
-                self._x_stdev = x.std(axis=0)
-                # Normalize the X and Y data for this model.
-                x = np.asarray((x - self._x_mean) / self._x_stdev, dtype="float32", order="C")
-                y_mean = y.mean(axis=0)
-                y_stdev = y.std(axis=0)
-                y = np.asarray((y - y_mean) / y_stdev, dtype="float32")
-                # Fit neural network embedder.
-                di = x.shape[1]
-                do = y.shape[1]
-                ds = num_comps
-                ns = layers
-                plrm.new_model(di, ds, ns, do)
-                plrm.init_model(seed=seed)
-                plrm.minimize_mse(x.T, y.T, steps=steps, num_threads=num_threads)
+                self.plrm = PLRM()
+                self.plrm.fit(x, y, ds=num_comps, ns=layers, steps=steps, seed=0)
                 # Embed to get the internal x.
-                x, old_x = np.zeros((x.shape[0], ds), dtype="float32"), x
-                plrm.evaluate(old_x.T, x.T)
+                x, old_x = self.plrm(x, embed=True), x
                 # Convert back into 64 bit precision.
                 x = np.asarray(x, dtype=float)
                 return super()._fit(x, original_y, *args, **kwargs)
@@ -189,9 +175,7 @@ def condition(approximator, metric=abs_diff, method=DEFAULT_CONDITIONER,
         def _predict(self, x, *args, **kwargs):
             if (method == "PLR"):
                 # Embed the incoming X values.
-                x = np.asarray((x - self._x_mean) / self._x_stdev, dtype="float32", order="C")
-                embedded_x = np.zeros((x.shape[0], self._num_comps), dtype="float32")
-                plrm.evaluate(x.T, embedded_x.T)
+                embedded_x = self.plrm(x, embed=True)
                 # Return the model approximation over embedded X.
                 return super()._predict(np.asarray(embedded_x, dtype=float), *args, **kwargs)
             else:
