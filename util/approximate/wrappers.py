@@ -129,7 +129,7 @@ def condition(approximator, metric=abs_diff, method=DEFAULT_CONDITIONER,
     class ConditionedApproximator(approximator):
         # Wrapped "fit" method, this incorporates dimension reduction
         # and approximation conditioning based on the selected method.
-        def _fit(self, x, y, *args, num_comps=None, layers=8, steps=1000, **kwargs):
+        def _fit(self, x, y, *args, num_comps=None, layers=8, steps=1000, seed=0, **kwargs):
             # Set the number of components appropriately.
             if (num_comps is None): num_comps = min(x.shape + (16,))
             if (dim is not None):   num_comps = min(dim, num_comps)
@@ -140,7 +140,7 @@ def condition(approximator, metric=abs_diff, method=DEFAULT_CONDITIONER,
                 self._num_comps = num_comps
                 # Use a trained piecewise linear regressor to condition.
                 self.plrm = PLRM()
-                self.plrm.fit(x, y, ds=num_comps, ns=layers, steps=steps, seed=0)
+                self.plrm.fit(x, y, ds=num_comps, ns=layers, steps=steps, seed=seed)
                 # Embed to get the internal x.
                 x, old_x = self.plrm(x, embed=True), x
                 # Convert back into 64 bit precision.
