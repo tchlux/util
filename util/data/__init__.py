@@ -31,7 +31,7 @@ PY_TYPES = {value[0]:key for (key,value) in NP_TYPES.items()}
 # 
 GENERATOR_TYPE = type(_ for _ in ())
 
-from .data import Data
+from .data import Data, flatten, merge_on_column, is_iterable
 from .video import IndexedVideo
 
 # Automatically execute testing code?

@@ -214,6 +214,12 @@ def read_data(filename="<no_provided_file>", sep=None, types=None,
         # Pad the end of the line with "None" values.
         if (len(list_line) < len(header)):
             list_line += [None] * max(0,len(header) - len(list_line))
+        # Check for any NoneType columns in Data, resolve type for those elements if possible.
+        for col_index, curr_type in zip(range(len(list_line)), data.types):
+            if (curr_type is type(None)):
+                this_col_type = get_type(list_line[col_index])
+                if (this_col_type is not type(None)):
+                    list_line[col_index] = this_col_type(list_line[col_index])
         # Replace any empty strings with "None" for missing values
         for j in range(len(list_line)):
             if (list_line[j] == ""): list_line[j] = None

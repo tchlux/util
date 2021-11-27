@@ -1,5 +1,5 @@
 
-from util.data.data import Data, flatten
+from util.data.data import Data, flatten, merge_on_column
 
 # TODO:  Test for file that has a type digression happen on a line
 #        with empty strings in it. This caused a crash [2019-12-17].
@@ -267,13 +267,6 @@ def test_data():
     assert(b[0,-1] is None)
     assert(b[1,-1] is None)
 
-    # Check the 'flatten' function to make sure it correctly flattens
-    # structures with nested, differential depth, and different types.
-    complex_sequence = [(l for l in ((1,2,3)+tuple("abc"))),
-                        "def", "ghi", ("jk",tuple("lmn"))]
-    simplified_sequence = (1,2,3)+tuple('abcdefghijklmn')
-    assert(tuple(flatten(complex_sequence)) == simplified_sequence)
-
     # TODO: Verify load of a large file (sample only)
     # TODO: Verify load of a large compressed file (sample only)
 
@@ -317,7 +310,6 @@ def test_data():
     assert( len(list(b == (i for i in (1,2,3,4)))) == 0 )
     assert( tuple(b[0] == (i for i in (1,2,3,4))) ==
             (NotImplemented, NotImplemented, NotImplemented) )
-
 
     # Verify that "addition" with sequences works correctly (left and right).
     b = a[:]
@@ -457,11 +449,44 @@ Size: (11 x 3)
    at columns: [1, 2]   
 ========================
 '''
-    assert( str(b) == b_printout)
+    assert(str(b) == b_printout)
 
     # Verify that the names and types attributes are the correct type.
     assert("Descriptor" in str(type(a.types)))
     assert("Descriptor" in str(type(a.names)))
+
+
+    # Check the 'flatten' function to make sure it correctly flattens
+    # structures with nested, differential depth, and different types.
+    complex_sequence = [(l for l in ((1,2,3)+tuple("abc"))),
+                        "def", "ghi", ("jk",tuple("lmn"))]
+    simplified_sequence = (1,2,3)+tuple('abcdefghijklmn')
+    assert(tuple(flatten(complex_sequence)) == simplified_sequence)
+
+
+    # Verify that merging two data sets works as expected.
+    d1 = Data(
+        [[0, 'a'], [1, 'b'], [2, 'b'], [7, 'd']],
+        names = ['index', 'letter']
+    )
+    d2 = Data(
+        [[None, 3, 'a'], [None, 4, 'b'], [None, 5, 'c'], [None, 6, 'b']],
+        names = ['none', 'index', 'letter']
+    )
+    d3 = Data([
+        ['a', 0, None, 3],
+        ['b', 1, None, 4],
+        ['b', 1, None, 6],
+        ['b', 2, None, 4],
+        ['b', 2, None, 6],
+        ['c', None, None, 5],
+        ['d', 7, None, None],
+    ])
+    out = merge_on_column(d1, d2, 'letter', d1_name="hoorah", d2_name="loopy")
+    assert(all(n1 == n2 for (n1, n2) in zip(
+        out.columns, ['letter', 'index_hoorah', 'none', 'index_loopy'])))
+    assert(all(len(set(list(r1 == r2)) ^ {True,None}) == 0
+               for (r1,r2) in zip(d3, out)))
 
     # ----------------------------------------------------------------
     #     Testing expected exceptions.

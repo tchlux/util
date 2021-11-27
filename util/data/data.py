@@ -70,6 +70,54 @@ def flatten(obj):
         else: output = [obj]
         return output
 
+# Given two data objects, merge all their contents on a given column.
+def merge_on_column(d1, d2, column, d1_name="left", d2_name="right"):
+    from util.data import Data
+    from itertools import combinations
+    # Get the list of unique values that will be merged into the output.
+    unique_values = sorted(set(d1[column]) | set(d2[column]))
+     # Get the list of columns that will exist from both data objects.
+    d1_column_set = set(d1.columns)
+    d2_column_set = set(d2.columns)
+    d1_columns = [(c,c + ("_"+d1_name if (c in d2_column_set) else ""))
+                  for c in d1.columns if (c != column)]
+    d2_columns = [(c,c + ("_"+d2_name if (c in d1_column_set) else ""))
+                  for c in d2.columns if (c != column)]
+    # Initialize storage for the merged data.
+    merged_data = Data(names=[column]
+                       + [c for (_,c) in d1_columns]
+                       + [c for (_,c) in d2_columns])
+    # Get the set of all rows from source data objects with each unique value.
+    rows_with_value = {}
+    for i,row in enumerate(d1):
+        v = row[column]
+        rows = rows_with_value.get(v, [[],[]])
+        rows[0].append(i)
+        rows_with_value[v] = rows
+    for i,row in enumerate(d2):
+        v = row[column]
+        rows = rows_with_value.get(v, [[],[]])
+        rows[1].append(i)
+        rows_with_value[v] = rows
+    # Create the merged data object.
+    for v in unique_values:
+        d1_rows, d2_rows = rows_with_value[v]
+        if (len(d1_rows) == 0): d1_rows.append(None)
+        if (len(d2_rows) == 0): d2_rows.append(None)
+        for d1_i in d1_rows:
+            for d2_i in d2_rows:
+                # Get the corresponding row from d1.
+                if (d1_i is None): d1_row = [None]*len(d1_columns)
+                else: d1_row = [d1[d1_i,c] for (c,_) in d1_columns]
+                # Get the corresponding row from d2.
+                if (d2_i is None): d2_row = [None]*len(d2_columns)
+                else: d2_row = [d2[d2_i,c] for (c,_) in d2_columns]
+                # Merge the two rows and add it to the output data.
+                merged_data.append([v] + d1_row + d2_row)
+    # Return the merged data.
+    return merged_data
+
+
 # Define a python data matrix structure (named and typed columns).
 class Data:
     # Holder for data.
@@ -109,6 +157,11 @@ class Data:
     def types(self): return self._types
     @types.setter
     def types(self, values): self._types = Data.Descriptor(self, values)
+    # Alias "names" to also be referenced as "columns".
+    @property
+    def columns(self): return self._names
+    @columns.setter
+    def columns(self, values): self._names = Data.Descriptor(self, list(map(str,values)))
     # Return True if empty.
     @property
     def empty(self): return ((self.names is None) or (self.types is None) or (len(self) == 0))
