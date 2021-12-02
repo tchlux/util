@@ -483,8 +483,10 @@ Size: (11 x 3)
         ['d', 7, None, None],
     ])
     out = merge_on_column(d1, d2, 'letter', d1_name="hoorah", d2_name="loopy")
+    # Make sure the output columns are named as expected.
     assert(all(n1 == n2 for (n1, n2) in zip(
         out.columns, ['letter', 'index_hoorah', 'none', 'index_loopy'])))
+    # Make sure all rows only show True or None in equality operator.
     assert(all(len(set(list(r1 == r2)) ^ {True,None}) == 0
                for (r1,r2) in zip(d3, out)))
 

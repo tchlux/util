@@ -219,11 +219,11 @@ class Row:
     # indices that correctly map to the true data.
     def _index_to_nums(self, index):
         # Return integer indices.
-        if   type(index) == int:   nums = [self.data.col(index)]
+        if   type(index) == int:   nums = self.data.col(index)
+        # Return string indices (based on parent data).
+        elif type(index) == str:   nums = self.data.names.index(index)
         # Return slice indices.
         elif type(index) == slice: nums = list(map(self.data.col, range(len(self))[index]))
-        # Return string indices (based on parent data).
-        elif type(index) == str:   nums = [self.data.names.index(index)]
         # Convert an iterable into a list of numeric indices.
         elif hasattr(index, "__iter__"):
             nums = []
@@ -241,13 +241,18 @@ class Row:
     # Get an item from this row.
     def __getitem__(self, index):
         idx = self._index_to_nums(index)
-        if (len(idx) == 1): return self.values[idx[0]]
-        else:               return [self.values[i] for i in idx]
+        if (type(idx) is int): return self.values[idx]
+        else:                  return [self.values[i] for i in idx]
     # Set an item in this row.
     def __setitem__(self, index, value):
         idx = self._index_to_nums(index)
-        if (len(idx) > 1): raise(self.data.BadAssignment(f"{type(self)} object can only assign one position at a time."))
-        i = idx[0]
+        if (type(idx) is not int):
+            if (len(idx) > 1):
+                raise(self.data.BadAssignment(f"{type(self)} object can only assign one position at a time."))
+            else:
+                i = idx[0]
+        else:
+            i = idx
         # Assign the type of the column of data if it is unassigned.
         if (value is None): pass
         elif self.data.types[i] == type(None):

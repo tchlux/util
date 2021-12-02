@@ -205,6 +205,38 @@ def ks_p_value(ks_stat, n1, n2=float('inf')):
     return min(1.0, 2 * np.exp( -2 * ( ks_stat**2 / abs((1/n1) + (1/n2)) )))
 
 
+# Use a linear interpolation of the EDF points to compute the integral
+# of the absolute difference between the empirical PDF's of two sequences.
+def epdf_diff(seq_1, seq_2):
+    # Construct generators for the EDF point pairs.
+    gen_1 = edf_pair_gen(seq_1)
+    gen_2 = edf_pair_gen(seq_2)
+    # Get the initial values from the generators.
+    low_1, upp_1, density_1 = gen_1.__next__()
+    low_2, upp_2, density_2 = gen_2.__next__()
+    shared = 0.
+    # Cycle until completing the integral difference between pEDFs.
+    while (upp_1 < float('inf')) or (upp_2 < float('inf')):
+        # Compute the width of the interval and the percentage of data
+        # within the width for each of the distributions.
+        width = min(upp_1, upp_2) - max(low_1, low_2)
+        if width < float('inf'):
+            # Convert the EDF points into densities over the interval.
+            sub_density_1 = density_1 * (width / (upp_1-low_1))
+            sub_density_2 = density_2 * (width / (upp_2-low_2))
+            if abs(sub_density_1 - sub_density_2) >= 0:
+                shared += min(sub_density_1, sub_density_2)
+        # Cycle whichever range has the lower maximum.
+        if (upp_1 > upp_2):
+            low_2, upp_2, density_2 = next(gen_2)
+        elif (upp_2 > upp_1):
+            low_1, upp_1, density_1 = next(gen_1)
+        else:
+            low_1, upp_1, density_1 = next(gen_1)
+            low_2, upp_2, density_2 = next(gen_2)
+    return max(0, 1 - shared)
+
+
 # Compute the effect between two sequences. Use the following:
 #    number vs. number     -- Correlation coefficient between the two sequences.
 #    category vs. number   -- "method" L1-norm difference between full distribution
@@ -255,7 +287,6 @@ def effect(seq_1, seq_2, method="mean", use_ks=False):
             if (len(main_nums) == 0) or (len(sub_nums) == 0):
                 dist_diff = 0.0
             elif (not use_ks):
-                from util.stats import epdf_diff
                 dist_diff = epdf_diff(main_nums, sub_nums)
             else:
                 # Use the KS-statistic to test the likelihood that the two
@@ -264,10 +295,6 @@ def effect(seq_1, seq_2, method="mean", use_ks=False):
                                              len(main_nums), len(sub_nums))
             try:              diffs[cat]       = dist_diff
             except TypeError: diffs[hash(cat)] = dist_diff
-        if   (method == "max"):  return max(diffs.values())
-        elif (method == "min"):  return min(diffs.values())
-        elif (method == "mean"): return sum(diffs.values()) / len(diffs)
-        else:                    return diffs
     elif cat_cat:
         diffs = {}
         # Generate unique lists of values (hash those that aren't).
@@ -294,9 +321,9 @@ def effect(seq_1, seq_2, method="mean", use_ks=False):
             else: dist_diff = 0.
             try:              diffs[(None,cat)]       = dist_diff
             except TypeError: diffs[(None,hash(cat))] = dist_diff
-        # Return the desired measure of difference between the two.
-        if   (method == "max"):  return max(diffs.values())
-        elif (method == "min"):  return min(diffs.values())
-        elif (method == "mean"): return sum(diffs.values()) / len(diffs)
-        else:                    return diffs
+    # Return the desired measure of difference between the two.
+    if   (method == "max"):  return max(diffs.values())
+    elif (method == "min"):  return min(diffs.values())
+    elif (method == "mean"): return sum(diffs.values()) / len(diffs)
+    else:                    return diffs
 

@@ -518,12 +518,12 @@ class Data:
             # Add elipses if there are a lot of missing values.
             missing_string += [f" missing {'estimated ' if (not is_full) else ''}{total_missing_values} of {total_values} entries"]
             if (not is_full): missing_string[-1] += f" ({100*total_missing_values/total_values:.1f}%)"
-            print_indices = ', '.join(map(str, row_indices[:self.max_display]))
+            print_indices = ', '.join(map(str, row_indices[:min(self.max_display,len(row_indices))]))
             missing_string += [f"      at rows: [{print_indices}"]
             if (len(row_indices) > self.max_display): missing_string[-1] += ", ..."
             missing_string[-1] += "]"
             # Repeat same information for columns..
-            print_indices = ', '.join(map(str, col_indices[:self.max_display]))
+            print_indices = ', '.join(map(str, col_indices[:min(self.max_display, len(col_indices))]))
             missing_string += [f"   at columns: [{print_indices}"]
             if (len(col_indices) > self.max_display): missing_string[-1] += ", ..."
             missing_string[-1] += "]"
@@ -629,6 +629,8 @@ class Data:
     # Define a convenience funciton for concatenating another
     # similarly typed and named data to self.
     def __add__(self, data):
+        if self.empty:
+            return data
         d = self.copy()
         d += data
         return d
@@ -1907,33 +1909,3 @@ class Data:
 
 
 
-
-
-# 2021-04-03 19:34:58
-# 
-                ############################
-                # # Remove the added name. #
-                # self.names.pop(index)    #
-                # # Remove the added type. #
-                # self.types.pop(index)    #
-                ############################
-
-
-# 2021-04-03 19:35:03
-# 
-                ############################
-                # # Remove the added name. #
-                # self.names.pop(index)    #
-                # # Remove the added type. #
-                # self.types.pop(index)    #
-                ############################
-
-
-# 2021-04-03 19:35:06
-# 
-            ############################
-            # # Remove the added name. #
-            # self.names.pop(index)    #
-            # # Remove the added type. #
-            # self.types.pop(index)    #
-            ############################
