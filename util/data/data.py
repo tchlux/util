@@ -79,9 +79,9 @@ def merge_on_column(d1, d2, column, d1_name="left", d2_name="right"):
      # Get the list of columns that will exist from both data objects.
     d1_column_set = set(d1.columns)
     d2_column_set = set(d2.columns)
-    d1_columns = [(c,c + ("_"+d1_name if (c in d2_column_set) else ""))
+    d1_columns = [(c,c + ("_"+d1_name if (c in d2_column_set) and (len(d1_name) > 0) else ""))
                   for c in d1.columns if (c != column)]
-    d2_columns = [(c,c + ("_"+d2_name if (c in d1_column_set) else ""))
+    d2_columns = [(c,c + ("_"+d2_name if (c in d1_column_set) and (len(d2_name) > 0) else ""))
                   for c in d2.columns if (c != column)]
     # Initialize storage for the merged data.
     merged_data = Data(names=[column]
