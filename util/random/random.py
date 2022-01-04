@@ -146,3 +146,55 @@ def latin(num_points, dimension):
     for _ in map(random.shuffle, cells): pass
     # Convert the random selected cells into points.
     return cell_width * (random.random((dimension,num_points)) + cells).T
+
+
+# Generate random points with a latin design over a unit hypersphere.
+def latin_sphere(num_points, dimension, inside=False):
+    from numpy import pi, zeros, cos, sin, arccos, linspace, random, ones, arange
+    # Get well spaced random points over the unit cube in one less
+    #  dimension as the source for spherical coordinates with a latin design.
+    cell_width = 1 / num_points
+    cells = ones((dimension-1, num_points)) * arange(num_points)
+    # Randomly shuffle the selected grid cells for each point.
+    for cell in cells: random.shuffle(cell)
+    # Convert the random selected cells into points.
+    coordinates = cell_width * (random.random((dimension-1, num_points)) + cells)
+    # Push coordinates through an appropriate inverse density function to make
+    #  the uniform density over the cube into uniform density over the sphere.
+    coordinates[-1,:] *= 2*pi    
+    density_x = np.linspace(0, np.pi, 1000)
+    density_gaps = density_x[1:] - density_x[:-1]
+    density_y = np.ones(density_x.shape)
+    for i in range(2, len(coordinates)+1):
+        # For each coordinate, there is one addtional sin function.
+        density_y *= np.sin(density_x)
+        # Integrate a piecewise linear interpolant of the density function.
+        density_cdf_y = np.zeros(density_y.shape)
+        density_cdf_y[1:] += (
+            density_gaps * (density_y[:-1] + (density_y[1:] - density_y[:-1]) / 2)
+        ).cumsum()
+        density_cdf_y[:] /= density_cdf_y[-1]
+        # Interpolate the inverted CDF to transform a uniform random
+        #  distribution into the desired distribution of data.
+        coordinates[-i,:] = np.interp(
+            coordinates[-i,:],
+            density_cdf_y, density_x
+        )
+    # Convert the spherical coordinates into linear coordinates.
+    points = zeros((dimension, num_points))
+    points[0,:] = cos(coordinates[0,:])
+    points[1:,:] = sin(coordinates[0,:])
+    for i in range(1, dimension-1):
+        points[i,:] *= cos(coordinates[i,:])
+        points[i+1:,:] *= sin(coordinates[i,:])
+    # Add random radii proportional to probability density
+    #   inside sphere if points in the ball are requested.
+    if (inside):
+        radii = linspace(0, (num_points-1)/num_points, num_points)
+        radii += random.uniform(size=(num_points,)) / num_points
+        radii = radii ** (1 / dimension)
+        random.shuffle(radii)
+        points *= radii
+    # Switch points to row vectors and return.
+    return points.T
+
