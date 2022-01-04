@@ -1,4 +1,4 @@
-
+s
 ! Module for matrix multiplication (absolutely crucial for PLRM speed).
 MODULE MATRIX_MULTIPLICATION
   USE ISO_FORTRAN_ENV, ONLY: RT => REAL32
@@ -128,7 +128,7 @@ CONTAINS
     CALL RANDOM_NUMBER(INPUT_SHIFT(:))
     CALL RANDOM_NUMBER(INTERNAL_SHIFT(:,:))
     OUTPUT_SHIFT(:) = 0.0_RT
-    ! Assuming unit standard deviaiton, a shift range will capture N
+    ! Assuming unit standard deviaiton, a shift range will capture 2
     !  standard deviations of data in the first layer, unclear in later
     !  later layers. TODO: research the distribution of values observed
     !  at any given component given this initialization scheme.
@@ -576,7 +576,7 @@ CONTAINS
        ! Convert the sum of squared errors into the mean squared error.
        MEAN_SQUARED_ERROR = MEAN_SQUARED_ERROR / RNX
 
-       ! Update the saved "best" model based on error (only when dropout is disabled).
+       ! Update the saved "best" model based on error.
        IF (MEAN_SQUARED_ERROR .LT. BEST_MSE) THEN
           BEST_MSE       = MEAN_SQUARED_ERROR
           BEST_V1(:,:)   = INPUT_VECS(:,:)

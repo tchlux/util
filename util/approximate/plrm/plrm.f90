@@ -215,11 +215,48 @@ CONTAINS
   SUBROUTINE RANDOM_UNIT_VECTORS(COLUMN_VECTORS)
     REAL(KIND=RT), INTENT(OUT), DIMENSION(:,:) :: COLUMN_VECTORS
     REAL(KIND=RT), DIMENSION(SIZE(COLUMN_VECTORS,1), SIZE(COLUMN_VECTORS,2)) :: TEMP_VECS
+    REAL(KIND=RT), DIMENSION(SIZE(COLUMN_VECTORS,2)) :: ORDERING
+    REAL(KIND=RT) :: NUMBER, TEMP
     REAL(KIND=RT), PARAMETER :: PI = 3.141592653589793
-    INTEGER :: I 
+    INTEGER :: I, J
     ! Generate random numbers in the range [0,1].
     CALL RANDOM_NUMBER(COLUMN_VECTORS(:,:))
     CALL RANDOM_NUMBER(TEMP_VECS(:,:))
+    ! For each component, create a random ordering of points to assign
+    !  them all to bins (to guarantee decent well-spacedness).
+    DO I = 1, SIZE(COLUMN_VECTORS, 1)
+       ! Create a random ordering that is 0-indexed.
+       FORALL (J = 0 : SIZE(COLUMN_VECTORS, 2)-1)
+          ORDERING(J) = REAL(J, KIND=RT)
+       END FORALL
+       DO J = SIZE(COLUMN_VECTORS, 2), 1, -1
+          CALL RANDOM_NUMBER(NUMBER)
+          NUMBER = 1.0 + NUMBER * REAL(J, KIND=RT)
+          IF (NUMBER .LT. J) THEN
+             TEMP = ORDERING(INT(NUMBER))
+             ORDERING(INT(NUMBER)) = ORDERING(J)
+             ORDERING(J) = TEMP
+          END IF
+       END DO
+       ! Use the ordering as the "cell offset" for generated random numbers.
+       COLUMN_VECTORS(I,:) = COLUMN_VECTORS(I,:) + ORDERING(:)
+       ! Repeat the above for the temporary vectors.
+       FORALL (J = 0 : SIZE(COLUMN_VECTORS, 2)-1)
+          ORDERING(J) = REAL(J, KIND=RT)
+       END FORALL
+       DO J = SIZE(COLUMN_VECTORS, 2), 1, -1
+          CALL RANDOM_NUMBER(NUMBER)
+          NUMBER = 1.0 + NUMBER * REAL(J, KIND=RT)
+          IF (NUMBER .LT. J) THEN
+             TEMP = ORDERING(INT(NUMBER))
+             ORDERING(INT(NUMBER)) = ORDERING(J)
+             ORDERING(J) = TEMP
+          END IF
+       END DO
+       TEMP_VECS(I,:) = TEMP_VECS(I,:) + ORDERING(:)
+    END DO
+    COLUMN_VECTORS(:,:) = COLUMN_VECTORS(:,:) / &
+         REAL(SIZE(COLUMN_VECTORS, 2), KIND=RT)
     ! Map the random uniform numbers to a normal distribution.
     COLUMN_VECTORS(:,:) = SQRT(-LOG(COLUMN_VECTORS(:,:))) * COS(PI * TEMP_VECS(:,:))
     ! Make the vectors uniformly distributed on the unit ball (for dimension > 1).
@@ -653,7 +690,7 @@ CONTAINS
        ! Convert the sum of squared errors into the mean squared error.
        MEAN_SQUARED_ERROR = MEAN_SQUARED_ERROR / RNX
 
-       ! Update the saved "best" model based on error (only when dropout is disabled).
+       ! Update the saved "best" model based on error.
        IF (MEAN_SQUARED_ERROR .LT. BEST_MSE) THEN
           BEST_MSE       = MEAN_SQUARED_ERROR
           BEST_V1(:,:)   = INPUT_VECS(:,:)

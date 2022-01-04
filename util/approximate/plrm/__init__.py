@@ -3,6 +3,7 @@ from util.approximate.base import Approximator
 # SOURCE_FILE = "plrm.f90"
 # SOURCE_FILE = "stable_flexure.f90"
 SOURCE_FILE = "stable_relu.f90"
+# SOURCE_FILE = "stable_leaky_relu.f90"
 
 class PLRM(Approximator):
 
@@ -42,7 +43,6 @@ class PLRM(Approximator):
         mse = self.plrm.minimize_mse(x.T, y.T, steps=steps,
                                      num_threads=num_threads,
                                      keep_best=True)
-
 
     def _predict(self, x, embed=False):
         from numpy import zeros, asarray

@@ -528,7 +528,7 @@ CONTAINS
        ! Convert the sum of squared errors into the mean squared error.
        MEAN_SQUARED_ERROR = MEAN_SQUARED_ERROR / RNX
 
-       ! Update the saved "best" model based on error (only when dropout is disabled).
+       ! Update the saved "best" model based on error.
        IF (MEAN_SQUARED_ERROR .LT. BEST_MSE) THEN
           BEST_MSE       = MEAN_SQUARED_ERROR
           BEST_V1(:,:)   = INPUT_VECS(:,:)
