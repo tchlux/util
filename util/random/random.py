@@ -150,7 +150,7 @@ def latin(num_points, dimension):
 
 # Generate random points with a latin design over a unit hypersphere.
 def latin_sphere(num_points, dimension, inside=False):
-    from numpy import pi, zeros, cos, sin, arccos, linspace, random, ones, arange
+    from numpy import pi, zeros, cos, sin, arccos, linspace, random, ones, arange, interp
     # Get well spaced random points over the unit cube in one less
     #  dimension as the source for spherical coordinates with a latin design.
     cell_width = 1 / num_points
@@ -162,21 +162,21 @@ def latin_sphere(num_points, dimension, inside=False):
     # Push coordinates through an appropriate inverse density function to make
     #  the uniform density over the cube into uniform density over the sphere.
     coordinates[-1,:] *= 2*pi    
-    density_x = np.linspace(0, np.pi, 1000)
+    density_x = linspace(0, pi, 1000)
     density_gaps = density_x[1:] - density_x[:-1]
-    density_y = np.ones(density_x.shape)
+    density_y = ones(density_x.shape)
     for i in range(2, len(coordinates)+1):
         # For each coordinate, there is one addtional sin function.
-        density_y *= np.sin(density_x)
+        density_y *= sin(density_x)
         # Integrate a piecewise linear interpolant of the density function.
-        density_cdf_y = np.zeros(density_y.shape)
+        density_cdf_y = zeros(density_y.shape)
         density_cdf_y[1:] += (
             density_gaps * (density_y[:-1] + (density_y[1:] - density_y[:-1]) / 2)
         ).cumsum()
         density_cdf_y[:] /= density_cdf_y[-1]
         # Interpolate the inverted CDF to transform a uniform random
         #  distribution into the desired distribution of data.
-        coordinates[-i,:] = np.interp(
+        coordinates[-i,:] = interp(
             coordinates[-i,:],
             density_cdf_y, density_x
         )
