@@ -116,11 +116,13 @@ MODULE PLRM
   REAL(KIND=RT), DIMENSION(:,:),   ALLOCATABLE :: INPUT_VECS     ! MDI, MDS
   REAL(KIND=RT), DIMENSION(:),     ALLOCATABLE :: INPUT_SHIFT    ! MDS
   REAL(KIND=RT), DIMENSION(:),     ALLOCATABLE :: INPUT_FLEX     ! MDS
+  REAL(KIND=RT), DIMENSION(:),     ALLOCATABLE :: INPUT_MAX      ! MDS
+  REAL(KIND=RT), DIMENSION(:),     ALLOCATABLE :: INPUT_MIN      ! MDS
   REAL(KIND=RT), DIMENSION(:,:,:), ALLOCATABLE :: INTERNAL_VECS  ! MDS, MDS, MNS-1
   REAL(KIND=RT), DIMENSION(:,:),   ALLOCATABLE :: INTERNAL_SHIFT ! MDS, MNS-1
   REAL(KIND=RT), DIMENSION(:,:),   ALLOCATABLE :: INTERNAL_FLEX  ! MDS, MNS-1
-  ! REAL(KIND=RT), DIMENSION(:,:),   ALLOCATABLE :: INTERNAL_MAX   ! MDS, MNS-1
-  ! REAL(KIND=RT), DIMENSION(:,:),   ALLOCATABLE :: INTERNAL_MIN   ! MDS, MNS-1
+  REAL(KIND=RT), DIMENSION(:,:),   ALLOCATABLE :: INTERNAL_MAX   ! MDS, MNS-1
+  REAL(KIND=RT), DIMENSION(:,:),   ALLOCATABLE :: INTERNAL_MIN   ! MDS, MNS-1
   REAL(KIND=RT), DIMENSION(:,:),   ALLOCATABLE :: OUTPUT_VECS    ! MDS, MDO
   REAL(KIND=RT), DIMENSION(:),     ALLOCATABLE :: OUTPUT_SHIFT   ! MDO
 
@@ -149,11 +151,13 @@ CONTAINS
     IF (ALLOCATED(INPUT_VECS))     DEALLOCATE(INPUT_VECS)
     IF (ALLOCATED(INPUT_SHIFT))    DEALLOCATE(INPUT_SHIFT)
     IF (ALLOCATED(INPUT_FLEX))     DEALLOCATE(INPUT_FLEX)
+    IF (ALLOCATED(INPUT_MAX))      DEALLOCATE(INPUT_MAX)
+    IF (ALLOCATED(INPUT_MIN))      DEALLOCATE(INPUT_MIN)
     IF (ALLOCATED(INTERNAL_VECS))  DEALLOCATE(INTERNAL_VECS)
     IF (ALLOCATED(INTERNAL_SHIFT)) DEALLOCATE(INTERNAL_SHIFT)
     IF (ALLOCATED(INTERNAL_FLEX))  DEALLOCATE(INTERNAL_FLEX)
-    ! IF (ALLOCATED(INTERNAL_MAX))   DEALLOCATE(INTERNAL_MAX)
-    ! IF (ALLOCATED(INTERNAL_MIN))   DEALLOCATE(INTERNAL_MIN)
+    IF (ALLOCATED(INTERNAL_MAX))   DEALLOCATE(INTERNAL_MAX)
+    IF (ALLOCATED(INTERNAL_MIN))   DEALLOCATE(INTERNAL_MIN)
     IF (ALLOCATED(OUTPUT_VECS))    DEALLOCATE(OUTPUT_VECS)
     IF (ALLOCATED(OUTPUT_SHIFT))   DEALLOCATE(OUTPUT_SHIFT)
     ! Allocate space for all model variables.
@@ -161,11 +165,13 @@ CONTAINS
          INPUT_VECS(DI,DS), &
          INPUT_SHIFT(DS), &
          INPUT_FLEX(DS), &
+         INPUT_MAX(DS), &
+         INPUT_MIN(DS), &
          INTERNAL_VECS(DS, DS, NS-1), &
          INTERNAL_SHIFT(DS, NS-1), &
          INTERNAL_FLEX(DS, NS-1), &
-         ! INTERNAL_MAX(DS, NS-1), &
-         ! INTERNAL_MIN(DS, NS-1), &
+         INTERNAL_MAX(DS, NS-1), &
+         INTERNAL_MIN(DS, NS-1), &
          OUTPUT_VECS(DS, DO), &
          OUTPUT_SHIFT(DO) &
          )
@@ -209,54 +215,22 @@ CONTAINS
     ! Set initial *_FLEX to be equal to default small value.
     INPUT_FLEX(:) = INITIAL_FLEX
     INTERNAL_FLEX(:,:) = INITIAL_FLEX
+    ! Set the initial bounds on minimum and maximum values to be extreme.
+    INPUT_MAX(:) =  HUGE(INPUT_MAX(1))
+    INPUT_MIN(:) = -HUGE(INPUT_MIN(1))
+    INTERNAL_MAX(:,:) =  HUGE(INTERNAL_MAX(1,1))
+    INTERNAL_MIN(:,:) = -HUGE(INTERNAL_MIN(1,1))
   END SUBROUTINE INIT_MODEL
 
   ! Generate randomly distributed vectors on the N-sphere.
   SUBROUTINE RANDOM_UNIT_VECTORS(COLUMN_VECTORS)
     REAL(KIND=RT), INTENT(OUT), DIMENSION(:,:) :: COLUMN_VECTORS
     REAL(KIND=RT), DIMENSION(SIZE(COLUMN_VECTORS,1), SIZE(COLUMN_VECTORS,2)) :: TEMP_VECS
-    REAL(KIND=RT), DIMENSION(SIZE(COLUMN_VECTORS,2)) :: ORDERING
-    REAL(KIND=RT) :: NUMBER, TEMP
     REAL(KIND=RT), PARAMETER :: PI = 3.141592653589793
     INTEGER :: I, J
     ! Generate random numbers in the range [0,1].
     CALL RANDOM_NUMBER(COLUMN_VECTORS(:,:))
     CALL RANDOM_NUMBER(TEMP_VECS(:,:))
-    ! For each component, create a random ordering of points to assign
-    !  them all to bins (to guarantee decent well-spacedness).
-    DO I = 1, SIZE(COLUMN_VECTORS, 1)
-       ! Create a random ordering that is 0-indexed.
-       FORALL (J = 0 : SIZE(COLUMN_VECTORS, 2)-1)
-          ORDERING(J) = REAL(J, KIND=RT)
-       END FORALL
-       DO J = SIZE(COLUMN_VECTORS, 2), 1, -1
-          CALL RANDOM_NUMBER(NUMBER)
-          NUMBER = 1.0 + NUMBER * REAL(J, KIND=RT)
-          IF (NUMBER .LT. J) THEN
-             TEMP = ORDERING(INT(NUMBER))
-             ORDERING(INT(NUMBER)) = ORDERING(J)
-             ORDERING(J) = TEMP
-          END IF
-       END DO
-       ! Use the ordering as the "cell offset" for generated random numbers.
-       COLUMN_VECTORS(I,:) = COLUMN_VECTORS(I,:) + ORDERING(:)
-       ! Repeat the above for the temporary vectors.
-       FORALL (J = 0 : SIZE(COLUMN_VECTORS, 2)-1)
-          ORDERING(J) = REAL(J, KIND=RT)
-       END FORALL
-       DO J = SIZE(COLUMN_VECTORS, 2), 1, -1
-          CALL RANDOM_NUMBER(NUMBER)
-          NUMBER = 1.0 + NUMBER * REAL(J, KIND=RT)
-          IF (NUMBER .LT. J) THEN
-             TEMP = ORDERING(INT(NUMBER))
-             ORDERING(INT(NUMBER)) = ORDERING(J)
-             ORDERING(J) = TEMP
-          END IF
-       END DO
-       TEMP_VECS(I,:) = TEMP_VECS(I,:) + ORDERING(:)
-    END DO
-    COLUMN_VECTORS(:,:) = COLUMN_VECTORS(:,:) / &
-         REAL(SIZE(COLUMN_VECTORS, 2), KIND=RT)
     ! Map the random uniform numbers to a normal distribution.
     COLUMN_VECTORS(:,:) = SQRT(-LOG(COLUMN_VECTORS(:,:))) * COS(PI * TEMP_VECS(:,:))
     ! Make the vectors uniformly distributed on the unit ball (for dimension > 1).
@@ -333,17 +307,14 @@ CONTAINS
   END SUBROUTINE RANDOM_UNIT_VECTORS
 
 
-
   ! Evaluate the piecewise linear regression model.
-  SUBROUTINE EVALUATE(INPUTS, OUTPUTS)
+  SUBROUTINE SET_MIN_MAX(INPUTS)
     REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: INPUTS
-    REAL(KIND=RT), INTENT(OUT), DIMENSION(:,:) :: OUTPUTS
     ! Internal values.
     REAL(KIND=RT), DIMENSION(:,:), ALLOCATABLE :: TEMP_VALUES, INTERNAL_VALUES
     INTEGER :: I, D, L, N
     ! Make sure that this model has been initialized.
     IF (.NOT. ALLOCATED(INPUT_VECS)) THEN
-       OUTPUTS(:,:) = 0.0
        RETURN
     END IF
     ! Get the number of points.
@@ -357,6 +328,8 @@ CONTAINS
          0.0_RT, INTERNAL_VALUES(:,:), SIZE(INTERNAL_VALUES,1))
     DO D = 1, MDS
        INTERNAL_VALUES(:,D) = INTERNAL_VALUES(:,D) + INPUT_SHIFT(D)
+       INPUT_MAX(D) = MAXVAL(INTERNAL_VALUES(:,D))
+       INPUT_MIN(D) = MINVAL(INTERNAL_VALUES(:,D))
        WHERE (INTERNAL_VALUES(:,D) .LT. DISCONTINUITY)
           INTERNAL_VALUES(:,D) = INTERNAL_VALUES(:,D) * INPUT_FLEX(D)
        END WHERE
@@ -371,6 +344,91 @@ CONTAINS
        INTERNAL_VALUES(:,:) = TEMP_VALUES(:,:)
        DO D = 1, MDS
           INTERNAL_VALUES(:,D) = INTERNAL_VALUES(:,D) + INTERNAL_SHIFT(D,L)
+          INTERNAL_MAX(D,L) = MAXVAL(INTERNAL_VALUES(:,D))
+          INTERNAL_MIN(D,L) = MINVAL(INTERNAL_VALUES(:,D))
+          WHERE (INTERNAL_VALUES(:,D) .LT. DISCONTINUITY)
+             INTERNAL_VALUES(:,D) = INTERNAL_VALUES(:,D) * INTERNAL_FLEX(D,L)
+          END WHERE
+       END DO
+    END DO
+    ! Deallocate temporary variables.
+    DEALLOCATE(INTERNAL_VALUES, TEMP_VALUES)
+  END SUBROUTINE SET_MIN_MAX
+
+
+  ! Evaluate the piecewise linear regression model.
+  SUBROUTINE EVALUATE(INPUTS, OUTPUTS, INTERNAL_POSITIONS)
+    REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: INPUTS
+    REAL(KIND=RT), INTENT(OUT), DIMENSION(:,:) :: OUTPUTS
+    INTEGER, OPTIONAL, INTENT(OUT), DIMENSION(:,:,:) :: INTERNAL_POSITIONS ! N, MDS, MNS
+    ! Internal values.
+    REAL(KIND=RT), DIMENSION(:,:), ALLOCATABLE :: TEMP_VALUES, INTERNAL_VALUES
+    INTEGER :: I, D, L, N
+    ! Make sure that this model has been initialized.
+    IF (.NOT. ALLOCATED(INPUT_VECS)) THEN
+       OUTPUTS(:,:) = 0.0
+       IF (PRESENT(INTERNAL_POSITIONS)) INTERNAL_POSITIONS(:,:,:) = 0
+       RETURN
+    END IF
+    ! Get the number of points.
+    N = SIZE(INPUTS,2)
+    ! Allocate storage for the internal values.
+    ALLOCATE(INTERNAL_VALUES(1:N,1:MDS), TEMP_VALUES(1:N,1:MDS))
+    ! Compute the input transformation.
+    CALL GEMM('T', 'N', N, MDS, MDI, 1.0_RT, &
+         INPUTS(:,:), SIZE(INPUTS,1), &
+         INPUT_VECS(:,:), SIZE(INPUT_VECS,1), &
+         0.0_RT, INTERNAL_VALUES(:,:), SIZE(INTERNAL_VALUES,1))
+    DO D = 1, MDS
+       INTERNAL_VALUES(:,D) = INTERNAL_VALUES(:,D) + INPUT_SHIFT(D)
+       ! Store the unique positions each evaluation point land at
+       !   relative to the internal basis functions.
+       IF (PRESENT(INTERNAL_POSITIONS)) THEN
+          WHERE (INTERNAL_VALUES(:,D) .LT. INPUT_MIN(D))
+             INTERNAL_POSITIONS(:,D,1) = 0
+          ELSEWHERE (INTERNAL_VALUES(:,D) .LT. DISCONTINUITY)
+             INTERNAL_POSITIONS(:,D,1) = 1
+          ELSEWHERE (INTERNAL_VALUES(:,D) .LE. INPUT_MAX(D))
+             INTERNAL_POSITIONS(:,D,1) = 2
+          ELSEWHERE
+             INTERNAL_POSITIONS(:,D,1) = 3
+          END WHERE
+       END IF
+       ! Clip the values based on the observerd minimums and maximums.
+       INTERNAL_VALUES(:,D) = MIN(INTERNAL_VALUES(:,D), INPUT_MAX(D))
+       INTERNAL_VALUES(:,D) = MAX(INTERNAL_VALUES(:,D), INPUT_MIN(D))
+       ! Apply the flexure function.
+       WHERE (INTERNAL_VALUES(:,D) .LT. DISCONTINUITY)
+          INTERNAL_VALUES(:,D) = INTERNAL_VALUES(:,D) * INPUT_FLEX(D)
+       END WHERE
+    END DO
+    ! Compute the next set of internal values with a rectified activation.
+    DO L = 1, MNS-1
+       ! Compute all vectors.
+       CALL GEMM('N', 'N', N, MDS, MDS, 1.0_RT, &
+            INTERNAL_VALUES(:,:), SIZE(INTERNAL_VALUES,1), &
+            INTERNAL_VECS(:,:,L), SIZE(INTERNAL_VECS,1), &
+            0.0_RT, TEMP_VALUES(:,:), SIZE(TEMP_VALUES,1))
+       INTERNAL_VALUES(:,:) = TEMP_VALUES(:,:)
+       DO D = 1, MDS
+          INTERNAL_VALUES(:,D) = INTERNAL_VALUES(:,D) + INTERNAL_SHIFT(D,L)
+          ! Store the unique positions each evaluation point land at
+          !   relative to the internal basis functions.
+          IF (PRESENT(INTERNAL_POSITIONS)) THEN
+             WHERE (INTERNAL_VALUES(:,D) .LT. INTERNAL_MIN(D,L))
+                INTERNAL_POSITIONS(:,D,L+1) = 0
+             ELSEWHERE (INTERNAL_VALUES(:,D) .LT. DISCONTINUITY)
+                INTERNAL_POSITIONS(:,D,L+1) = 1
+             ELSEWHERE (INTERNAL_VALUES(:,D) .LE. INTERNAL_MAX(D,L))
+                INTERNAL_POSITIONS(:,D,L+1) = 2
+             ELSEWHERE
+                INTERNAL_POSITIONS(:,D,L+1) = 3
+             END WHERE
+          END IF
+          ! Clip the values based on the observerd minimums and maximums.
+          INTERNAL_VALUES(:,D) = MIN(INTERNAL_VALUES(:,D), INTERNAL_MAX(D,L))
+          INTERNAL_VALUES(:,D) = MAX(INTERNAL_VALUES(:,D), INTERNAL_MIN(D,L))
+          ! Apply the flexure function.
           WHERE (INTERNAL_VALUES(:,D) .LT. DISCONTINUITY)
              INTERNAL_VALUES(:,D) = INTERNAL_VALUES(:,D) * INTERNAL_FLEX(D,L)
           END WHERE
@@ -789,6 +847,9 @@ CONTAINS
        OUTPUT_VECS(:,:)     = BEST_V3(:,:)  
        OUTPUT_SHIFT(:)      = BEST_S3(:)    
     END IF
+
+    ! Set the minimum and maximum values observved at fit time.
+    CALL SET_MIN_MAX(X(:,:))
 
   CONTAINS
 

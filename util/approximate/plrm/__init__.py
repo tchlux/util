@@ -25,15 +25,16 @@ class PLRM(Approximator):
         else:                  num_threads = None
         # Core numpy utilities.
         from numpy import where, zeros
-        # Store the X and Y data for this model.
+        # Store the X and Y normalization factors for the model.
         self.x_mean = x.mean(axis=0)
         self.x_stdev = x.std(axis=0)
-        
-        # Normalize the X and Y data for this model.
-        x = ((x - self.x_mean) / self.x_stdev).astype("float32")
+        self.x_stdev = where(self.x_stdev != 0, self.x_stdev, 1.0)
+        # 
         self.y_mean = y.mean(axis=0)
         self.y_stdev = y.std(axis=0)
         self.y_stdev = where(self.y_stdev == 0, 1.0, self.y_stdev)
+        # Normalize the X and Y data for this model.
+        x = ((x - self.x_mean) / self.x_stdev).astype("float32")
         y = ((y - self.y_mean) / self.y_stdev).astype("float32")
         # Fit internal piecewise linear regression model.
         di = x.shape[1]
@@ -59,12 +60,72 @@ class PLRM(Approximator):
             y = (y * self.y_stdev) + self.y_mean
         return y
 
+    # Save this model to a path.
+    def save(self, path):
+        import json
+        with open(path, "w") as f:
+            all_attributes = set(dir(self.plrm))
+            f.write(json.dumps([
+                # Create a dictionary of all attributes that can be "set_".
+                {
+                    n[4:] : getattr(self.plrm, n[4:]).tolist() if
+                    hasattr(getattr(self.plrm, n[4:]), "tolist") else
+                    getattr(self.plrm, n[4:])
+                    for n in all_attributes
+                    if (n[:4] == "set_") and (n[4:] in all_attributes)
+                },
+                # Create a dictionary of the known python attributes.
+                {
+                    "x_mean": self.x_mean.tolist() if hasattr(self, "x_mean") else None,
+                    "x_stdev": self.x_stdev.tolist() if hasattr(self, "x_stdev") else None,
+                    "y_mean": self.y_mean.tolist() if hasattr(self, "y_mean") else None,
+                    "y_stdev": self.y_stdev.tolist() if hasattr(self, "y_stdev") else None
+                }
+            ]))
+
+    # Load this model from a path (after having been saved).
+    def load(self, path):
+        # Read the file.
+        from numpy import asarray
+        import json
+        with open(path, "r") as f:
+            model, attrs = json.loads(f.read())
+        # Load the attributes of the model.
+        for key in model:
+            # Try setting all possible model keys.
+            try:
+                if (model[key] is None): continue
+                elif (type(model[key]) is int):
+                    setattr(self.plrm, key, model[key])
+                else:
+                    setattr(self.plrm, key, asarray(model[key], dtype="float32", order="F"))
+            # If this is a parameter, ignore it.
+            except NotImplementedError: pass
+        # Load the attributes of this class.        
+        for key in attrs:
+            setattr(self, key, asarray(attrs[key], dtype="float32", order="F"))
+        # Return self in case an assignment was made.
+        return self
+
 
 if __name__ == "__main__":
     import numpy as np
     from util.approximate.testing import test_plot
     m = PLRM()
+    # Try saving an untrained model.
+    m.save("testing_empty_save.json")
+    m.load("testing_empty_save.json")
+    # Create the test plot.
     p, x, y = test_plot(m, random=True, N=40, plot_points=500) #plot_points=5000)
+    # Try saving the trained model and applying it after loading.
+    m.save("testing_real_save.json")
+    m.load("testing_real_save.json")
+    p.add("Loaded values", *x.T, m(x)+0.05, color=1, marker_size=4)
+    # Generate the visual.
     print("Generating surface plot..")
     p.show(show=True)
     print("", "done.", flush=True)
+    # Remove the save files.
+    import os
+    os.remove("testing_empty_save.json")
+    os.remove("testing_real_save.json")
