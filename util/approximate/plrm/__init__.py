@@ -1,8 +1,8 @@
 from util.approximate.base import Approximator
 
-# SOURCE_FILE = "plrm.f90"
+SOURCE_FILE = "plrm.f90"
 # SOURCE_FILE = "stable_flexure.f90"
-SOURCE_FILE = "stable_relu.f90"
+# SOURCE_FILE = "stable_relu.f90"
 # SOURCE_FILE = "stable_leaky_relu.f90"
 
 class PLRM(Approximator):
@@ -18,34 +18,49 @@ class PLRM(Approximator):
                               verbose=False, output_dir=this_dir)
         self.plrm = plrm.plrm
 
-    def _fit(self, x, y, ds=32, ns=8, steps=1000, seed=None):
+    def _fit(self, x, y, ds=32, ns=8, steps=1000, seed=None,
+             normalize_x=True, normalize_y=True, new_model=True,
+             keep_best=True, num_threads=None, **kwargs):
         # If a random seed is provided, then only 2 threads can be used
         #  because nondeterministic behavior is exhibited otherwise.
-        if (seed is not None): num_threads = 2
-        else:                  num_threads = None
+        if (seed is not None):
+            if (num_threads is None):
+                num_threads = 2
+            else:
+                num_threads = min(num_threads, 2)
         # Core numpy utilities.
-        from numpy import where, zeros
+        from numpy import where, zeros, ones
         # Store the X and Y normalization factors for the model.
-        self.x_mean = x.mean(axis=0)
-        self.x_stdev = x.std(axis=0)
-        self.x_stdev = where(self.x_stdev != 0, self.x_stdev, 1.0)
-        # 
-        self.y_mean = y.mean(axis=0)
-        self.y_stdev = y.std(axis=0)
-        self.y_stdev = where(self.y_stdev == 0, 1.0, self.y_stdev)
+        if normalize_x:
+            self.x_mean = x.mean(axis=0)
+            self.x_stdev = x.std(axis=0)
+            self.x_stdev = where(self.x_stdev != 0, self.x_stdev, 1.0)
+        else:
+            self.x_mean = zeros(x.shape[1], dtype="float32")
+            self.x_stdev = ones(x.shape[1], dtype="float32")
+        if normalize_y:
+            self.y_mean = y.mean(axis=0)
+            self.y_stdev = y.std(axis=0)
+            self.y_stdev = where(self.y_stdev != 0, self.y_stdev, 1.0)
+        else:
+            self.y_mean = zeros(y.shape[1], dtype="float32")
+            self.y_stdev = ones(y.shape[1], dtype="float32")
         # Normalize the X and Y data for this model.
         x = ((x - self.x_mean) / self.x_stdev).astype("float32")
         y = ((y - self.y_mean) / self.y_stdev).astype("float32")
         # Fit internal piecewise linear regression model.
-        di = x.shape[1]
-        do = y.shape[1]
-        self.plrm.new_model(di, ds, ns, do)
-        self.plrm.init_model(seed=seed)
+        if new_model:
+            di = x.shape[1]
+            do = y.shape[1]
+            self.plrm.new_model(di, ds, ns, do)
+            self.plrm.init_model(seed=seed)
+        self.record = zeros(steps, dtype="float32")
         mse = self.plrm.minimize_mse(x.T, y.T, steps=steps,
                                      num_threads=num_threads,
-                                     keep_best=True)
+                                     keep_best=keep_best,
+                                     record=self.record, **kwargs)
 
-    def _predict(self, x, embed=False):
+    def _predict(self, x, embed=False, **kwargs):
         from numpy import zeros, asarray
         # Evaluate the model at all data.
         x = asarray((x - self.x_mean) / self.x_stdev, dtype="float32", order='C')
@@ -54,7 +69,7 @@ class PLRM(Approximator):
         else:
             y = zeros((x.shape[0], self.y_mean.shape[0]), dtype="float32", order='C')
         # Call the unerlying library.
-        self.plrm.evaluate(x.T, y.T)
+        self.plrm.evaluate(x.T, y.T, **kwargs)
         # Denormalize the output values and return them.
         if (not embed):
             y = (y * self.y_stdev) + self.y_mean
@@ -65,21 +80,23 @@ class PLRM(Approximator):
         import json
         with open(path, "w") as f:
             all_attributes = set(dir(self.plrm))
+            to_save = [n[4:] for n in sorted(all_attributes)
+                       if (n[:4] == "set_") and (n[4:] in all_attributes)]
             f.write(json.dumps([
                 # Create a dictionary of all attributes that can be "set_".
                 {
-                    n[4:] : getattr(self.plrm, n[4:]).tolist() if
-                    hasattr(getattr(self.plrm, n[4:]), "tolist") else
-                    getattr(self.plrm, n[4:])
-                    for n in all_attributes
-                    if (n[:4] == "set_") and (n[4:] in all_attributes)
+                    n : getattr(self.plrm, n).tolist() if
+                    hasattr(getattr(self.plrm, n), "tolist") else
+                    getattr(self.plrm, n)
+                    for n in to_save
                 },
                 # Create a dictionary of the known python attributes.
                 {
                     "x_mean": self.x_mean.tolist() if hasattr(self, "x_mean") else None,
                     "x_stdev": self.x_stdev.tolist() if hasattr(self, "x_stdev") else None,
                     "y_mean": self.y_mean.tolist() if hasattr(self, "y_mean") else None,
-                    "y_stdev": self.y_stdev.tolist() if hasattr(self, "y_stdev") else None
+                    "y_stdev": self.y_stdev.tolist() if hasattr(self, "y_stdev") else None,
+                    "record": self.record.tolist() if hasattr(self, "record") else None
                 }
             ]))
 
@@ -103,7 +120,10 @@ class PLRM(Approximator):
             except NotImplementedError: pass
         # Load the attributes of this class.        
         for key in attrs:
-            setattr(self, key, asarray(attrs[key], dtype="float32", order="F"))
+            value = attrs[key]
+            if (type(value) is list): 
+                value = asarray(value, dtype="float32", order="F")
+            setattr(self, key, value)
         # Return self in case an assignment was made.
         return self
 
@@ -123,7 +143,11 @@ if __name__ == "__main__":
     p.add("Loaded values", *x.T, m(x)+0.05, color=1, marker_size=4)
     # Generate the visual.
     print("Generating surface plot..")
-    p.show(show=True)
+    p.show(show=False)
+    print("Generating loss plot..")
+    p = type(p)("Mean squared error")
+    p.add("MSE", list(range(m.record.shape[0])), m.record, color=1, mode="lines")
+    p.show(append=True, show=True)
     print("", "done.", flush=True)
     # Remove the save files.
     import os
