@@ -856,9 +856,9 @@ class Plot:
             else:
                 self.color_num += 1
                 color = self.color(self.color_num, alpha=opacity)
-        # Cancel shading if a color was provided.
         else:
-            shade = False
+            # WARNING (removed): Cancel shading if a color was provided.
+            # shade = False
             # Automatically convert integer color numbers into colors.
             if (type(color) == int): color = self.color(color, alpha=opacity)
             # Automatically convert tuple colors to color strings.

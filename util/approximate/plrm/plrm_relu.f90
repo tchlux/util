@@ -921,3 +921,17 @@ END MODULE PLRM
        ! ! INTERNAL_SHIFT(:,:) = INTERNAL_SHIFT(:,:) + INTERNAL_MEAN(:,2:MNS) !
        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
+
+
+!2022-01-19 15:44:58
+!
+      !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+      ! ! Convert the average gradients to the average root of gradients !
+      ! !   with the goal of minimizing the curvature of the loss        !
+      ! !   landscape to improve early convergence.                      !
+      ! WHERE (CURR_STEP(:) .GT. 0.0_RT)                                 !
+      !    CURR_STEP(:) = SQRT(CURR_STEP(:))                             !
+      ! ELSEWHERE (CURR_STEP(:) .LT. 0.0_RT)                             !
+      !    CURR_STEP(:) = -SQRT(-CURR_STEP(:))                           !
+      ! END WHERE                                                        !
+      !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!

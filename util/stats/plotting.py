@@ -37,6 +37,7 @@ def linear_fit_func(x_points, y_points):
 
 # A percentile function that can handle series with non-numbers (by ignoring).
 def robust_percentile(values, perc):
+    import numpy as np
     import numbers
     no_none = [v for v in values if isinstance(v, numbers.Number)]
     if len(no_none) > 0:
@@ -77,6 +78,7 @@ def plot_percentiles(plot, name, x_points, y_points, color=None,
                      # center_color = np.array([255,70,0,0.6]),
                      # outer_color = np.array([255,150,50,0.3])):
                      center_color=None, outer_color=None, **kwargs):
+    import numpy as np
     from util.plot import color_string_to_array
     # If there are multiple percentiles, use shading to depict them all.
     if (len(percentiles) > 1):
@@ -95,7 +97,10 @@ def plot_percentiles(plot, name, x_points, y_points, color=None,
         group_id = name + "_percentiles"
         percentiles.sort() # Ensure they are sorted
         # Find the min and max values and generate functions
-        perc_pts = percentile_points(x_points, y_points, percentiles)
+        try:
+            perc_pts = np.percentile(y_points, percentiles, axis=1)
+        except:
+            perc_pts = percentile_points(x_points, y_points, percentiles)
         # Identify the width of gaps between percentiles (for coloring)
         gaps = [percentiles[i] - percentiles[i-1] for i in range(1,len(percentiles))]
         text_color = 'rgb(100,100,100)'

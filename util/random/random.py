@@ -85,23 +85,69 @@ def random_range(start, stop=None, step=None, count=float('inf')):
         value = (value*multiplier + offset) % modulus
 
 
-# Generate a random cumulative distribution function by picking
-# "nodes" random step sizes. Return twice differentiable CDF fit.
-def cdf(nodes=9, **kwargs):
-    import numpy as np
-    from util.stats import cdf_fit
-    if ("fit" not in kwargs): kwargs["fit"] = "cubic"
-    nodes += 2
+# Generate a random uniform distribution of numbers deterministically.
+def uniform(count, value=None, offset=4091, multiplier=1048573, max_numbers=2**32):
+    max_numbers = max(count, max_numbers)
+    # Seed the generate with random integers.
+    if (value is None):
+        value = max_numbers // 2
+    if (offset is None):
+        offset = int(np.random.randint(0,max_numbers))
+    if (multiplier is None):
+        multiplier = int(np.random.randint(0,max_numbers))
+    # 
+    # Construct an offset, multiplier, and modulus for a linear
+    # congruential generator. These generators are cyclic and
+    # non-repeating when they maintain the properties:
+    # 
+    #   1) "modulus" and "offset" are relatively prime.
+    #   2) ["multiplier" - 1] is divisible by all prime factors of "modulus".
+    #   3) ["multiplier" - 1] is divisible by 4 if "modulus" is divisible by 4.
+    # 
+    offset = int(offset) * 2 + 1                  # Pick a random odd-valued offset.
+    multiplier = 4*(max_numbers + multiplier) + 1 # Pick a multiplier 1 greater than a multiple of 4.
+    modulus = int(2**np.ceil(np.log2(max_numbers)))     # Pick a modulus just big enough to generate all numbers (power of 2).
+    # Return a fixed number of numbers.x
+    for _ in range(count):
+        yield value / modulus
+        # Calculate the next value in the sequence.
+        value = (value*multiplier + offset) % modulus
+
+
+# Return a random CDF.
+def cdf(nodes=3, power=1.0, smooth=(100, 5, 0.1, 1000)):
     # Generate random steps in the x and y direction (that sum to 1).
-    x = np.linspace(0, 1, nodes)
-    y = [0.]
-    for i in range(1,nodes-1):
-        y.append( y[-1] + np.random.random()**(nodes-i-1) * (1. - y[-1]) )
-    y.append(1.)
-    y = np.array(y)
-    print("Random cdf:", x.shape, y.shape)
-    # Return the CDF fit over the generate CDF points.
-    return cdf_fit((x,y), **kwargs)
+    cdf_x = np.linspace(0, 1, nodes+2)
+    # Randomly assign a probability to each bin (this does not produce diverse CDFs).
+    cdf_y = np.random.random(size=cdf_x.size) ** power
+    cdf_y[0] = 0.0
+    cdf_y /= cdf_y.sum()
+    cdf_y = cdf_y.cumsum()
+    # Smooth the CDF y values if desired.
+    if smooth is not None:
+        n_smooth, deviations, stdev, dist_points = smooth
+        n_smooth += (n_smooth+1) % 2 # Force n_smooth to be odd.
+        # Create smoothing evaluation points (always an odd number).
+        smooth_points = np.linspace(-deviations*stdev, deviations*stdev, n_smooth)
+        # Create weights for the smoothing points based on a normal distribution.
+        smooth_weights = np.exp(
+            -(smooth_points / stdev)**2 / 2
+        ) / (stdev * np.sqrt(2*np.pi))
+        smooth_weights /= smooth_weights.sum()
+        # Compute new x and y points for the smoothed distribution.
+        new_cdf_x = np.linspace(0, 1, dist_points)
+        cdf_y = np.asarray([
+            np.interp(x + smooth_points, cdf_x, cdf_y)
+            for x in new_cdf_x
+        ])
+        cdf_y = np.dot(cdf_y, smooth_weights)
+        cdf_x = new_cdf_x
+        cdf_y -= cdf_y.min()
+        cdf_y /= cdf_y.max()
+    # Generate the CDF fit and return it.
+    cdf = lambda x: np.interp(x, cdf_x, cdf_y)
+    cdf.inverse = lambda x: np.interp(x, cdf_y, cdf_x)
+    return cdf
 
 
 # Generate "count" random indices of pairs that are within "length" bounds.
@@ -150,15 +196,24 @@ def latin(num_points, dimension):
 
 # Generate random points with a latin design over a unit hypersphere.
 def latin_sphere(num_points, dimension, inside=False):
+    # Check the quality of the input.
+    assert num_points >= 0, f"latin_sphere(num_points, dimension, inside=False), num_points >= 0 required but received num_points={num_points}"
+    assert dimension >= 0,  f"latin_sphere(num_points, dimension, inside=False), dimension >= 0 required but received dimension={dimension}"
+    # Import math functions for generating a Latin design over a sphere.
     from numpy import pi, zeros, cos, sin, arccos, linspace, random, ones, arange, interp
+    # Handle trivial case.
+    if (min(num_points, dimension) == 0):
+        return zeros((num_points, dimension))
     # Get well spaced random points over the unit cube in one less
     #  dimension as the source for spherical coordinates with a latin design.
     cell_width = 1 / num_points
-    cells = ones((dimension-1, num_points)) * arange(num_points)
+    cells = ones((max(1,dimension-1), num_points)) * arange(num_points)
     # Randomly shuffle the selected grid cells for each point.
     for cell in cells: random.shuffle(cell)
     # Convert the random selected cells into points.
-    coordinates = cell_width * (random.random((dimension-1, num_points)) + cells)
+    coordinates = cell_width * (random.random((max(1,dimension-1), num_points)) + cells)
+    # Exit early if only a single direction is desired.
+    if (dimension == 1): return coordinates.T
     # Push coordinates through an appropriate inverse density function to make
     #  the uniform density over the cube into uniform density over the sphere.
     coordinates[-1,:] *= 2*pi    
@@ -197,4 +252,53 @@ def latin_sphere(num_points, dimension, inside=False):
         points *= radii
     # Switch points to row vectors and return.
     return points.T
+
+
+# Test the random uniform by plotting the CDF.
+def _test_uniform():
+    import numpy as np
+    from util.plot import Plot
+    p = Plot()
+    n = 10000
+    x1 = np.random.random(size=(n,))
+    x2 = np.asarray(list(uniform(n)))
+    from util.stats import cdf_fit
+    x1_cdf = cdf_fit(x1)
+    x2_cdf = cdf_fit(x2)
+    p.add_func("numpy", x1_cdf, x1_cdf())
+    p.add_func("lcg", x2_cdf, x2_cdf())
+    p.show()
+
+
+# Verify that the CDF functions generated have nice behaviors.
+def _test_cdf():
+    import numpy as np
+    from util.stats import plot_percentiles
+    from util.plot import Plot
+    p = Plot()
+    # Generate samples from a lot of random CDFs.
+    x_points = np.linspace(0, 1, 1000)
+    y_points = []
+    samples = 1000
+    nodes = 3
+    smooth = 100
+    for i in range(samples):
+        print(f"\r{i:5d} : {samples:5d}", end="")
+        y_points.append(
+            cdf(nodes=nodes, smooth=smooth)(x_points)
+        )
+    print(" "*50)
+    percentiles = list(range(0,101,10))
+    y_points = np.asarray(y_points).T
+    # Plot all of the percentiles of those CDFs to see the
+    #  distribution of distributions that is generated.
+    p.color_num += 1
+    p = plot_percentiles(p, "Random CDFs", x_points, y_points,
+                         percentiles=percentiles)
+    # Add some examples for good measure.
+    for i in range(5):
+        f = cdf(nodes=nodes, smooth=smooth)
+        p.add_func(f"Sample {i+1}", f, [0, 1])
+    # Generate the plot.
+    p.show()
 
