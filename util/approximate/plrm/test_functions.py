@@ -213,7 +213,7 @@ def _test_pure(normalize=False):
 # Create a function that samples an underlying surface. The ground
 #  truth prediction task has two parts, identify the type of
 #  underlying surface and identify the center of that type.
-def sampled(n, d, dp=2, df=1, nf=2, nf_intrinsic=None,
+def sampled(d, dp=2, df=1, nf=2, nf_intrinsic=None,
             max_shift=0.5, power=3, return_info=False, seed=0):
     # By default, make all of the "modes" that can be observed maximally different.
     if (nf_intrinsic is None):
@@ -223,30 +223,39 @@ def sampled(n, d, dp=2, df=1, nf=2, nf_intrinsic=None,
     f = pure(dp, df=nf, df_intrinsic=nf_intrinsic, seed=seed)
     # Generate positions for all of the dimensions in some space.
     positions = latin_sphere(d, dp, inside=True)
-    # Assign random center offsets to all of the points (the y values).
-    offsets = latin_sphere(n, dp, inside=True) * max_shift
-    # Generate a set of evaluation points (at all positions, for all offsets).
-    x = np.concatenate([(positions - o) for o in offsets])
-    # Evaluate the function at all positions, this will produce
-    #   nf channels of output for every (position,offset) pair.
-    new_x, y = f(x)
-    # Generate a set of weights, this will be used to blend the modes
-    #   of the output from the function into single "observations".
-    #   Ideally, the "most observable" output is the predicted one.
-    weights = (latin_sphere(n, nf) + 1) ** power
-    weights = (weights.T / np.sum(weights, axis=1)).T
-    # Initialize the inputs, then collapse the observations using the weights.
-    inputs = np.ones((n, d))
-    for i in range(n):
-        inputs[i,:] = np.dot(y[i*d:(i+1)*d], weights[i])
-    # The outputs are the offset terms and weights concatenated,
-    #  both are something that should be predicted by an approximator.
-    outputs = np.concatenate((offsets, weights), axis=1)
-    # If desired, return the true positions.
-    if (return_info):
-        return inputs, outputs, positions
-    # Return the pairs of points.
-    return inputs, outputs
+    def sampled_func(inputs, d=d, dp=dp, nf=nf, max_shift=max_shift,
+                     power=power, f=f, positions=positions, seed=seed):
+        assert len(inputs.shape) == 2, f"Expected input array to have shape (n,{d}), received {inputs.shape}."
+        assert inputs.shape[1] == d,   f"Expected input array to have shape (n,{d}), received {inputs.shape}."
+        np.random.seed(seed)
+        # Get the number of points.
+        n = inputs.shape[0]
+        # Assign random center offsets to all of the points (the y values).
+        offsets = latin_sphere(n, dp, inside=True) * max_shift
+        # Generate a set of evaluation points (at all positions, for all offsets).
+        x = np.concatenate([(positions - o) for o in offsets])
+        # Evaluate the function at all positions, this will produce
+        #   nf channels of output for every (position,offset) pair.
+        new_x, y = f(x)
+        # Generate a set of weights, this will be used to blend the modes
+        #   of the output from the function into single "observations".
+        #   Ideally, the "most observable" output is the predicted one.
+        weights = (latin_sphere(n, nf) + 1) ** power
+        weights = (weights.T / np.sum(weights, axis=1)).T
+        # Overwrite the inputs, collapsing the observations using the weights.
+        for i in range(n):
+            inputs[i,:] = np.dot(y[i*d:(i+1)*d], weights[i])
+        # The outputs are the offset terms and weights concatenated,
+        #  both are something that should be predicted by an approximator.
+        outputs = np.concatenate((offsets, weights), axis=1)
+        # Return the pairs of points.
+        np.random.seed()
+        return inputs, outputs
+    # Store some configurations in accessible attributes.
+    sampled_func.f = f
+    sampled_func.positions = positions
+    # Return the function.
+    return sampled_func
 
 
 # Test the function that mimics the sampling behavior.
@@ -254,7 +263,10 @@ def _test_sampled():
     from util.plot import Plot
     n = 10
     d = 3000
-    x, y, positions = sampled(n, d, return_info=True)
+    f = sampled(d, return_info=True)
+    positions = f.positions
+    x = latin_sphere(n, d)
+    _, y = f(x)
     p = Plot()
     for i in range(n):
         p.add(f"post {i+1}", [y[i,0],y[i,0]], [y[i,1], y[i,1]], [-2, 2],
@@ -265,34 +277,71 @@ def _test_sampled():
     p.show(z_range=[-3,5])
 
 
-_test_rand_cdf()
-_test_cos_norm()
-_test_pure()
-_test_sampled()
+# Test all functions.
+def _test_all():
+    _test_rand_cdf()
+    _test_cos_norm()
+    _test_pure()
+    _test_sampled()
 
 
-# 2022-01-22 15:23:20
-# 
-####################################################################
-# # Generate unique subsets of input components to apply the pure  #
-# #   funciton to, that will create partially independent outputs. #
-# slice_generators = []                                            #
-# for num_dims in range(d-1, 0, -1):                               #
-#     slice_generators.append( combinations(range(d), num_dims) )  #
-# i = -1                                                           #
-# while (len(y) < df) and (len(slice_generators) > 0):             #
-#     i = (i + 1) % len(slice_generators)                          #
-#     # Get the next set of dimensions.                            #
-#     try:                                                         #
-#         dims = next(slice_generators[i])                         #
-#         y.append( f(x[:,dims]) )                                 #
-#     except StopIteration:                                        #
-#         slice_generators.pop(i)                                  #
-#         i -= 1                                                   #
-# # If y needs to be in higher dimension, simply raise the         #
-# #   dimension of the existing output for the function.           #
-# if (y.shape[1] < df):                                            #
-#     projection = latin_sphere(df, y.shape[1]).T                  #
-#     print("projection.shape: ", projection.shape)                #
-#     y = np.matmul(y, projection)                                 #
-####################################################################
+# Given a model class, instantiate and test various problems.
+def test_model_class(M, trials=60, test_size=1000, funcs=[pure, sampled],
+                     num_points=[100, 1000, 10000], dimension=[1, 3, 10]):
+    # Get the name of the model.
+    model_name = str(str(M).split("'")[1:2])[2:-2]
+    # Run a single test given a model class M. Return the results.
+    def run_test(config):
+        M, seed, test_size, f, n, d = config
+        import time
+        np.random.seed(seed)
+        model = M()
+        x = latin_sphere(n+test_size, d)
+        func = f(d)
+        _, y = func(x)
+        train_inds = np.arange(n+test_size)
+        np.random.shuffle(train_inds)
+        train_inds, test_inds = train_inds[:n], train_inds[n+1:]
+        fit_start = time.time()
+        model.fit(x[train_inds], y[train_inds])
+        fit_time = time.time() - fit_start
+        predict_start = time.time()
+        output = model(x[test_inds])
+        output = y[test_inds] + (np.random.random(size=y[test_inds].shape) - 0.5) * 0.2
+        predict_time = time.time() - predict_start
+        error = output - y[test_inds]
+        percentiles = list(range(0,101,10))
+        error_percentiles = np.percentile(error, list(range(0,101,10)))
+        f_name = str(str(f).split()[1:2])[2:-2]
+        return {
+            "config": (seed, test_size, f_name, n, d),
+            "function": f_name,
+            "fit_time": fit_time,
+            "predict_time": predict_time,
+            "mean_squared_error": float((error**2).mean()),
+            "percentiles": list(range(0, 101, 10)),
+            "error_percentiles": error_percentiles.tolist(),
+            "fit_record": getattr(model, "record", np.zeros(0)).tolist(),
+        }
+        
+
+    import time, json
+    test_results = {}
+    configs = []
+    # Make all of the configurations for testing.
+    for t in range(trials):
+        for f in funcs:
+            for n in num_points:
+                for d in dimension:
+                    configs.append((M, t, test_size, f, n, d))
+    # Execute all of the tests.
+    for result in map(run_test, configs):
+        config = str(result["config"])[1:-1].replace(",","").replace("'","")
+        print(f"{config:30s}", time.ctime())
+        test_results[config] = test_results.get(config, []) + [result]
+        with open(f"test_progress_[{model_name}].json", "w") as f:
+            json.dump(test_results, f)
+
+
+from util.approximate import PLRM
+test_model_class(PLRM)
