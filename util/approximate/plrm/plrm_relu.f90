@@ -470,15 +470,13 @@ CONTAINS
 
   ! Compute the gradient of the sum of squared error of this regression
   ! model with respect to its variables given input and output pairs.
-  SUBROUTINE SSE_GRADIENT(INPUTS, OUTPUTS, INTERNAL_MEAN, &
-       SUM_SQUARED_ERROR, &
+  SUBROUTINE SSE_GRADIENT(INPUTS, OUTPUTS, SUM_SQUARED_ERROR, &
        INPUT_VECS_GRADIENT, INPUT_SHIFT_GRADIENT, &
        INTERNAL_VECS_GRADIENT, INTERNAL_SHIFT_GRADIENT, &
        OUTPUT_VECS_GRADIENT, OUTPUT_SHIFT_GRADIENT )
     ! Data values stored with contiguous points: shape = (MDI,N)
     REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: INPUTS
     REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: OUTPUTS
-    REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: INTERNAL_MEAN
     ! Sum (over all data) squared error (summed over dimensions).
     REAL(KIND=RT), INTENT(INOUT) :: SUM_SQUARED_ERROR
     ! Model variable gradients.
@@ -493,7 +491,7 @@ CONTAINS
     REAL(KIND=RT), DIMENSION(SIZE(INPUTS,2),MDS,MNS) :: INTERNAL_VALUES
     REAL(KIND=RT), DIMENSION(SIZE(INPUTS,2),MDS)     :: INTERNAL_TEMP
     ! Number of points.
-    REAL(KIND=RT) :: N, MEAN
+    REAL(KIND=RT) :: N
     INTEGER :: D, L
     ! Get the number of points.
     N = REAL(SIZE(INPUTS,2), RT)
@@ -523,8 +521,7 @@ CONTAINS
            0.0_RT, INTERNAL_VALUES(:,:,1), SIZE(INTERNAL_VALUES,1))
       DO D = 1, MDS
          INTERNAL_VALUES(:,D,1) = MAX( INTERNAL_VALUES(:,D,1) &
-              - INTERNAL_MEAN(D,1) + INPUT_SHIFT(D), &
-              DISCONTINUITY)
+              + INPUT_SHIFT(D), DISCONTINUITY)
       END DO
       ! Compute the next set of internal values with a rectified activation.
       DO L = 1, MNS-1
@@ -535,10 +532,8 @@ CONTAINS
               INTERNAL_VECS(:,:,L), SIZE(INTERNAL_VECS,1), &
               0.0_RT, INTERNAL_VALUES(:,:,LP1), SIZE(INTERNAL_VALUES,1))
          DO D = 1, MDS
-            MEAN = SUM(INTERNAL_VALUES(:,D,LP1)) / N
             INTERNAL_VALUES(:,D,LP1) = MAX( INTERNAL_VALUES(:,D,LP1) &
-                 - INTERNAL_MEAN(D,LP1) + INTERNAL_SHIFT(D,L), &
-                 DISCONTINUITY)
+                 + INTERNAL_SHIFT(D,L), DISCONTINUITY)
          END DO
       END DO
       ! Compute the output.
@@ -635,7 +630,6 @@ CONTAINS
     LOGICAL :: REVERT_TO_BEST, DID_PRINT
     LOGICAL, DIMENSION(MDS,MNS) :: TO_ZERO
     INTEGER :: BS, I, L, NX, NT, BATCH_START, BATCH_END, J ! TODO: remove J
-    REAL(KIND=RT), DIMENSION(MDS,MNS) :: INTERNAL_MEAN
     REAL(KIND=RT) :: RNX, BATCHES, PREV_MSE, BEST_MSE, SCALAR
     REAL(KIND=RT) :: STEP_FACTOR, STEP_MEAN_CHANGE, STEP_MEAN_REMAIN, &
          STEP_CURV_CHANGE, STEP_CURV_REMAIN
@@ -687,8 +681,6 @@ CONTAINS
     ! Initial mean squared error is "max representable value".
     PREV_MSE = HUGE(PREV_MSE)
     BEST_MSE = HUGE(BEST_MSE)
-    ! Initial data mean is nonexistent.
-    INTERNAL_MEAN(:,:) = 0.0_RT
     ! Set the average step sizes.
     V1_MEAN(:,:)   = 0.0_RT
     S1_MEAN(:)     = 0.0_RT
@@ -705,9 +697,6 @@ CONTAINS
     S3_CURV(:)     = 0.0_RT
     ! Iterate, taking steps with the average gradient over all data.
     fit_loop : DO I = 1, STEPS
-       ! Compute the internal mean values (so the shift terms are
-       !   relative to the mean of the inputs to the nonlinearities.
-       CALL COMPUTE_INTERNAL_MEAN(X(:,:), INTERNAL_MEAN(:,:))
        ! Compute the average gradient over all points.
        MEAN_SQUARED_ERROR = 0.0_RT
        ! Set gradients to zero initially.
@@ -727,8 +716,7 @@ CONTAINS
           BATCH_END = MIN(NX, BATCH_START+BS-1)
           ! Sum the gradient over all data batches.
           CALL SSE_GRADIENT(X(:,BATCH_START:BATCH_END), &
-               Y(:,BATCH_START:BATCH_END), INTERNAL_MEAN(:,:), &
-               MEAN_SQUARED_ERROR, &
+               Y(:,BATCH_START:BATCH_END), MEAN_SQUARED_ERROR, &
                V1_GRAD(:,:), S1_GRAD(:), &
                V2_GRAD(:,:,:), S2_GRAD(:,:), &
                V3_GRAD(:,:), S3_GRAD(:))
@@ -751,15 +739,15 @@ CONTAINS
        ! Update the step factor based on model improvement.
        IF (MEAN_SQUARED_ERROR .LE. PREV_MSE) THEN
           STEP_FACTOR = STEP_FACTOR * STEP_GROWTH_RATE
-          STEP_MEAN_CHANGE = STEP_MEAN_CHANGE * STEP_GROWTH_RATE
-          STEP_MEAN_REMAIN = 1.0_RT - STEP_MEAN_CHANGE
-          STEP_CURV_CHANGE = STEP_CURV_CHANGE * STEP_GROWTH_RATE
-          STEP_CURV_REMAIN = 1.0_RT - STEP_CURV_CHANGE
-       ELSE
-          STEP_FACTOR = STEP_FACTOR * STEP_SHRINK_RATE
           STEP_MEAN_CHANGE = STEP_MEAN_CHANGE * STEP_SHRINK_RATE
           STEP_MEAN_REMAIN = 1.0_RT - STEP_MEAN_CHANGE
           STEP_CURV_CHANGE = STEP_CURV_CHANGE * STEP_SHRINK_RATE
+          STEP_CURV_REMAIN = 1.0_RT - STEP_CURV_CHANGE
+       ELSE
+          STEP_FACTOR = STEP_FACTOR * STEP_SHRINK_RATE
+          STEP_MEAN_CHANGE = STEP_MEAN_CHANGE * STEP_GROWTH_RATE
+          STEP_MEAN_REMAIN = 1.0_RT - STEP_MEAN_CHANGE
+          STEP_CURV_CHANGE = STEP_CURV_CHANGE * STEP_GROWTH_RATE
           STEP_CURV_REMAIN = 1.0_RT - STEP_CURV_CHANGE
        END IF
 
@@ -808,12 +796,7 @@ CONTAINS
        INTERNAL_SHIFT(:,:)  = BEST_S2(:,:)  
        OUTPUT_VECS(:,:)     = BEST_V3(:,:)  
        OUTPUT_SHIFT(:)      = BEST_S3(:)    
-       CALL COMPUTE_INTERNAL_MEAN(X(:,:), INTERNAL_MEAN(:,:))
     END IF
-
-    ! Transfer the internal mean values into the shift terms.
-    INPUT_SHIFT(:) = INPUT_SHIFT(:) - INTERNAL_MEAN(:,1)
-    INTERNAL_SHIFT(:,:) = INTERNAL_SHIFT(:,:) - INTERNAL_MEAN(:,2:MNS)
 
     ! Set the minimum and maximum values observved at fit time.
     CALL SET_MIN_MAX(X(:,:))
@@ -826,42 +809,6 @@ CONTAINS
     END IF
 
   CONTAINS
-
-    ! Compute the mean of the values entering each internal piecewise linear function.
-    SUBROUTINE COMPUTE_INTERNAL_MEAN(INPUTS, INTERNAL_MEAN)
-      REAL(KIND=RT), INTENT(IN),  DIMENSION(:,:) :: INPUTS
-      REAL(KIND=RT), INTENT(OUT), DIMENSION(:,:) :: INTERNAL_MEAN
-      ! Local variables.
-      REAL(KIND=RT), DIMENSION(SIZE(INPUTS,2),MDS) :: INTERNAL_VALUES
-      REAL(KIND=RT), DIMENSION(SIZE(INPUTS,2),MDS) :: INTERNAL_TEMP
-      REAL(KIND=RT) :: N
-      INTEGER :: D, L, LP1
-      ! Compute the number of data points.
-      N = REAL(SIZE(INPUTS,2), KIND=RT)
-      ! Compute the input transformation.
-      CALL GEMM('T', 'N', SIZE(INPUTS,2), MDS, MDI, 1.0_RT, &
-           INPUTS(:,:), SIZE(INPUTS,1), &
-           INPUT_VECS(:,:), SIZE(INPUT_VECS,1), &
-           0.0_RT, INTERNAL_TEMP(:,:), SIZE(INTERNAL_TEMP,1))
-      INTERNAL_MEAN(:,1) = SUM(INTERNAL_TEMP(:,:), 1) / N
-      ! Compute the next set of internal values with a rectified activation.
-      DO L = 1, MNS-1
-         ! Compute the nonlinearity over the previous projection.
-         DO D = 1, MDS
-            INTERNAL_VALUES(:,D) = MAX( INTERNAL_TEMP(:,D) &
-                 - INTERNAL_MEAN(D,L) + INPUT_SHIFT(D), &
-                 DISCONTINUITY)
-         END DO
-         ! Compute vector values.
-         LP1 = L+1
-         CALL GEMM('N', 'N', SIZE(INPUTS,2), MDS, MDS, 1.0_RT, &
-              INTERNAL_VALUES(:,:), SIZE(INTERNAL_VALUES,1), &
-              INTERNAL_VECS(:,:,L), SIZE(INTERNAL_VECS,1), &
-              0.0_RT, INTERNAL_TEMP(:,:), SIZE(INTERNAL_TEMP,1))
-         ! Compute the mean of the values after the projection.
-         INTERNAL_MEAN(:,LP1) = SUM(INTERNAL_TEMP(:,:), 1) / N
-      END DO
-    END SUBROUTINE COMPUTE_INTERNAL_MEAN
 
 
     ! Compute the current step factor as the running average step,
@@ -902,36 +849,3 @@ CONTAINS
 
 END MODULE PLRM
 
-
-
-!2022-01-10 21:32:35
-!
-       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-       ! ! ! Shift any functions that are not splitting the data              !
-       ! ! INPUT_SHIFT(:) = INPUT_SHIFT(:) - INTERNAL_MEAN(:,1)               !
-       ! ! INTERNAL_SHIFT(:,:) = INTERNAL_SHIFT(:,:) - INTERNAL_MEAN(:,2:MNS) !
-       ! ! CALL SET_MIN_MAX(X(:,:))                                           !
-       ! ! WHERE (INTERNAL_SHIFT(:,:) .GT. -INTERNAL_MIN(:,:))                !
-       ! !    INTERNAL_SHIFT(:,:) = -INTERNAL_MIN(:,:)                        !
-       ! ! END WHERE                                                          !
-       ! ! WHERE (INTERNAL_SHIFT(:,:) .LT. -INTERNAL_MAX(:,:))                !
-       ! !    INTERNAL_SHIFT(:,:) = -INTERNAL_MAX(:,:)                        !
-       ! ! END WHERE                                                          !
-       ! ! INPUT_SHIFT(:) = INPUT_SHIFT(:) + INTERNAL_MEAN(:,1)               !
-       ! ! INTERNAL_SHIFT(:,:) = INTERNAL_SHIFT(:,:) + INTERNAL_MEAN(:,2:MNS) !
-       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-
-
-!2022-01-19 15:44:58
-!
-      !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-      ! ! Convert the average gradients to the average root of gradients !
-      ! !   with the goal of minimizing the curvature of the loss        !
-      ! !   landscape to improve early convergence.                      !
-      ! WHERE (CURR_STEP(:) .GT. 0.0_RT)                                 !
-      !    CURR_STEP(:) = SQRT(CURR_STEP(:))                             !
-      ! ELSEWHERE (CURR_STEP(:) .LT. 0.0_RT)                             !
-      !    CURR_STEP(:) = -SQRT(-CURR_STEP(:))                           !
-      ! END WHERE                                                        !
-      !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!

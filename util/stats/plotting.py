@@ -80,11 +80,16 @@ def plot_percentiles(plot, name, x_points, y_points, color=None,
                      center_color=None, outer_color=None, **kwargs):
     import numpy as np
     from util.plot import color_string_to_array
+    if type(color) == type(None):
+        plot.color_num +=1
+        color = plot.color()
+    else:
+        color = plot.color(color)
     # If there are multiple percentiles, use shading to depict them all.
     if (len(percentiles) > 1):
         # Generate the color spectrum if necessary
         plot.color_num +=1
-        color = color_string_to_array(plot.color())
+        color = color_string_to_array(color)
         if type(center_color) == type(None):
             center_color = color.copy()
             center_color[-1] = center_color[-1]*0.6
@@ -124,9 +129,6 @@ def plot_percentiles(plot, name, x_points, y_points, color=None,
                  color='rgba(%i,%i,%i,%f)'%tuple(center_color),
                  group=group_id, **kwargs)
     else:
-        if type(color) == type(None):
-            color = plot.color()
-            plot.color_num +=1
         perc_pts = percentile_points(x_points, y_points, percentiles)
         show_name = name+f" {percentiles[0]}th percentile"
         plot.add(show_name, x_points, perc_pts[0], color=color,

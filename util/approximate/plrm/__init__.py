@@ -7,7 +7,7 @@ SOURCE_FILE = "plrm.f90"
 
 class PLRM(Approximator):
 
-    def __init__(self):
+    def __init__(self, di=None, do=None, ds=None, ns=None, seed=None):
         # from plrm import plrm
         # self.plrm = plrm
         import os
@@ -17,17 +17,25 @@ class PLRM(Approximator):
         plrm = fmodpy.fimport(source_code, blas=True, omp=True, wrap=True,
                               verbose=False, output_dir=this_dir)
         self.plrm = plrm.plrm
+        # Initialize a model, if possible.
+        if (None not in {ds, ns, di, do}):
+            from numpy import zeros, ones
+            self.plrm.new_model(di, ds, ns, do)
+            self.plrm.init_model(seed=seed)
+            self.x_mean = zeros(di, dtype="float32")
+            self.x_stdev = ones(di, dtype="float32")
+            self.y_mean = zeros(do, dtype="float32")
+            self.y_stdev = ones(do, dtype="float32")
 
-    def _fit(self, x, y, ds=32, ns=8, steps=1000, seed=None,
+    def _fit(self, x, y, ds=32, ns=8, steps=5000, seed=None,
              normalize_x=True, normalize_y=True, new_model=True,
              keep_best=True, num_threads=None, **kwargs):
         # If a random seed is provided, then only 2 threads can be used
         #  because nondeterministic behavior is exhibited otherwise.
         if (seed is not None):
-            if (num_threads is None):
-                num_threads = 2
-            else:
-                num_threads = min(num_threads, 2)
+            if ((num_threads is None) or (num_threads > 2)):
+                import warnings
+                warnings.warn("Seeding a PLRM model will deterministically initialize weights, but num_threads > 2 will result in nondeterministic model updates.")
         # Core numpy utilities.
         from numpy import where, zeros, ones
         # Store the X and Y normalization factors for the model.
@@ -59,6 +67,7 @@ class PLRM(Approximator):
                                      num_threads=num_threads,
                                      keep_best=keep_best,
                                      record=self.record, **kwargs)
+
 
     def _predict(self, x, embed=False, **kwargs):
         from numpy import zeros, asarray
