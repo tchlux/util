@@ -38,9 +38,11 @@ The following list links to each module within the `util` package. This serves a
 
 #### [`util.approximate`](util/approximate#user-content-utilapproximate)
 
+All approximation algorithm research. Neural networks, nearest neighbor, Linear Shepard, Multivariate adaptive regression splines, box splines, voronoi mesh, support vector machine, delaunay mesh, multivariate polynomials, etc.. All algorithms are treated as regression algorithms, classification tasks are translated to regression algorithms using a regular simplex embedding on input and a linear solve on output.
+
 #### [`util.data`](util/data#user-content-utildata)
 
-
+A pure python implementation of a Pandas-like Dataframe. See the `test.py` files for usage details. Slower than pandas for large data (>10MB), faster and more flexible than pandas for small data (<10MB).
 
 #### [`util.plot`](util/plot#user-content-utilplot)
 
