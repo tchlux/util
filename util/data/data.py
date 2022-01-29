@@ -238,7 +238,7 @@ class Data:
             for i,row in enumerate(data):
                 # Update user on progress if too much time has elapsed..
                 if (time.time() - start) > self.max_wait:
-                    print(f" {100.*row/len(data):.2f}% init", end="\r", flush=True)
+                    print(f" {100.*i/len(data):.2f}% init", end="\r", flush=True)
                     start = time.time()
                 self.append(row)
 
