@@ -1,5 +1,19 @@
 ! TODO:
 ! 
+! - Validation-based training and greedy saving / model selection.
+! 
+! - Zero mean and unit variance the input and output data inside the
+!   fit routine, then insert those linear operators into the weights
+!   of the model (to reduce work that needs to be done outside).
+! 
+! - Get stats on the internal values within the network during training.
+!   - step size progression
+!   - shift values
+!   - vector magnitudes for each node
+!   - output weights magnitude for each node
+!   - internal node contributions to MSE
+!   - data distributions at internal nodes (% less and greater than 0)
+! 
 ! - Replace model variables with single internal container type.
 ! - Replace model configuration with single internal container type.
 ! - Replace model optimization variables with single internal container type.
@@ -9,36 +23,19 @@
 !      Also allows for the module to operate on multiple different
 !      networks interchangeably (right now it only supports one).
 ! 
-! - Validation-based training and greedy saving / model selection.
+! - Implement contextual input transformation that applies a PLRM model
+!   to all input components concatenated with learnable "position"
+!   variables. Sum all input components across the outputs of this
+!   model and pass that sum-vector as the input for each point.
+!   Gradient of full model should pass back through this component.
+!   For very large inputs, devise a way to sample subsets of positions
+!    and only train on that subset of components.
+! 
 ! - Well-spaced validation data (multiply distances in input and output?).
-! - Support for vectorizing integer valued inputs (initially regular simplex, trainable).
-! 
-! - Get stats on the internal values within the network during training.
-!   - shift values
-!   - vector magnitudes for each node
-!   - output weights magnitude for each node
-!   - internal node contributions to MSE
-!   - data distributions at internal nodes (% less and greater than 0)
-! 
 ! - Training support for vector of assigned neighbors for each point.
 ! - categorical outputs with trainable vector representations
 ! - Train only the output, internal, or input layers.
-! 
-! - Implement contextual approximation by stacking robust PLRM models
-!   in a specific arrangement. These models must have globally
-!   effective search strategies to avoid the pitfalls of difficult
-!   weight initialization and data normalization.
-! 
-!   Contextual approximation parameters:
-! -- number of tokens (integer MNT)
-! -- token size (integer MDT)
-! -- indices from input vector for each token's components (matrix of integer, MDT by MNT)
-! -- size of vector space representation for "learnable token location" (integer) added onto each input "token" (MTS) model token space.
-! -- shape of nonlinear "input token transformation" (MDT+MTS, IMNS, IMDS, TMDO)
-! -- shape of nonlinear "context approximation" (2 TMDO, CMNS, CMDS, CMDO)
-! -- shape of nonlinear "output token transformation" (CMDO, OMNS, OMDS, TMDO)
-! -- number of sequential stacks of the above (context and output transformation layers)
-! -- size of predicted output vector MDO (linearly reduce from last OMDO to MDO)
+
 
 
 ! Module for matrix multiplication (absolutely crucial for PLRM speed).
@@ -57,10 +54,12 @@ CONTAINS
     REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: A, B
     REAL(KIND=RT), INTENT(OUT), DIMENSION(:,:) :: C
     ! Call external single-precision matrix-matrix multiplication
-    !  (should be provided by hardware manufacturer, if not write custom).
+    !  (should be provided by hardware manufacturer, if not use custom).
     EXTERNAL :: SGEMM 
     CALL SGEMM(OP_A, OP_B, OUT_ROWS, OUT_COLS, INNER_DIM, &
        AB_MULT, A, A_ROWS, B, B_ROWS, C_MULT, C, C_ROWS)
+    ! TODO: debug the following, appears to not be working correctly.
+    ! 
     ! ! Fortran intrinsic version of general matrix multiplication routine.
     ! IF (OP_A .EQ. 'N') THEN
     !    IF (OP_B .EQ. 'N') THEN
@@ -92,8 +91,8 @@ MODULE PLRM
   REAL(KIND=RT), PARAMETER :: INITIAL_STEP = 0.001_RT
   REAL(KIND=RT), PARAMETER :: INITIAL_STEP_MEAN_CHANGE = 0.1_RT  
   REAL(KIND=RT), PARAMETER :: INITIAL_STEP_CURV_CHANGE = 0.01_RT  
-  REAL(KIND=RT), PARAMETER :: STEP_GROWTH_RATE = 1.001_RT
-  REAL(KIND=RT), PARAMETER :: STEP_SHRINK_RATE = 0.999_RT
+  REAL(KIND=RT), PARAMETER :: FASTER_RATE = 1.01_RT
+  REAL(KIND=RT), PARAMETER :: SLOWER_RATE = 0.99_RT
   INTEGER,       PARAMETER :: MIN_STEPS_TO_STABILITY = 1
 
   ! MDI = Model dimension -- input
@@ -183,15 +182,19 @@ CONTAINS
     OUTPUT_VECS(:,:) = OUTPUT_VECS(:,:) * INITIAL_OUTPUT_SCALE
     ! Generate random shifts for inputs and internal layers, zero
     !  shift for the output layer (first two will be rescaled).
-    CALL RANDOM_NUMBER(INPUT_SHIFT(:))
-    CALL RANDOM_NUMBER(INTERNAL_SHIFT(:,:))
+    DO I = 1, MDS
+       INPUT_SHIFT(I) = INITIAL_SHIFT_RANGE * (&
+            2.0_RT * REAL((I-1),RT) / REAL((MDS-1), RT))
+       INTERNAL_SHIFT(I,:) = INPUT_SHIFT(I)
+    END DO
     OUTPUT_SHIFT(:) = 0.0_RT
-    ! Assuming unit standard deviaiton, a shift range will capture N
-    !  standard deviations of data in the first layer, unclear in later
-    !  later layers. TODO: research the distribution of values observed
-    !  at any given component given this initialization scheme.
-    INPUT_SHIFT(:) = INITIAL_SHIFT_RANGE * (INPUT_SHIFT(:) * 2.0_RT - 1.0_RT)
-    INTERNAL_SHIFT(:,:) = INITIAL_SHIFT_RANGE * (INTERNAL_SHIFT(:,:) * 2.0_RT - 1.0_RT)
+    ! CALL RANDOM_NUMBER(INPUT_SHIFT(:))
+    ! CALL RANDOM_NUMBER(INTERNAL_SHIFT(:,:))
+    ! ! Assuming unit standard deviaiton, a shift range will capture N
+    ! !  standard deviations of data in the first layer, unclear in later
+    ! !  later layers.
+    ! INPUT_SHIFT(:) = INITIAL_SHIFT_RANGE * (INPUT_SHIFT(:) * 2.0_RT - 1.0_RT)
+    ! INTERNAL_SHIFT(:,:) = INITIAL_SHIFT_RANGE * (INTERNAL_SHIFT(:,:) * 2.0_RT - 1.0_RT)
     ! Set the initial min and max values to be unbounded.
     CALL RESET_MIN_MAX()
   END SUBROUTINE INIT_MODEL
@@ -550,7 +553,8 @@ CONTAINS
       ! D   - dimension index
       ! L   - layer index
       ! LP1 - layer index "plus 1" -> "P1"
-      INTEGER :: D, L, LP1
+      INTEGER :: D, L, LP1, J1, J2
+      REAL(KIND=RT) :: DISTANCE
       ! Compute the average output gradient.
       OUTPUT_SHIFT_GRADIENT(:) = SUM(OUTPUT_GRADIENT(:,:), 1) / N &
            + OUTPUT_SHIFT_GRADIENT(:)
@@ -610,15 +614,15 @@ CONTAINS
 
   ! Fit input / output pairs by minimizing mean squared error.
   SUBROUTINE MINIMIZE_MSE(X, Y, STEPS, BATCH_SIZE, NUM_THREADS, &
-       STEP_SIZE, KEEP_BEST, MEAN_SQUARED_ERROR, RECORD)
+       STEP_SIZE, KEEP_BEST, VALIDATION_SIZE, SUM_SQUARED_ERROR, RECORD)
     REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: X
     REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: Y
     INTEGER,       INTENT(IN) :: STEPS
-    INTEGER,       INTENT(IN), OPTIONAL :: BATCH_SIZE, NUM_THREADS
+    INTEGER,       INTENT(IN), OPTIONAL :: BATCH_SIZE, NUM_THREADS, VALIDATION_SIZE
     REAL(KIND=RT), INTENT(IN), OPTIONAL :: STEP_SIZE
     LOGICAL,       INTENT(IN), OPTIONAL :: KEEP_BEST
-    REAL(KIND=RT), INTENT(OUT) :: MEAN_SQUARED_ERROR
-    REAL(KIND=RT), INTENT(OUT), DIMENSION(STEPS), OPTIONAL :: RECORD
+    REAL(KIND=RT), INTENT(OUT) :: SUM_SQUARED_ERROR
+    REAL(KIND=RT), INTENT(OUT), DIMENSION(3,STEPS), OPTIONAL :: RECORD
     !  gradient step arrays, 4 copies of internal model (total of 5).
     REAL(KIND=RT), DIMENSION(MDI,MDS)       :: V1_GRAD, V1_MEAN, V1_CURV, BEST_V1
     REAL(KIND=RT), DIMENSION(MDS)           :: S1_GRAD, S1_MEAN, S1_CURV, BEST_S1
@@ -629,23 +633,33 @@ CONTAINS
     !  local variables
     LOGICAL :: REVERT_TO_BEST, DID_PRINT
     LOGICAL, DIMENSION(MDS,MNS) :: TO_ZERO
-    INTEGER :: BS, I, L, NX, NT, BATCH_START, BATCH_END, J ! TODO: remove J
-    REAL(KIND=RT) :: RNX, BATCHES, PREV_MSE, BEST_MSE, SCALAR
+    INTEGER :: BS, NV, I, L, NX, NT, BATCH_START, BATCH_END, J ! TODO: remove J
+    REAL(KIND=RT), DIMENSION(:,:), ALLOCATABLE :: Y_VALID
+    REAL(KIND=RT) :: RNX, BATCHES, PREV_MSE, MSE, BEST_MSE, SCALAR, TOTAL_GRAD_NORM
     REAL(KIND=RT) :: STEP_FACTOR, STEP_MEAN_CHANGE, STEP_MEAN_REMAIN, &
          STEP_CURV_CHANGE, STEP_CURV_REMAIN
-    REAL :: LAST_PRINT_TIME, CURRENT_TIME
+    REAL :: LAST_PRINT_TIME, CURRENT_TIME, WAIT_TIME
     ! Function that is defined by OpenMP.
     INTERFACE
        FUNCTION OMP_GET_MAX_THREADS()
          INTEGER :: OMP_GET_MAX_THREADS
        END FUNCTION OMP_GET_MAX_THREADS
     END INTERFACE
-    ! Store the start time of this routine (to make sure updates can
-    !    be shown to the user at a reasonable frequency).
-    CALL CPU_TIME(LAST_PRINT_TIME)
-    DID_PRINT = .FALSE.
     ! Number of points.
     NX = SIZE(X,2)
+    RNX = REAL(NX, RT)
+    ! Set the "validation size".
+    IF (PRESENT(VALIDATION_SIZE)) THEN
+       NV = MAX(0, MIN(VALIDATION_SIZE, NX))
+    ELSE
+       NV = INT(0.1_RT * RNX)
+    END IF
+    ! Allocate storage space for evaluating the validation data.
+    IF (NV .GT. 0) THEN
+       ALLOCATE(Y_VALID(MDO,NV))
+    END IF
+    ! Update NX and RNX based on the validation size.
+    NX = NX - NV
     RNX = REAL(NX, RT)
     ! Set the number of threads.
     IF (PRESENT(NUM_THREADS)) THEN
@@ -673,6 +687,11 @@ CONTAINS
     END IF
     ! Only "revert" to the best model seen if some steps are taken.
     REVERT_TO_BEST = REVERT_TO_BEST .AND. (STEPS .GT. 0)
+    ! Store the start time of this routine (to make sure updates can
+    !    be shown to the user at a reasonable frequency).
+    CALL CPU_TIME(LAST_PRINT_TIME)
+    DID_PRINT = .FALSE.
+    WAIT_TIME = 2.0 * NT ! 2 seconds (times number of threads)
     ! Initial rates of change of mean and variance values.
     STEP_MEAN_CHANGE = INITIAL_STEP_MEAN_CHANGE
     STEP_MEAN_REMAIN = 1.0_RT - STEP_MEAN_CHANGE
@@ -698,7 +717,7 @@ CONTAINS
     ! Iterate, taking steps with the average gradient over all data.
     fit_loop : DO I = 1, STEPS
        ! Compute the average gradient over all points.
-       MEAN_SQUARED_ERROR = 0.0_RT
+       SUM_SQUARED_ERROR = 0.0_RT
        ! Set gradients to zero initially.
        V1_GRAD(:,:)   = 0.0_RT
        S1_GRAD(:)     = 0.0_RT
@@ -709,25 +728,49 @@ CONTAINS
        ! Count the number of batches.
        BATCHES = 0.0_RT
        !$OMP PARALLEL DO NUM_THREADS(NT) PRIVATE(BATCH_END) &
-       !$OMP&  REDUCTION(+: BATCHES, MEAN_SQUARED_ERROR, &
+       !$OMP&  REDUCTION(+: BATCHES, SUM_SQUARED_ERROR, &
        !$OMP&  V1_GRAD, S1_GRAD, V2_GRAD, S2_GRAD, V3_GRAD, S3_GRAD)
        DO BATCH_START = 1, NX, BS
           BATCHES = BATCHES + 1.0_RT
           BATCH_END = MIN(NX, BATCH_START+BS-1)
           ! Sum the gradient over all data batches.
           CALL SSE_GRADIENT(X(:,BATCH_START:BATCH_END), &
-               Y(:,BATCH_START:BATCH_END), MEAN_SQUARED_ERROR, &
+               Y(:,BATCH_START:BATCH_END), SUM_SQUARED_ERROR, &
                V1_GRAD(:,:), S1_GRAD(:), &
                V2_GRAD(:,:,:), S2_GRAD(:,:), &
                V3_GRAD(:,:), S3_GRAD(:))
        END DO
        !$OMP END PARALLEL DO
+
        ! Convert the sum of squared errors into the mean squared error.
-       MEAN_SQUARED_ERROR = MEAN_SQUARED_ERROR / RNX
+       MSE = SUM_SQUARED_ERROR / RNX
+       ! Update the step factor based on model improvement.
+       IF (MSE .LE. PREV_MSE) THEN
+          STEP_FACTOR = STEP_FACTOR * FASTER_RATE
+          STEP_MEAN_CHANGE = STEP_MEAN_CHANGE * SLOWER_RATE
+          STEP_MEAN_REMAIN = 1.0_RT - STEP_MEAN_CHANGE
+          STEP_CURV_CHANGE = STEP_CURV_CHANGE * SLOWER_RATE
+          STEP_CURV_REMAIN = 1.0_RT - STEP_CURV_CHANGE
+       ELSE
+          STEP_FACTOR = STEP_FACTOR * SLOWER_RATE
+          STEP_MEAN_CHANGE = STEP_MEAN_CHANGE * FASTER_RATE
+          STEP_MEAN_REMAIN = 1.0_RT - STEP_MEAN_CHANGE
+          STEP_CURV_CHANGE = STEP_CURV_CHANGE * FASTER_RATE
+          STEP_CURV_REMAIN = 1.0_RT - STEP_CURV_CHANGE
+       END IF
+       ! Store the previous error for tracking the best-so-far.
+       PREV_MSE = MSE
+       
+       ! Compute the mean squared error on the validation points.
+       IF (NV .GT. 0) THEN
+          CALL EVALUATE(X(:,NX+1:NX+NV), Y_VALID(:,:))
+          Y_VALID(:,:) = (Y_VALID(:,:) - Y(:,NX+1:NX+NV))**2
+          MSE = SUM(Y_VALID) / NV
+       END IF
 
        ! Update the saved "best" model based on error.
-       IF (MEAN_SQUARED_ERROR .LT. BEST_MSE) THEN
-          BEST_MSE       = MEAN_SQUARED_ERROR
+       IF (MSE .LT. BEST_MSE) THEN
+          BEST_MSE       = MSE
           BEST_V1(:,:)   = INPUT_VECS(:,:)
           BEST_S1(:)     = INPUT_SHIFT(:)
           BEST_V2(:,:,:) = INTERNAL_VECS(:,:,:)
@@ -736,33 +779,56 @@ CONTAINS
           BEST_S3(:)     = OUTPUT_SHIFT(:)
        END IF
 
-       ! Update the step factor based on model improvement.
-       IF (MEAN_SQUARED_ERROR .LE. PREV_MSE) THEN
-          STEP_FACTOR = STEP_FACTOR * STEP_GROWTH_RATE
-          STEP_MEAN_CHANGE = STEP_MEAN_CHANGE * STEP_SHRINK_RATE
-          STEP_MEAN_REMAIN = 1.0_RT - STEP_MEAN_CHANGE
-          STEP_CURV_CHANGE = STEP_CURV_CHANGE * STEP_SHRINK_RATE
-          STEP_CURV_REMAIN = 1.0_RT - STEP_CURV_CHANGE
-       ELSE
-          STEP_FACTOR = STEP_FACTOR * STEP_SHRINK_RATE
-          STEP_MEAN_CHANGE = STEP_MEAN_CHANGE * STEP_GROWTH_RATE
-          STEP_MEAN_REMAIN = 1.0_RT - STEP_MEAN_CHANGE
-          STEP_CURV_CHANGE = STEP_CURV_CHANGE * STEP_GROWTH_RATE
-          STEP_CURV_REMAIN = 1.0_RT - STEP_CURV_CHANGE
-       END IF
-
-       ! Store this error if a record is being kept. TODO: Remove after testing.
-       IF (PRESENT(RECORD)) RECORD(I) = MEAN_SQUARED_ERROR
-       ! Store the previous error for tracking the best-so-far.
-       PREV_MSE = MEAN_SQUARED_ERROR
-       
        ! Update the steps for all of the model variables.
-       CALL COMPUTE_STEP(SIZE(INPUT_VECS(:,:)),      INPUT_VECS(:,:),      V1_GRAD(:,:),   V1_MEAN(:,:),   V1_CURV(:,:))
-       CALL COMPUTE_STEP(SIZE(INPUT_SHIFT(:)),       INPUT_SHIFT(:),       S1_GRAD(:),     S1_MEAN(:),     S1_CURV(:))
-       CALL COMPUTE_STEP(SIZE(INTERNAL_VECS(:,:,:)), INTERNAL_VECS(:,:,:), V2_GRAD(:,:,:), V2_MEAN(:,:,:), V2_CURV(:,:,:))
-       CALL COMPUTE_STEP(SIZE(INTERNAL_SHIFT(:,:)),  INTERNAL_SHIFT(:,:),  S2_GRAD(:,:),   S2_MEAN(:,:),   S2_CURV(:,:))
-       CALL COMPUTE_STEP(SIZE(OUTPUT_VECS(:,:)),     OUTPUT_VECS(:,:),     V3_GRAD(:,:),   V3_MEAN(:,:),   V3_CURV(:,:))
-       CALL COMPUTE_STEP(SIZE(OUTPUT_SHIFT(:)),      OUTPUT_SHIFT(:),      S3_GRAD(:),     S3_MEAN(:),     S3_CURV(:))
+       CALL COMPUTE_STEP(SIZE(INPUT_VECS(:,:)),      V1_GRAD(:,:),   V1_MEAN(:,:),   V1_CURV(:,:))
+       CALL COMPUTE_STEP(SIZE(INPUT_SHIFT(:)),       S1_GRAD(:),     S1_MEAN(:),     S1_CURV(:))
+       CALL COMPUTE_STEP(SIZE(INTERNAL_VECS(:,:,:)), V2_GRAD(:,:,:), V2_MEAN(:,:,:), V2_CURV(:,:,:))
+       CALL COMPUTE_STEP(SIZE(INTERNAL_SHIFT(:,:)),  S2_GRAD(:,:),   S2_MEAN(:,:),   S2_CURV(:,:))
+       CALL COMPUTE_STEP(SIZE(OUTPUT_VECS(:,:)),     V3_GRAD(:,:),   V3_MEAN(:,:),   V3_CURV(:,:))
+       CALL COMPUTE_STEP(SIZE(OUTPUT_SHIFT(:)),      S3_GRAD(:),     S3_MEAN(:),     S3_CURV(:))
+
+       ! Compute the norm of the entire gradient update.
+       TOTAL_GRAD_NORM = 0.0_RT
+       TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(V1_GRAD(:,:)**2)
+       TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(S1_GRAD(:)**2)
+       TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(V2_GRAD(:,:,:)**2)
+       TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(S2_GRAD(:,:)**2)
+       TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(V3_GRAD(:,:)**2)
+       TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(S3_GRAD(:)**2)
+       TOTAL_GRAD_NORM = SQRT(TOTAL_GRAD_NORM)
+       ! TOTAL_GRAD_NORM = 1.0_RT
+
+       V1_GRAD(:,:)   = STEP_FACTOR * V1_GRAD(:,:)   / TOTAL_GRAD_NORM
+       S1_GRAD(:)     = STEP_FACTOR * S1_GRAD(:)     / TOTAL_GRAD_NORM
+       V2_GRAD(:,:,:) = STEP_FACTOR * V2_GRAD(:,:,:) / TOTAL_GRAD_NORM
+       S2_GRAD(:,:)   = STEP_FACTOR * S2_GRAD(:,:)   / TOTAL_GRAD_NORM
+       V3_GRAD(:,:)   = STEP_FACTOR * V3_GRAD(:,:)   / TOTAL_GRAD_NORM
+       S3_GRAD(:)     = STEP_FACTOR * S3_GRAD(:)     / TOTAL_GRAD_NORM
+
+       ! Take the gradient steps (based on the computed "step" above).
+       INPUT_VECS(:,:)      = INPUT_VECS(:,:)      - V1_GRAD(:,:)
+       INPUT_SHIFT(:)       = INPUT_SHIFT(:)       - S1_GRAD(:)
+       INTERNAL_VECS(:,:,:) = INTERNAL_VECS(:,:,:) - V2_GRAD(:,:,:)
+       INTERNAL_SHIFT(:,:)  = INTERNAL_SHIFT(:,:)  - S2_GRAD(:,:)
+       OUTPUT_VECS(:,:)     = OUTPUT_VECS(:,:)     - V3_GRAD(:,:)
+       OUTPUT_SHIFT(:)      = OUTPUT_SHIFT(:)      - S3_GRAD(:)
+
+       ! Record the 2-norm of the step that was taken (the GRAD variables were updated).
+       IF (PRESENT(RECORD)) THEN
+          ! Store the mean squared error at this iteration.
+          RECORD(1,I) = PREV_MSE
+          ! Store the validation mean squared error.
+          RECORD(2,I) = MSE
+          ! Store the norm of the step that was taken.
+          TOTAL_GRAD_NORM = 0.0_RT
+          TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(V1_GRAD(:,:)**2)
+          TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(S1_GRAD(:)**2)
+          TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(V2_GRAD(:,:,:)**2)
+          TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(S2_GRAD(:,:)**2)
+          TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(V3_GRAD(:,:)**2)
+          TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(S3_GRAD(:)**2)
+          RECORD(3,I) = SQRT(TOTAL_GRAD_NORM)
+       END IF
 
        ! Maintain a constant max-norm across the magnitue of input and internal vectors.
        SCALAR = SQRT(MAXVAL(SUM(INPUT_VECS(:,:)**2, 1)))
@@ -774,13 +840,13 @@ CONTAINS
 
        ! Write an update about step and convergence to the command line.
        CALL CPU_TIME(CURRENT_TIME)
-       IF (CURRENT_TIME - LAST_PRINT_TIME .GT. 3.0) THEN
+       IF (CURRENT_TIME - LAST_PRINT_TIME .GT. WAIT_TIME) THEN
           IF (DID_PRINT) THEN
              DO J = 1, 25
                 WRITE (*,'(A)', ADVANCE='NO') CHAR(8) ! <- backspace over the message
              END DO
           END IF
-          WRITE (*,'(I6,"  (",F6.3,") [",F6.3,"]")', ADVANCE='NO') I, MEAN_SQUARED_ERROR, BEST_MSE
+          WRITE (*,'(I6,"  (",F6.3,") [",F6.3,"]")', ADVANCE='NO') I, MSE, BEST_MSE
           LAST_PRINT_TIME = CURRENT_TIME
           DID_PRINT = .TRUE.
        END IF
@@ -789,7 +855,7 @@ CONTAINS
 
     ! Restore the best model seen so far (if enough steps were taken).
     IF (REVERT_TO_BEST) THEN
-       MEAN_SQUARED_ERROR   = BEST_MSE
+       MSE                  = BEST_MSE
        INPUT_VECS(:,:)      = BEST_V1(:,:)  
        INPUT_SHIFT(:)       = BEST_S1(:)    
        INTERNAL_VECS(:,:,:) = BEST_V2(:,:,:)
@@ -821,9 +887,8 @@ CONTAINS
     !   STEP_CURV_CHANGE
     !   STEP_CURV_REMAIN
     !   STEP_FACTOR
-    SUBROUTINE COMPUTE_STEP(N, PARAMS, CURR_STEP, STEP_MEAN, STEP_CURV)
+    SUBROUTINE COMPUTE_STEP(N, CURR_STEP, STEP_MEAN, STEP_CURV)
       INTEGER, INTENT(IN) :: N
-      REAL(KIND=RT), DIMENSION(1:N), INTENT(INOUT) :: PARAMS
       REAL(KIND=RT), DIMENSION(1:N), INTENT(INOUT) :: CURR_STEP
       REAL(KIND=RT), DIMENSION(1:N), INTENT(INOUT) :: STEP_MEAN
       REAL(KIND=RT), DIMENSION(1:N), INTENT(INOUT) :: STEP_CURV
@@ -835,17 +900,56 @@ CONTAINS
       STEP_CURV(:) = STEP_CURV_CHANGE * (STEP_MEAN(:) - CURR_STEP(:))**2 &
            + STEP_CURV_REMAIN * STEP_CURV(:)
       STEP_CURV(:) = MAX(STEP_CURV(:), EPSILON(STEP_FACTOR))
-      ! Scale the step by the current (adapted) step size.
-      CURR_STEP(:) = STEP_FACTOR * STEP_MEAN(:)
+      ! Set the step as the mean direction (over the past few steps).
+      CURR_STEP(:) = STEP_MEAN(:)
       ! Start scaling by step magnitude by curvature once enough data is collected.
       IF (I .GT. MIN_STEPS_TO_STABILITY) THEN
          CURR_STEP(:) = CURR_STEP(:) / SQRT(STEP_CURV(:))
       END IF
-      ! Take the gradient steps (based on the computed "step" above).
-      PARAMS(:) = PARAMS(:) - CURR_STEP(:)
     END SUBROUTINE COMPUTE_STEP
 
   END SUBROUTINE MINIMIZE_MSE
 
 END MODULE PLRM
 
+
+
+!2022-01-26 21:02:16
+!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+! ! - Implement contextual approximation by stacking robust PLRM models                                                                    !
+! !   in a specific arrangement. These models must have globally                                                                           !
+! !   effective search strategies to avoid the pitfalls of difficult                                                                       !
+! !   weight initialization and data normalization.                                                                                        !
+! !   Contextual approximation parameters:                                                                                                 !
+! ! -- number of tokens (integer MNT)                                                                                                      !
+! ! -- token size (integer MDT)                                                                                                            !
+! ! -- indices from input vector for each token's components (matrix of integer, MDT by MNT)                                               !
+! ! -- size of vector space representation for "learnable token location" (integer) added onto each input "token" (MTS) model token space. !
+! ! -- shape of nonlinear "input token transformation" (MDT+MTS, IMNS, IMDS, TMDO)                                                         !
+! ! -- shape of nonlinear "context approximation" (2 TMDO, CMNS, CMDS, CMDO)                                                               !
+! ! -- shape of nonlinear "output token transformation" (CMDO, OMNS, OMDS, TMDO)                                                           !
+! ! -- number of sequential stacks of the above (context and output transformation layers)                                                 !
+! ! -- size of predicted output vector MDO (linearly reduce from last OMDO to MDO)                                                         !
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+
+!2022-01-29 07:57:49
+!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+! ! Compute the "orthogonality gradient" for all pairs of vectors.                    !
+! !  Measure similarity between pairs of internal vectors, point                      !
+! !  their gradients away from each other inversely proportional                      !
+! !  to how similar the outputs of the two vectors are.                               !
+! DO J1 = 1, MDS-1                                                                    !
+!    DO J2 = J1+1, MDS                                                                !
+!       DISTANCE = 1.0 / NORM2(INTERNAL_VALUES(:,J1,LP1) - INTERNAL_VALUES(:,J2,LP1)) !
+!       INTERNAL_VECS_GRADIENT(:,J1,L) = INTERNAL_VECS_GRADIENT(:,J1,L) &             !
+!            + (INTERNAL_VECS(:,J1,L) - INTERNAL_VECS(:,J2,L)) &                      !
+!            * distance                                                               !
+!       INTERNAL_SHIFT_GRADIENT(J1,L) = INTERNAL_VECS_GRADIENT(:,J1,L) &              !
+!            + (INTERNAL_VECS(:,J1,L) - INTERNAL_VECS(:,J2,L)) &                      !
+!            * distance                                                               !
+!    END DO                                                                           !
+! END DO                                                                              !
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!

@@ -312,7 +312,9 @@ def sampled(d, df=4, dp=2, df_intrinsic=None,
     #  components that can be combined to form "category predictions".
     f = pure(dp, df=fdf, df_intrinsic=df_intrinsic, seed=seed)
     # Generate positions for all of the dimensions in some space.
+    np.random.seed(seed)
     positions = latin_sphere(d, dp, inside=True)
+    np.random.seed()
     # Rescale the function output so that the final dimension can be matched.
     def sampled_func(inputs, d=d, dp=dp, df=df, fdf=fdf, max_shift=max_shift,
                      power=power, f=f, positions=positions, seed=seed):
@@ -390,26 +392,30 @@ def model_str(M):
 def function_str(f):
     return str(str(f).split()[1:2])[2:-2]
 def config_str(config):
-    M, f, n, d, df, ds, ns, test_size, seed = config
-    return f"{seed:4d} {function_str(f):8s} {n:5d} {d:5d} {df:5d} {model_str(M)}-{ds:02d}-{ns:02d} {test_size}"
+    M, f, n, d, df, ds, ns, s, test_size, func_seed, model_seed = config
+    return f"{func_seed:02d}-{model_seed:02d} {function_str(f):8s} {n:5d} {d:5d} {df} {model_str(M)}-{ds:02d}-{ns:02d} ({s} {test_size})"
 def test_id_str(config):
-    M, f, n, d, df, ds, ns, test_size, seed = config        
-    return f"{seed:04d}"
+    M, f, n, d, df, ds, ns, s, test_size, func_seed, model_seed = config
+    return f"{model_seed:04d}-{func_seed:04d}-{function_str(f)}"
 
 # Given a model class, instantiate and test various problems.
-def test_model_class(M, trials=50, test_size=1000, funcs=[pure, sampled],
-                     num_points=[50, 100, 150, 200],# 1000],
+def test_model_class(M, suffix="", test_size=1000,
+                     func_seeds=list(range(1,5+1)),
+                     model_seeds=list(range(1,10+1)),
+                     funcs=[pure, sampled],
+                     num_points=[50, 100, 200, 500],
                      dimension_in=[2, 10, 100],
                      dimension_out=[1, 5],
                      model_internal_dimension=[32],
-                     model_internal_states=[8]):
+                     model_internal_states=[8],
+                     model_fit_steps=[3000]):
     # Run a single test given a model class M. Return the results.
     def run_test(config):
         # Extract the configuration variables.
-        M, f, n, d, df, ds, ns, test_size, seed = config
-        np.random.seed(seed)
+        M, f, n, d, df, ds, ns, s, test_size, func_seed, model_seed = config
+        np.random.seed(func_seed)
         # Generate random test data.
-        func = f(d, df=df)
+        func = f(d, df=df, seed=func_seed)
         x = latin_sphere(n+test_size, d, inside=True)
         new_x, y = func(x)
         # Componentwise zero mean and unit variance all data.
@@ -424,14 +430,14 @@ def test_model_class(M, trials=50, test_size=1000, funcs=[pure, sampled],
         np.random.shuffle(train_inds)
         train_inds, test_inds = train_inds[:n], train_inds[n:]
         # Initialize the model.
-        model = M(di=d, do=df, ds=ds, ns=ns, seed=seed)
+        model = M(di=d, do=df, ds=ds, ns=ns, seed=model_seed)
         # Compute the error of the model before the fit operation.
         output = model(x[test_inds])
         prefit_error = ((output - y[test_inds])**2).sum(axis=1).mean()
         # Fit the model.
         fit_start = time.time()
         model.fit(x[train_inds], y[train_inds], new_model=False,
-                  normalize_x=False, normalize_y=False)
+                  normalize_x=False, normalize_y=False, steps=s)
         fit_time = time.time() - fit_start
         # Predict with the model.
         predict_start = time.time()
@@ -444,13 +450,15 @@ def test_model_class(M, trials=50, test_size=1000, funcs=[pure, sampled],
         return {
             "model": model_str(M),
             "function": function_str(f),
+            "func_seed": func_seed,
+            "model_seed": model_seed,
             "n": n,
             "d": d,
             "df": df,
             "ds": ds,
             "ns": ns,
+            "steps": s,
             "test_size": test_size,
-            "seed": seed,
             "fit_time": fit_time,
             "predict_time": predict_time,
             "initial_mean_squared_error": float(prefit_error),
@@ -460,7 +468,7 @@ def test_model_class(M, trials=50, test_size=1000, funcs=[pure, sampled],
         }
         
     # Load in any existing data that's already been collected.
-    data_dir = os.path.join("data", f"testing_{model_str(M)}")
+    data_dir = os.path.join("data", f"testing_{model_str(M)}{suffix}")
     os.makedirs(data_dir, exist_ok=True)
     test_configs = set()
     for test_id in os.listdir(data_dir):
@@ -469,10 +477,12 @@ def test_model_class(M, trials=50, test_size=1000, funcs=[pure, sampled],
         test_configs |= set(test_results)
     # Make all of the configurations for testing, skipping already covered tests.
     configs = []
-    for (t, f, n, d, df, ds, ns) in product(list(range(1,trials+1)), 
-            funcs, num_points, dimension_in, dimension_out,
-            model_internal_dimension, model_internal_states):
-        config = (M, f, n, d, df, ds, ns, test_size, t)
+    for (fs, ms, f, n, d, df, ds, ns, s) in product(
+            func_seeds, model_seeds, funcs, num_points, dimension_in, 
+            dimension_out, model_internal_dimension, 
+            model_internal_states, model_fit_steps, 
+    ):
+        config = (M, f, n, d, df, ds, ns, s, test_size, fs, ms)
         conf_str = config_str(config)
         if (conf_str in test_configs):
             print(conf_str)
@@ -515,35 +525,35 @@ def test_model_class(M, trials=50, test_size=1000, funcs=[pure, sampled],
 
 
 # Visualize the test results for a model class.
-def view_model_class(M):
+def view_model_class(M, suffix=""):
     from util.data import Data
     # Declare a file for the data to be read quickly.
-    data_file = f"data_{model_str(M)}.pkl"
+    data_file = f"data_{model_str(M)}{suffix}.pkl"
     if (not os.path.exists(data_file)):
         print("Reading data from directory..")
         # Load in any existing data that's already been collected.
-        data_dir = os.path.join("data", f"testing_{model_str(M)}")
-        names = ['seed', 'n', 'd', 'df', 'ds', 'ns', 'test_size',
-                 'function', 'model', 'fit_time', 'predict_time',
+        data_dir = os.path.join("data", f"testing_{model_str(M)}{suffix}")
+        names = ['n', 'd', 'df', 'function', 'model', 'ds', 'ns',
+                 'steps', 'test_size', 'func_seed', 'model_seed',
+                 'fit_time', 'predict_time',
                  'initial_mean_squared_error', 'mean_squared_error',
                  'error_deciles', 'fit_record']
+        configs = set(names[:9])
+        trials = set(names[9:11])
+        # Read the data.
         d = Data(names=names)
         for test_id in sorted(os.listdir(data_dir)):
             with gzip.open(os.path.join(data_dir, test_id), "rb") as f:
                 test_results = json.loads(str(f.read(), "utf8"))
             for conf_str in sorted(test_results):
-                try:
-                    d.append([test_results[conf_str][0][n] for n in names])
-                except KeyError:
-                    d.append([test_results[conf_str][n] for n in names])
+                d.append([test_results[conf_str][n] for n in names])
         # Stack the data across the axes that are repeated for each trial.
-        print("  identifying which columns are configuration columns..")
-        hash_func = lambda v: hash(str(v))
-        num_unique = {n:len(set(map(hash_func, d[n]))) for n in d.names}
-        to_stack = [n for n in d.names if num_unique[n] > 7]
+        to_stack = [n for n in d.names if n not in configs]
         print("  reorganizing data, stacking across trials..")
         d.stack(to_stack)
         print("  deleting columns that only have 1 unique value..")
+        import pickle
+        hash_func = lambda v: hash(pickle.dumps(v))
         num_unique = {n:len(set(map(hash_func, d[n]))) for n in d.names}
         for n in list(d.names):
             if (num_unique[n] == 1):
@@ -603,22 +613,24 @@ def view_model_class(M):
             pdf_y = pdf_y[1:-1]
             p.add(f"{name} Line", pdf_x, pdf_y, mode="lines", color=(0,0,0,0.8),
                   line_width=0.5, show_in_legend=False, group="test cdf")
-        sideways_pdf("Prefit Error", test["initial_mean_squared_error"], color=3)
-        sideways_pdf("Test Error", test["mean_squared_error"], color=0)
+        sideways_pdf("Prefit Error", test["initial_mean_squared_error"], color=0)
+        sideways_pdf("Test Error", test["mean_squared_error"], color=3)
         # Show the plot (only the first and the last).
         p.show(append=True, show=(i==0 or i==len(d)-1))
 
 
 from util.approximate import PLRM
 
+suffix = "_101-step-adaptation"
+
 # # Run tests for a model class.
-# test_model_class(PLRM)
+# test_model_class(PLRM, suffix=suffix)
 
 # from notifications import send_email
 # send_email("", "Done testing")
 
 # View the test results for a model class.
-view_model_class(PLRM)
+view_model_class(PLRM, suffix=suffix)
 
 
 # 2022-01-24 14:39:23
@@ -668,3 +680,11 @@ view_model_class(PLRM)
         # cdf_y -= cdf_y.min()                                                       #
         # cdf_y /= cdf_y.max()                                                       #
         ##############################################################################
+
+
+# 2022-01-25 22:14:38
+# 
+        ######################################################################
+        # print("  identifying which columns are configuration columns..")   #
+        # # num_unique = {n:len(set(map(hash_func, d[n]))) for n in d.names} #
+        ######################################################################
