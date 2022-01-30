@@ -400,10 +400,10 @@ def test_id_str(config):
 
 # Given a model class, instantiate and test various problems.
 def test_model_class(M, suffix="", test_size=1000,
-                     func_seeds=list(range(1,5+1)),
+                     func_seeds=[1,2], #list(range(1,5+1)),
                      model_seeds=list(range(1,10+1)),
                      funcs=[pure, sampled],
-                     num_points=[50, 100, 200, 500],
+                     num_points=[50, 100, 500],
                      dimension_in=[2, 10, 100],
                      dimension_out=[1, 5],
                      model_internal_dimension=[32],
@@ -437,7 +437,9 @@ def test_model_class(M, suffix="", test_size=1000,
         # Fit the model.
         fit_start = time.time()
         model.fit(x[train_inds], y[train_inds], new_model=False,
-                  normalize_x=False, normalize_y=False, steps=s)
+                  normalize_x=False, normalize_y=False, steps=s,
+                  validation_size=0, early_stop=True, keep_best=False,
+                  num_threads=2)
         fit_time = time.time() - fit_start
         # Predict with the model.
         predict_start = time.time()
@@ -588,8 +590,11 @@ def view_model_class(M, suffix=""):
         p = Plot(conf_str, "step", "mean squared error")
         # Plot the percentiles of the training error.
         records = np.asarray(test["fit_record"]).T
-        step = np.arange(1, 1+records.shape[0])
-        p = plot_percentiles(p, "MSE", step, records, color=1)
+        step = np.arange(1, 1+records.shape[1])
+        p = plot_percentiles(p, "MSE", step, records[0,:,:], color=1)
+        #   plot the validation error if that was recorded
+        if (np.linalg.norm(records[0,:,:]-records[1,:,:]) > 0.01):
+            p = plot_percentiles(p, "Validation MSE", step, records[1,:,:], color=0)
         # Plot the testing error distribution.
         def sideways_pdf(name, values, color=0):
             cdf = cdf_fit(values, smooth=True)
@@ -621,70 +626,30 @@ def view_model_class(M, suffix=""):
 
 from util.approximate import PLRM
 
-suffix = "_101-step-adaptation"
+# suffix = "_validation-based"
+# suffix = "_no-validation-early-stopping"
+# suffix = "_no-validation-no-early-stopping"
+suffix = "_no-validation-early-stopping-no-keep-best"
 
-# # Run tests for a model class.
-# test_model_class(PLRM, suffix=suffix)
+# Run tests for a model class.
+test_model_class(PLRM, suffix=suffix)
 
-# from notifications import send_email
-# send_email("", "Done testing")
+from notifications import send_email
+send_email("", "Done testing")
 
 # View the test results for a model class.
 view_model_class(PLRM, suffix=suffix)
 
 
-# 2022-01-24 14:39:23
+# TODO:
 # 
-################################################################
-# # # Add distributions for the fit and predict times.         #
-# # fit_cdf = cdf_fit(test["fit_time"])                        #
-# # predict_cdf = cdf_fit(test["predict_time"])                #
-# # p.add_func("F -- " +conf_str, fit_cdf, fit_cdf(),          #
-# #            color=i, group="fits", show_in_legend=i==0)     #
-# # p.add_func("P -- " + conf_str, predict_cdf, predict_cdf(), #
-# #            color=i, group="predicts", show_in_legend=i==0) #
-################################################################
- 
-
-
-# 2022-01-24 14:42:19
+#  - restructure test functions, make the cos(norm()) function pure
+#    without quadratic modifications (distribution shift of input can
+#    have the same effect of skewing space).
 # 
-        ########################################################
-        # # Add distributions for the testing errors.          #
-        # error_cdf = cdf_fit(test["mean_squared_error"])      #
-        # p.add_func("E -- "+conf_str, error_cdf, error_cdf(), #
-        #            color=i) #, group="errors")               #
-        ########################################################
-
-
-# 2022-01-24 16:51:51
+#  - given two suffixes, produce the "probability best" plots
+#    for each test configuration
 # 
-        ##############################################################################
-        # n_smooth, deviations, stdev, dist_points = smooth                          #
-        # n_smooth += (n_smooth+1) % 2 # Force n_smooth to be odd.                   #
-        # # Create smoothing evaluation points (always an odd number).               #
-        # smooth_points = np.linspace(-deviations*stdev, deviations*stdev, n_smooth) #
-        # # Create weights for the smoothing points based on a normal distribution.  #
-        # smooth_weights = np.exp(                                                   #
-        #     -(smooth_points / stdev)**2 / 2                                        #
-        # ) / (stdev * np.sqrt(2*np.pi))                                             #
-        # smooth_weights /= smooth_weights.sum()                                     #
-        # # Compute new x and y points for the smoothed distribution.                #
-        # new_cdf_x = np.linspace(0, 1, dist_points)                                 #
-        # cdf_y = np.asarray([                                                       #
-        #     np.interp(x + smooth_points, cdf_x, cdf_y)                             #
-        #     for x in new_cdf_x                                                     #
-        # ])                                                                         #
-        # cdf_y = np.dot(cdf_y, smooth_weights)                                      #
-        # cdf_x = new_cdf_x                                                          #
-        # cdf_y -= cdf_y.min()                                                       #
-        # cdf_y /= cdf_y.max()                                                       #
-        ##############################################################################
-
-
-# 2022-01-25 22:14:38
+#  - make sure that seeded initializations and functions are correctly
+#    making everything deterministic (looks like they are not)
 # 
-        ######################################################################
-        # print("  identifying which columns are configuration columns..")   #
-        # # num_unique = {n:len(set(map(hash_func, d[n]))) for n in d.names} #
-        ######################################################################

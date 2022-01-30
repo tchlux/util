@@ -188,13 +188,6 @@ CONTAINS
        INTERNAL_SHIFT(I,:) = INPUT_SHIFT(I)
     END DO
     OUTPUT_SHIFT(:) = 0.0_RT
-    ! CALL RANDOM_NUMBER(INPUT_SHIFT(:))
-    ! CALL RANDOM_NUMBER(INTERNAL_SHIFT(:,:))
-    ! ! Assuming unit standard deviaiton, a shift range will capture N
-    ! !  standard deviations of data in the first layer, unclear in later
-    ! !  later layers.
-    ! INPUT_SHIFT(:) = INITIAL_SHIFT_RANGE * (INPUT_SHIFT(:) * 2.0_RT - 1.0_RT)
-    ! INTERNAL_SHIFT(:,:) = INITIAL_SHIFT_RANGE * (INTERNAL_SHIFT(:,:) * 2.0_RT - 1.0_RT)
     ! Set the initial min and max values to be unbounded.
     CALL RESET_MIN_MAX()
   END SUBROUTINE INIT_MODEL
@@ -380,10 +373,11 @@ CONTAINS
     NB = MIN(N, NB)
     BN = CEILING(REAL(N) / REAL(NB))
     !$OMP PARALLEL DO PRIVATE(D, L, BS, BE, BT) IF(NB > 1)
-    DO BATCH = 1, NB
+    batch_evaluation : DO BATCH = 1, NB
        BS = BN*(BATCH-1) + 1
        BE = MIN(N, BN*BATCH)
        BT = BE-BS+1
+       IF (BT .LE. 0) CYCLE batch_evaluation
        ! Compute the input transformation.
        CALL GEMM('T', 'N', BT, MDS, MDI, 1.0_RT, &
             INPUTS(:,BS:BE), SIZE(INPUTS,1), &
@@ -465,7 +459,7 @@ CONTAINS
              OUTPUTS(D,BS:BE) = OUTPUT_SHIFT(D) + OUTPUTS(D,BS:BE)
           END DO
        END IF
-    END DO
+    END DO batch_evaluation
     ! Deallocate temporary variables.
     DEALLOCATE(INTERNAL_VALUES, TEMP_VALUES)
   END SUBROUTINE EVALUATE
@@ -783,12 +777,14 @@ CONTAINS
        IF (MSE .LT. BEST_MSE) THEN
           NS             = 0
           BEST_MSE       = MSE
-          BEST_V1(:,:)   = INPUT_VECS(:,:)
-          BEST_S1(:)     = INPUT_SHIFT(:)
-          BEST_V2(:,:,:) = INTERNAL_VECS(:,:,:)
-          BEST_S2(:,:)   = INTERNAL_SHIFT(:,:)
-          BEST_V3(:,:)   = OUTPUT_VECS(:,:)
-          BEST_S3(:)     = OUTPUT_SHIFT(:)
+          IF (REVERT_TO_BEST) THEN
+             BEST_V1(:,:)   = INPUT_VECS(:,:)
+             BEST_S1(:)     = INPUT_SHIFT(:)
+             BEST_V2(:,:,:) = INTERNAL_VECS(:,:,:)
+             BEST_S2(:,:)   = INTERNAL_SHIFT(:,:)
+             BEST_V3(:,:)   = OUTPUT_VECS(:,:)
+             BEST_S3(:)     = OUTPUT_SHIFT(:)
+          END IF
        END IF
 
        ! Update the steps for all of the model variables.
@@ -906,74 +902,14 @@ CONTAINS
 END MODULE PLRM
 
 
-
-!2022-01-26 21:02:16
+!2022-01-30 10:19:19
 !
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-! ! - Implement contextual approximation by stacking robust PLRM models                                                                    !
-! !   in a specific arrangement. These models must have globally                                                                           !
-! !   effective search strategies to avoid the pitfalls of difficult                                                                       !
-! !   weight initialization and data normalization.                                                                                        !
-! !   Contextual approximation parameters:                                                                                                 !
-! ! -- number of tokens (integer MNT)                                                                                                      !
-! ! -- token size (integer MDT)                                                                                                            !
-! ! -- indices from input vector for each token's components (matrix of integer, MDT by MNT)                                               !
-! ! -- size of vector space representation for "learnable token location" (integer) added onto each input "token" (MTS) model token space. !
-! ! -- shape of nonlinear "input token transformation" (MDT+MTS, IMNS, IMDS, TMDO)                                                         !
-! ! -- shape of nonlinear "context approximation" (2 TMDO, CMNS, CMDS, CMDO)                                                               !
-! ! -- shape of nonlinear "output token transformation" (CMDO, OMNS, OMDS, TMDO)                                                           !
-! ! -- number of sequential stacks of the above (context and output transformation layers)                                                 !
-! ! -- size of predicted output vector MDO (linearly reduce from last OMDO to MDO)                                                         !
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-
-!2022-01-29 07:57:49
-!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-! ! Compute the "orthogonality gradient" for all pairs of vectors.                    !
-! !  Measure similarity between pairs of internal vectors, point                      !
-! !  their gradients away from each other inversely proportional                      !
-! !  to how similar the outputs of the two vectors are.                               !
-! DO J1 = 1, MDS-1                                                                    !
-!    DO J2 = J1+1, MDS                                                                !
-!       DISTANCE = 1.0 / NORM2(INTERNAL_VALUES(:,J1,LP1) - INTERNAL_VALUES(:,J2,LP1)) !
-!       INTERNAL_VECS_GRADIENT(:,J1,L) = INTERNAL_VECS_GRADIENT(:,J1,L) &             !
-!            + (INTERNAL_VECS(:,J1,L) - INTERNAL_VECS(:,J2,L)) &                      !
-!            * distance                                                               !
-!       INTERNAL_SHIFT_GRADIENT(J1,L) = INTERNAL_VECS_GRADIENT(:,J1,L) &              !
-!            + (INTERNAL_VECS(:,J1,L) - INTERNAL_VECS(:,J2,L)) &                      !
-!            * distance                                                               !
-!    END DO                                                                           !
-! END DO                                                                              !
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-
-!2022-01-30 08:49:05
-!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-! ! Compute the norm of the entire gradient update.               !
-! TOTAL_GRAD_NORM = 0.0_RT                                        !
-! TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(V1_GRAD(:,:)**2)        !
-! TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(S1_GRAD(:)**2)          !
-! TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(V2_GRAD(:,:,:)**2)      !
-! TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(S2_GRAD(:,:)**2)        !
-! TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(V3_GRAD(:,:)**2)        !
-! TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(S3_GRAD(:)**2)          !
-! TOTAL_GRAD_NORM = SQRT(TOTAL_GRAD_NORM)                         !
-! ! TOTAL_GRAD_NORM = 1.0_RT                                      !
-!                                                                 !
-! V1_GRAD(:,:)   = STEP_FACTOR * V1_GRAD(:,:)   / TOTAL_GRAD_NORM !
-! S1_GRAD(:)     = STEP_FACTOR * S1_GRAD(:)     / TOTAL_GRAD_NORM !
-! V2_GRAD(:,:,:) = STEP_FACTOR * V2_GRAD(:,:,:) / TOTAL_GRAD_NORM !
-! S2_GRAD(:,:)   = STEP_FACTOR * S2_GRAD(:,:)   / TOTAL_GRAD_NORM !
-! V3_GRAD(:,:)   = STEP_FACTOR * V3_GRAD(:,:)   / TOTAL_GRAD_NORM !
-! S3_GRAD(:)     = STEP_FACTOR * S3_GRAD(:)     / TOTAL_GRAD_NORM !
-!                                                                 !
-! ! Take the gradient steps (based on the computed "step" above). !
-! INPUT_VECS(:,:)      = INPUT_VECS(:,:)      - V1_GRAD(:,:)      !
-! INPUT_SHIFT(:)       = INPUT_SHIFT(:)       - S1_GRAD(:)        !
-! INTERNAL_VECS(:,:,:) = INTERNAL_VECS(:,:,:) - V2_GRAD(:,:,:)    !
-! INTERNAL_SHIFT(:,:)  = INTERNAL_SHIFT(:,:)  - S2_GRAD(:,:)      !
-! OUTPUT_VECS(:,:)     = OUTPUT_VECS(:,:)     - V3_GRAD(:,:)      !
-! OUTPUT_SHIFT(:)      = OUTPUT_SHIFT(:)      - S3_GRAD(:)        !
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    ! ! CALL RANDOM_NUMBER(INPUT_SHIFT(:))                                                  !
+    ! ! CALL RANDOM_NUMBER(INTERNAL_SHIFT(:,:))                                             !
+    ! ! ! Assuming unit standard deviaiton, a shift range will capture N                    !
+    ! ! !  standard deviations of data in the first layer, unclear in later                 !
+    ! ! !  later layers.                                                                    !
+    ! ! INPUT_SHIFT(:) = INITIAL_SHIFT_RANGE * (INPUT_SHIFT(:) * 2.0_RT - 1.0_RT)           !
+    ! ! INTERNAL_SHIFT(:,:) = INITIAL_SHIFT_RANGE * (INTERNAL_SHIFT(:,:) * 2.0_RT - 1.0_RT) !
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
