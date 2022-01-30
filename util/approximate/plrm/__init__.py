@@ -165,7 +165,7 @@ if __name__ == "__main__":
     m.save("testing_empty_save.json")
     m.load("testing_empty_save.json")
     # Create the test plot.
-    p, x, y = test_plot(m, random=True, N=400, plot_points=1000) #plot_points=5000)
+    p, x, y = test_plot(m, random=True, N=100, plot_points=1000) #plot_points=5000)
     # Try saving the trained model and applying it after loading.
     m.save("testing_real_save.json")
     m.load("testing_real_save.json")

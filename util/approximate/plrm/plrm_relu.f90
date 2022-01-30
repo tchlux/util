@@ -184,7 +184,7 @@ CONTAINS
     !  shift for the output layer (first two will be rescaled).
     DO I = 1, MDS
        INPUT_SHIFT(I) = INITIAL_SHIFT_RANGE * (&
-            2.0_RT * REAL((I-1),RT) / REAL((MDS-1), RT))
+            2.0_RT * REAL((I-1),RT) / REAL((MDS-1), RT) - 1.0_RT)
        INTERNAL_SHIFT(I,:) = INPUT_SHIFT(I)
     END DO
     OUTPUT_SHIFT(:) = 0.0_RT
@@ -614,13 +614,14 @@ CONTAINS
 
   ! Fit input / output pairs by minimizing mean squared error.
   SUBROUTINE MINIMIZE_MSE(X, Y, STEPS, BATCH_SIZE, NUM_THREADS, &
-       STEP_SIZE, KEEP_BEST, VALIDATION_SIZE, SUM_SQUARED_ERROR, RECORD)
+       STEP_SIZE, KEEP_BEST, VALIDATION_SIZE, EARLY_STOP, &
+       SUM_SQUARED_ERROR, RECORD)
     REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: X
     REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: Y
     INTEGER,       INTENT(IN) :: STEPS
     INTEGER,       INTENT(IN), OPTIONAL :: BATCH_SIZE, NUM_THREADS, VALIDATION_SIZE
     REAL(KIND=RT), INTENT(IN), OPTIONAL :: STEP_SIZE
-    LOGICAL,       INTENT(IN), OPTIONAL :: KEEP_BEST
+    LOGICAL,       INTENT(IN), OPTIONAL :: KEEP_BEST, EARLY_STOP
     REAL(KIND=RT), INTENT(OUT) :: SUM_SQUARED_ERROR
     REAL(KIND=RT), INTENT(OUT), DIMENSION(3,STEPS), OPTIONAL :: RECORD
     !  gradient step arrays, 4 copies of internal model (total of 5).
@@ -631,9 +632,9 @@ CONTAINS
     REAL(KIND=RT), DIMENSION(MDS,MDO)       :: V3_GRAD, V3_MEAN, V3_CURV, BEST_V3
     REAL(KIND=RT), DIMENSION(MDO)           :: S3_GRAD, S3_MEAN, S3_CURV, BEST_S3
     !  local variables
-    LOGICAL :: REVERT_TO_BEST, DID_PRINT
+    LOGICAL :: REVERT_TO_BEST, DID_PRINT, ES
     LOGICAL, DIMENSION(MDS,MNS) :: TO_ZERO
-    INTEGER :: BS, NV, I, L, NX, NT, BATCH_START, BATCH_END, J ! TODO: remove J
+    INTEGER :: BS, NV, I, L, NX, NS, NT, BATCH_START, BATCH_END, J ! TODO: remove J
     REAL(KIND=RT), DIMENSION(:,:), ALLOCATABLE :: Y_VALID
     REAL(KIND=RT) :: RNX, BATCHES, PREV_MSE, MSE, BEST_MSE, SCALAR, TOTAL_GRAD_NORM
     REAL(KIND=RT) :: STEP_FACTOR, STEP_MEAN_CHANGE, STEP_MEAN_REMAIN, &
@@ -679,6 +680,14 @@ CONTAINS
     ELSE
        STEP_FACTOR = INITIAL_STEP
     END IF
+    ! Set the earliest allowed early-stopping step.
+    IF (PRESENT(EARLY_STOP)) THEN
+       ES = EARLY_STOP
+    ELSE
+       ES = .TRUE.
+    END IF
+    ! Set the initial "number of steps taken since best" counter.
+    NS = 0
     ! Set the "keep best" boolean.
     IF (PRESENT(KEEP_BEST)) THEN
        REVERT_TO_BEST = KEEP_BEST
@@ -768,8 +777,11 @@ CONTAINS
           MSE = SUM(Y_VALID) / NV
        END IF
 
+       ! Record that a step was taken.
+       NS = NS + 1
        ! Update the saved "best" model based on error.
        IF (MSE .LT. BEST_MSE) THEN
+          NS             = 0
           BEST_MSE       = MSE
           BEST_V1(:,:)   = INPUT_VECS(:,:)
           BEST_S1(:)     = INPUT_SHIFT(:)
@@ -780,38 +792,12 @@ CONTAINS
        END IF
 
        ! Update the steps for all of the model variables.
-       CALL COMPUTE_STEP(SIZE(INPUT_VECS(:,:)),      V1_GRAD(:,:),   V1_MEAN(:,:),   V1_CURV(:,:))
-       CALL COMPUTE_STEP(SIZE(INPUT_SHIFT(:)),       S1_GRAD(:),     S1_MEAN(:),     S1_CURV(:))
-       CALL COMPUTE_STEP(SIZE(INTERNAL_VECS(:,:,:)), V2_GRAD(:,:,:), V2_MEAN(:,:,:), V2_CURV(:,:,:))
-       CALL COMPUTE_STEP(SIZE(INTERNAL_SHIFT(:,:)),  S2_GRAD(:,:),   S2_MEAN(:,:),   S2_CURV(:,:))
-       CALL COMPUTE_STEP(SIZE(OUTPUT_VECS(:,:)),     V3_GRAD(:,:),   V3_MEAN(:,:),   V3_CURV(:,:))
-       CALL COMPUTE_STEP(SIZE(OUTPUT_SHIFT(:)),      S3_GRAD(:),     S3_MEAN(:),     S3_CURV(:))
-
-       ! Compute the norm of the entire gradient update.
-       TOTAL_GRAD_NORM = 0.0_RT
-       TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(V1_GRAD(:,:)**2)
-       TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(S1_GRAD(:)**2)
-       TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(V2_GRAD(:,:,:)**2)
-       TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(S2_GRAD(:,:)**2)
-       TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(V3_GRAD(:,:)**2)
-       TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(S3_GRAD(:)**2)
-       TOTAL_GRAD_NORM = SQRT(TOTAL_GRAD_NORM)
-       ! TOTAL_GRAD_NORM = 1.0_RT
-
-       V1_GRAD(:,:)   = STEP_FACTOR * V1_GRAD(:,:)   / TOTAL_GRAD_NORM
-       S1_GRAD(:)     = STEP_FACTOR * S1_GRAD(:)     / TOTAL_GRAD_NORM
-       V2_GRAD(:,:,:) = STEP_FACTOR * V2_GRAD(:,:,:) / TOTAL_GRAD_NORM
-       S2_GRAD(:,:)   = STEP_FACTOR * S2_GRAD(:,:)   / TOTAL_GRAD_NORM
-       V3_GRAD(:,:)   = STEP_FACTOR * V3_GRAD(:,:)   / TOTAL_GRAD_NORM
-       S3_GRAD(:)     = STEP_FACTOR * S3_GRAD(:)     / TOTAL_GRAD_NORM
-
-       ! Take the gradient steps (based on the computed "step" above).
-       INPUT_VECS(:,:)      = INPUT_VECS(:,:)      - V1_GRAD(:,:)
-       INPUT_SHIFT(:)       = INPUT_SHIFT(:)       - S1_GRAD(:)
-       INTERNAL_VECS(:,:,:) = INTERNAL_VECS(:,:,:) - V2_GRAD(:,:,:)
-       INTERNAL_SHIFT(:,:)  = INTERNAL_SHIFT(:,:)  - S2_GRAD(:,:)
-       OUTPUT_VECS(:,:)     = OUTPUT_VECS(:,:)     - V3_GRAD(:,:)
-       OUTPUT_SHIFT(:)      = OUTPUT_SHIFT(:)      - S3_GRAD(:)
+       CALL COMPUTE_STEP(SIZE(INPUT_VECS(:,:)),      INPUT_VECS(:,:),      V1_GRAD(:,:),   V1_MEAN(:,:),   V1_CURV(:,:))
+       CALL COMPUTE_STEP(SIZE(INPUT_SHIFT(:)),       INPUT_SHIFT(:),       S1_GRAD(:),     S1_MEAN(:),     S1_CURV(:))
+       CALL COMPUTE_STEP(SIZE(INTERNAL_VECS(:,:,:)), INTERNAL_VECS(:,:,:), V2_GRAD(:,:,:), V2_MEAN(:,:,:), V2_CURV(:,:,:))
+       CALL COMPUTE_STEP(SIZE(INTERNAL_SHIFT(:,:)),  INTERNAL_SHIFT(:,:),  S2_GRAD(:,:),   S2_MEAN(:,:),   S2_CURV(:,:))
+       CALL COMPUTE_STEP(SIZE(OUTPUT_VECS(:,:)),     OUTPUT_VECS(:,:),     V3_GRAD(:,:),   V3_MEAN(:,:),   V3_CURV(:,:))
+       CALL COMPUTE_STEP(SIZE(OUTPUT_SHIFT(:)),      OUTPUT_SHIFT(:),      S3_GRAD(:),     S3_MEAN(:),     S3_CURV(:))
 
        ! Record the 2-norm of the step that was taken (the GRAD variables were updated).
        IF (PRESENT(RECORD)) THEN
@@ -829,6 +815,10 @@ CONTAINS
           TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(S3_GRAD(:)**2)
           RECORD(3,I) = SQRT(TOTAL_GRAD_NORM)
        END IF
+
+       ! Early stop if we don't expect to see a better solution
+       !  by the time the fit operation is complete.
+       IF (ES .AND. (NS .GT. STEPS - I)) EXIT fit_loop
 
        ! Maintain a constant max-norm across the magnitue of input and internal vectors.
        SCALAR = SQRT(MAXVAL(SUM(INPUT_VECS(:,:)**2, 1)))
@@ -887,8 +877,9 @@ CONTAINS
     !   STEP_CURV_CHANGE
     !   STEP_CURV_REMAIN
     !   STEP_FACTOR
-    SUBROUTINE COMPUTE_STEP(N, CURR_STEP, STEP_MEAN, STEP_CURV)
+    SUBROUTINE COMPUTE_STEP(N, PARAMS, CURR_STEP, STEP_MEAN, STEP_CURV)
       INTEGER, INTENT(IN) :: N
+      REAL(KIND=RT), DIMENSION(1:N), INTENT(INOUT) :: PARAMS
       REAL(KIND=RT), DIMENSION(1:N), INTENT(INOUT) :: CURR_STEP
       REAL(KIND=RT), DIMENSION(1:N), INTENT(INOUT) :: STEP_MEAN
       REAL(KIND=RT), DIMENSION(1:N), INTENT(INOUT) :: STEP_CURV
@@ -903,9 +894,11 @@ CONTAINS
       ! Set the step as the mean direction (over the past few steps).
       CURR_STEP(:) = STEP_MEAN(:)
       ! Start scaling by step magnitude by curvature once enough data is collected.
-      IF (I .GT. MIN_STEPS_TO_STABILITY) THEN
+      IF (I .GE. MIN_STEPS_TO_STABILITY) THEN
          CURR_STEP(:) = CURR_STEP(:) / SQRT(STEP_CURV(:))
       END IF
+      ! Take the gradient steps (based on the computed "step" above).
+      PARAMS(:) = PARAMS(:) - CURR_STEP(:) * STEP_FACTOR
     END SUBROUTINE COMPUTE_STEP
 
   END SUBROUTINE MINIMIZE_MSE
@@ -953,3 +946,34 @@ END MODULE PLRM
 !    END DO                                                                           !
 ! END DO                                                                              !
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+
+!2022-01-30 08:49:05
+!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+! ! Compute the norm of the entire gradient update.               !
+! TOTAL_GRAD_NORM = 0.0_RT                                        !
+! TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(V1_GRAD(:,:)**2)        !
+! TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(S1_GRAD(:)**2)          !
+! TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(V2_GRAD(:,:,:)**2)      !
+! TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(S2_GRAD(:,:)**2)        !
+! TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(V3_GRAD(:,:)**2)        !
+! TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(S3_GRAD(:)**2)          !
+! TOTAL_GRAD_NORM = SQRT(TOTAL_GRAD_NORM)                         !
+! ! TOTAL_GRAD_NORM = 1.0_RT                                      !
+!                                                                 !
+! V1_GRAD(:,:)   = STEP_FACTOR * V1_GRAD(:,:)   / TOTAL_GRAD_NORM !
+! S1_GRAD(:)     = STEP_FACTOR * S1_GRAD(:)     / TOTAL_GRAD_NORM !
+! V2_GRAD(:,:,:) = STEP_FACTOR * V2_GRAD(:,:,:) / TOTAL_GRAD_NORM !
+! S2_GRAD(:,:)   = STEP_FACTOR * S2_GRAD(:,:)   / TOTAL_GRAD_NORM !
+! V3_GRAD(:,:)   = STEP_FACTOR * V3_GRAD(:,:)   / TOTAL_GRAD_NORM !
+! S3_GRAD(:)     = STEP_FACTOR * S3_GRAD(:)     / TOTAL_GRAD_NORM !
+!                                                                 !
+! ! Take the gradient steps (based on the computed "step" above). !
+! INPUT_VECS(:,:)      = INPUT_VECS(:,:)      - V1_GRAD(:,:)      !
+! INPUT_SHIFT(:)       = INPUT_SHIFT(:)       - S1_GRAD(:)        !
+! INTERNAL_VECS(:,:,:) = INTERNAL_VECS(:,:,:) - V2_GRAD(:,:,:)    !
+! INTERNAL_SHIFT(:,:)  = INTERNAL_SHIFT(:,:)  - S2_GRAD(:,:)      !
+! OUTPUT_VECS(:,:)     = OUTPUT_VECS(:,:)     - V3_GRAD(:,:)      !
+! OUTPUT_SHIFT(:)      = OUTPUT_SHIFT(:)      - S3_GRAD(:)        !
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
