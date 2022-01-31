@@ -27,6 +27,7 @@ class PLRM(Approximator):
         ns = kwargs.get("ns", 8)
         do = kwargs.get("do", None)
         self.seed = kwargs.get("seed", None)
+        self.steps = kwargs.get("steps", 1000)
         if (None not in {di, ds, ns, do}):
             from numpy import zeros, ones
             self.plrm.new_model(di, ds, ns, do)
@@ -37,9 +38,11 @@ class PLRM(Approximator):
             self.y_stdev = ones(do, dtype="float32")
 
 
-    def _fit(self, x, y, steps=5000, 
-             normalize_x=True, normalize_y=True, new_model=False,
-             keep_best=True, num_threads=None, **kwargs):
+    def _fit(self, x, y, normalize_x=True, normalize_y=True,
+             new_model=False, keep_best=True, num_threads=None,
+             **kwargs):
+        # Get the number of steps for training.
+        steps = kwargs.get("steps", self.steps)
         # If a random seed is provided, then only 2 threads can be used
         #  because nondeterministic behavior is exhibited otherwise.
         seed = kwargs.get("seed", self.seed)
@@ -74,7 +77,7 @@ class PLRM(Approximator):
             kwargs.update({"di":di, "do":do})
             self._init_model(**kwargs)
         # Minimize the mean squared error.
-        self.record = zeros((steps,3), dtype="float32", order='C')
+        self.record = zeros((steps,2), dtype="float32", order='C')
         mse = self.plrm.minimize_mse(x.T, y.T, steps=steps,
                                      num_threads=num_threads,
                                      keep_best=keep_best,
@@ -160,7 +163,7 @@ if __name__ == "__main__":
     from util.approximate.testing import test_plot
     layer_dim = 24
     num_layers = 8
-    m = PLRM(di=2, ds=layer_dim, ns=num_layers, do=1, seed=0)
+    m = PLRM(di=2, ds=layer_dim, ns=num_layers, do=1, seed=0, steps=100000)
     # Try saving an untrained model.
     m.save("testing_empty_save.json")
     m.load("testing_empty_save.json")
@@ -176,8 +179,7 @@ if __name__ == "__main__":
     print("Generating loss plot..")
     p = type(p)("Mean squared error")
     p.add("MSE", list(range(m.record.shape[0])), m.record[:,0], color=1, mode="lines")
-    p.add("Validation MSE", list(range(m.record.shape[0])), m.record[:,1], color=0, mode="lines")
-    p.add("Step sizes", list(range(m.record.shape[0])), m.record[:,2], color=2, mode="lines")
+    p.add("Step sizes", list(range(m.record.shape[0])), m.record[:,1], color=2, mode="lines")
     p.show(append=True, show=True)
     print("", "done.", flush=True)
     # Remove the save files.

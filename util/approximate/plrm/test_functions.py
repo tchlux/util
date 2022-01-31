@@ -120,6 +120,7 @@ def rand_cdf(nodes=3, power=1.0, smooth=200):
     cdf_y = cdf_y.cumsum()
     # Smooth the CDF y values if desired.
     if smooth > 0:
+        smooth += (smooth + 1) % 2 # Make sure "smooth" is odd.
         new_x = linsize(cdf_x, smooth)
         new_y = np.interp(new_x, cdf_x, cdf_y)
         new_y = smoothy(new_x, new_y)
@@ -130,6 +131,8 @@ def rand_cdf(nodes=3, power=1.0, smooth=200):
     # Generate the CDF fit and return it.
     cdf = lambda x: np.interp(x, cdf_x, cdf_y)
     cdf.inverse = lambda x: np.interp(x, cdf_y, cdf_x)
+    cdf.x = cdf_x
+    cdf.y = cdf_y
     return cdf
 
 
@@ -141,7 +144,7 @@ def _test_rand_cdf():
     # Generate samples from a lot of random CDFs.
     x_points = np.linspace(0, 1, 1000)
     y_points = []
-    samples = 1000
+    samples = 500
     for i in range(samples):
         print(f"\r{i:5d} : {samples:5d}", end="")
         y_points.append(
@@ -164,7 +167,7 @@ def _test_rand_cdf():
 
 
 # Compute the cosine of the 2-norm of the x points (row vectors).
-def cos_norm(x, radius=1, peaks=2, power=2):
+def cos_norm(x, radius=1, peaks=2, power=1):
     return np.cos(np.linalg.norm(x / radius, axis=1)**power
                   * max(0, peaks * 2 - 1) * np.pi).reshape((-1,1))
 
@@ -181,6 +184,125 @@ def _test_cos_norm():
     # p.add_func("numpy", x1_cdf, x1_cdf())
     # p.add_func("lcg", x2_cdf, x2_cdf())
     p.show(z_range=[-3,5])
+
+
+# Apply a linear skew to a space such that the largest singular value
+#  of the transformation is 1 and the smallest singular value is 'condition'.
+def skew(f, d, condition=0.5):
+    # Construct a random skew matrix.
+    skew_matrix = latin_sphere(d, d).T
+    # Enforce the desired 2-norm properties (only shrink by at most 'condition').
+    u, s, vt = np.linalg.svd(skew_matrix)
+    s /= s[0]
+    s *= np.linspace(1, condition / s[-1], d)
+    skew_matrix = np.matmul(u * s, vt.T)
+    # Construct the skew-wrapped function and return.
+    def skewed_f(x, t=skew_matrix):
+        return f(np.matmul(x, t))
+    return skewed_f
+
+# Test the skew and visually inspect the results are intuitively correct.
+def _test_skew():
+    f = cos_norm
+    f_skew = skew(f, d=2)
+    x = latin_sphere(10000, 2, inside=True)
+    from util.plot import Plot
+    p = Plot()
+    p.add("f", *x.T, f(x)[:,0], color=1, shade=True, marker_line_width=1)
+    p.add("f_skew", *x.T, f_skew(x)[:,0], use_gradient=True)
+    p.show()
+
+
+# Apply a random CDF to the input components of `f` such that the min
+#  and max values along each axis do not change. Make sure the axis 
+#  aligned distribution functions are such that they never increase
+#  the 2-norm of the points.
+def redistribute(f, d, min_val=-1.0, max_val=1.0):
+    # Generate CDF's that satisfy the necessary properties.
+    n = 50
+    cdfs = []
+    for i in range(d):
+        # ------------------------------------------------------------
+        lx = np.linspace(min_val, 0, n)
+        ly = np.asarray([
+            np.linspace(0, np.pi, n) + np.sin(np.linspace(0, np.pi, n)),
+            np.linspace(0, 2*np.pi, n) + np.sin(np.linspace(0, 2*np.pi, n)),
+            np.linspace(0, 3*np.pi, n) + np.sin(np.linspace(0, 3*np.pi, n)),
+            np.linspace(0, 4*np.pi, n) + np.sin(np.linspace(0, 4*np.pi, n)),
+            np.linspace(0, 5*np.pi, n) + np.sin(np.linspace(0, 5*np.pi, n)),
+            np.linspace(0, 6*np.pi, n) + np.sin(np.linspace(0, 6*np.pi, n)),
+        ]).T
+        ly /= ly.max(axis=0)
+        # Randomly weight the basis functions.
+        w = np.random.random(size=(ly.shape[1],))
+        w /= w.sum()
+        # Update the weights to favor values above the diagonal.
+        vals = np.dot(ly,w)
+        diff_vals = vals - np.linspace(0,1,n)
+        y0_vals = ly[:,0]
+        gap = y0_vals - vals
+        ratio = np.where(gap != 0,
+                         -diff_vals / np.where(gap != 0, gap, 1.0),
+                         0.0)
+        w[:] *= (1.0 - ratio.max())
+        w[0] += ratio.max()
+        # Finalize the left y values.
+        ly = np.dot(ly, w) - 1.0
+        # ------------------------------------------------------------
+        # Make the right y values with the same method (flipped).
+        rx = np.linspace(0, max_val, n)
+        ry = np.asarray([
+            np.linspace(0, np.pi, n) + np.sin(np.linspace(0, np.pi, n)),
+            np.linspace(0, 2*np.pi, n) + np.sin(np.linspace(0, 2*np.pi, n)),
+            np.linspace(0, 3*np.pi, n) + np.sin(np.linspace(0, 3*np.pi, n)),
+            np.linspace(0, 4*np.pi, n) + np.sin(np.linspace(0, 4*np.pi, n)),
+            np.linspace(0, 5*np.pi, n) + np.sin(np.linspace(0, 5*np.pi, n)),
+            np.linspace(0, 6*np.pi, n) + np.sin(np.linspace(0, 6*np.pi, n)),
+        ]).T
+        ry /= ry.max(axis=0)
+        # Randomly weight the basis functions.
+        w = np.random.random(size=(ry.shape[1],))
+        w /= w.sum()
+        # Update the weights to favor values above the diagonal.
+        vals = np.dot(ry,w)
+        diff_vals = vals - np.linspace(0,1,n)
+        y0_vals = ry[:,0]
+        gap = y0_vals - vals
+        ratio = np.where(gap != 0,
+                         -diff_vals / np.where(gap != 0, gap, 1.0),
+                         0.0)
+        w[:] *= (1.0 - ratio.max())
+        w[0] += ratio.max()
+        # Finalize the right y values.
+        ry = np.dot(ry, w)
+        # Flip the values and reorder them.
+        ry = (1.0 - ry)[::-1]
+        # ------------------------------------------------------------
+        # Create and store the fit function.
+        x = np.concatenate((lx, rx), axis=0)
+        y = np.concatenate((ly, ry), axis=0)
+        fit = lambda z, x=x, y=y: np.interp(z, x, y)
+        fit.inverse = lambda z, x=x, y=y: np.interp(z, y, x)
+        fit.x = x
+        fit.y = y
+        cdfs.append(fit)
+    # Generate the axis-aligned redistribution and return.
+    def redistributed_f(x, cdfs=cdfs):
+        new_x = x.copy()
+        for i in range(d):
+            new_x[:,i] = cdfs[i](x[:,i])
+        return f(new_x)
+    return redistributed_f
+
+def _test_redistribute():
+    f = cos_norm
+    f_rd = redistribute(f, 2)
+    x = latin_sphere(10000, 2, inside=True)
+    from util.plot import Plot
+    p = Plot()
+    p.add("f", *x.T, f(x)[:,0], color=1, shade=True, marker_line_width=1)
+    p.add("f_rd", *x.T, f_rd(x)[:,0], use_gradient=True)
+    p.show()
 
 
 # A pure approximation problem. Should serve as a viable test for
@@ -382,6 +504,8 @@ def _test_all():
     _test_linsize_smoothy_cdf_fit()
     _test_rand_cdf()
     _test_cos_norm()
+    _test_skew()
+    _test_redistribute()
     _test_pure()
     _test_sampled()
 
@@ -653,3 +777,86 @@ view_model_class(PLRM, suffix=suffix)
 #  - make sure that seeded initializations and functions are correctly
 #    making everything deterministic (looks like they are not)
 # 
+
+
+# 2022-01-30 20:18:13
+# 
+    ######################################################
+    # nodes = 7                                          #
+    # distx = np.linspace(min_val, max_val, nodes)       #
+    # disyy = distx.copy()                               #
+    # n = nodes // 2 - 1                                 #
+    # bin_shifts = np.random.random(size=(n,))**2        #
+    # bin_shifts = bin_shifts.cumsum()                   #
+    # bin_shifts /= bin_shifts[-1]                       #
+    # print("bin_shifts: ", bin_shifts)                  #
+    # # disty[1:nodes//2] +=                             #
+    # exit()                                             #
+    #                                                    #
+    # lefty /= lefty[-1] * 2                             #
+    # righty = (np.random.random(size=(3,))**2).cumsum() #
+    # righty /= righty[-1] * 2                           #
+    # righty += 0.5                                      #
+    #                                                    #
+    # print("lefty: ", lefty)                            #
+    # print("righty: ", righty)                          #
+    # exit()                                             #
+    ######################################################
+
+
+
+
+# 2022-01-30 20:34:33
+# 
+    #####################################################################
+    # # Generate weights from a normal distribution.                    #
+    # n = cdf.x.size                                                    #
+    # min_val = 0.0                                                     #
+    # max_val = 1.0                                                     #
+    # val_mid = (min_val + max_val) / 2                                 #
+    # val_range = 1.0                                                   #
+    # stdev = val_range / 6                                             #
+    # weights = np.exp(                                                 #
+    #     -((np.linspace(min_val, max_val,n) - val_mid) / stdev)**2 / 2 #
+    # ) / (stdev * np.sqrt(2*np.pi))                                    #
+    # weights /= weights[n//2]                                          #
+    # # Make the new y values a cross between their original and        #
+    # #  the uniform distribution line.                                 #
+    # cdf.y *= (1.0 - weights)                                          #
+    # cdf.y += weights * np.linspace(min_val, max_val, n)               #
+    #####################################################################
+
+
+# 2022-01-31 07:35:54
+# 
+    #########################################################################
+    # val_range = max_val - min_val                                         #
+    # val_mid = (min_val + max_val) / 2                                     #
+    # cdfs = [rand_cdf() for _ in range(d)]                                 #
+    # # Modify the CDF's so that the input range covers expected values.    #
+    # for cdf in cdfs:                                                      #
+    #     n = cdf.x.size                                                    #
+    #     cdf.x *= val_range                                                #
+    #     cdf.x += min_val                                                  #
+    #     # Generate weights from a normal distribution.                    #
+    #     stdev = val_range / 6                                             #
+    #     weights = np.exp(                                                 #
+    #         -((np.linspace(min_val, max_val,n) - val_mid) / stdev)**2 / 2 #
+    #     ) / (stdev * np.sqrt(2*np.pi))                                    #
+    #     weights /= weights[n//2]                                          #
+    #     # Make the new y values a cross between their original and        #
+    #     #  the uniform distribution line.                                 #
+    #     cdf.y *= (1.0 - weights)                                          #
+    #     cdf.y += weights * np.linspace(min_val, max_val, n)               #
+    #                                                                       #
+    # right_cdfs = [rand_cdf() for _ in range(d)]                           #
+    #                                                                       #
+    # midpoint = (max_val + min_val) / 2.0                                  #
+    # # Fix the CDF's such they never increase the magnitude of a value.    #
+    # for cdf in cdfs:                                                      #
+    #     n = cdf.y.size                                                    #
+    #     print("n: ", n)                                                   #
+    #     cdf.y *= 0.5 / cdf.y[n//2]                                        #
+    #     exit()                                                            #
+    #########################################################################
+
