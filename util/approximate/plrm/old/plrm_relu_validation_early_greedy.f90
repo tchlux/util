@@ -1,7 +1,6 @@
 ! TODO:
 ! 
-! - Integer assigned to embedding, unknown integer replaced with the
-!   average embedding seen at training time.
+! - Validation-based training and greedy saving / model selection.
 ! 
 ! - Zero mean and unit variance the input and output data inside the
 !   fit routine, then insert those linear operators into the weights
@@ -32,6 +31,7 @@
 !   For very large inputs, devise a way to sample subsets of positions
 !    and only train on that subset of components.
 ! 
+! - Well-spaced validation data (multiply distances in input and output?).
 ! - Training support for vector of assigned neighbors for each point.
 ! - categorical outputs with trainable vector representations
 ! - Train only the output, internal, or input layers.
@@ -608,15 +608,16 @@ CONTAINS
 
   ! Fit input / output pairs by minimizing mean squared error.
   SUBROUTINE MINIMIZE_MSE(X, Y, STEPS, BATCH_SIZE, NUM_THREADS, &
-       STEP_SIZE, KEEP_BEST, EARLY_STOP, SUM_SQUARED_ERROR, RECORD)
+       STEP_SIZE, KEEP_BEST, VALIDATION_SIZE, EARLY_STOP, &
+       SUM_SQUARED_ERROR, RECORD)
     REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: X
     REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: Y
     INTEGER,       INTENT(IN) :: STEPS
-    INTEGER,       INTENT(IN), OPTIONAL :: BATCH_SIZE, NUM_THREADS
+    INTEGER,       INTENT(IN), OPTIONAL :: BATCH_SIZE, NUM_THREADS, VALIDATION_SIZE
     REAL(KIND=RT), INTENT(IN), OPTIONAL :: STEP_SIZE
     LOGICAL,       INTENT(IN), OPTIONAL :: KEEP_BEST, EARLY_STOP
     REAL(KIND=RT), INTENT(OUT) :: SUM_SQUARED_ERROR
-    REAL(KIND=RT), INTENT(OUT), DIMENSION(2,STEPS), OPTIONAL :: RECORD
+    REAL(KIND=RT), INTENT(OUT), DIMENSION(3,STEPS), OPTIONAL :: RECORD
     !  gradient step arrays, 4 copies of internal model (total of 5).
     REAL(KIND=RT), DIMENSION(MDI,MDS)       :: V1_GRAD, V1_MEAN, V1_CURV, BEST_V1
     REAL(KIND=RT), DIMENSION(MDS)           :: S1_GRAD, S1_MEAN, S1_CURV, BEST_S1
@@ -627,12 +628,12 @@ CONTAINS
     !  local variables
     LOGICAL :: REVERT_TO_BEST, DID_PRINT, ES
     LOGICAL, DIMENSION(MDS,MNS) :: TO_ZERO
-    INTEGER :: BS, I, L, NX, NS, NT, BATCH_START, BATCH_END, J ! TODO: remove J
+    INTEGER :: BS, NV, I, L, NX, NS, NT, BATCH_START, BATCH_END, J ! TODO: remove J
+    REAL(KIND=RT), DIMENSION(:,:), ALLOCATABLE :: Y_VALID
     REAL(KIND=RT) :: RNX, BATCHES, PREV_MSE, MSE, BEST_MSE, SCALAR, TOTAL_GRAD_NORM
     REAL(KIND=RT) :: STEP_FACTOR, STEP_MEAN_CHANGE, STEP_MEAN_REMAIN, &
          STEP_CURV_CHANGE, STEP_CURV_REMAIN
     REAL :: LAST_PRINT_TIME, CURRENT_TIME, WAIT_TIME
-    CHARACTER(LEN=*), PARAMETER :: RESET_LINE = REPEAT(CHAR(8),25)
     ! Function that is defined by OpenMP.
     INTERFACE
        FUNCTION OMP_GET_MAX_THREADS()
@@ -641,6 +642,19 @@ CONTAINS
     END INTERFACE
     ! Number of points.
     NX = SIZE(X,2)
+    RNX = REAL(NX, RT)
+    ! Set the "validation size".
+    IF (PRESENT(VALIDATION_SIZE)) THEN
+       NV = MAX(0, MIN(VALIDATION_SIZE, NX))
+    ELSE
+       NV = INT(0.1_RT * RNX)
+    END IF
+    ! Allocate storage space for evaluating the validation data.
+    IF (NV .GT. 0) THEN
+       ALLOCATE(Y_VALID(MDO,NV))
+    END IF
+    ! Update NX and RNX based on the validation size.
+    NX = NX - NV
     RNX = REAL(NX, RT)
     ! Set the number of threads.
     IF (PRESENT(NUM_THREADS)) THEN
@@ -666,14 +680,14 @@ CONTAINS
     ELSE
        ES = .TRUE.
     END IF
+    ! Set the initial "number of steps taken since best" counter.
+    NS = 0
     ! Set the "keep best" boolean.
     IF (PRESENT(KEEP_BEST)) THEN
        REVERT_TO_BEST = KEEP_BEST
     ELSE
        REVERT_TO_BEST = (STEPS .GE. MIN_STEPS_TO_STABILITY)
     END IF
-    ! Set the initial "number of steps taken since best" counter.
-    NS = 0
     ! Only "revert" to the best model seen if some steps are taken.
     REVERT_TO_BEST = REVERT_TO_BEST .AND. (STEPS .GT. 0)
     ! Store the start time of this routine (to make sure updates can
@@ -750,6 +764,13 @@ CONTAINS
        ! Store the previous error for tracking the best-so-far.
        PREV_MSE = MSE
        
+       ! Compute the mean squared error on the validation points.
+       IF (NV .GT. 0) THEN
+          CALL EVALUATE(X(:,NX+1:NX+NV), Y_VALID(:,:))
+          Y_VALID(:,:) = (Y_VALID(:,:) - Y(:,NX+1:NX+NV))**2
+          MSE = SUM(Y_VALID) / NV
+       END IF
+
        ! Record that a step was taken.
        NS = NS + 1
        ! Update the saved "best" model based on error.
@@ -764,10 +785,6 @@ CONTAINS
              BEST_V3(:,:)   = OUTPUT_VECS(:,:)
              BEST_S3(:)     = OUTPUT_SHIFT(:)
           END IF
-       ! Early stop if we don't expect to see a better solution
-       !  by the time the fit operation is complete.
-       ELSE IF (ES .AND. (NS .GT. STEPS - I)) THEN
-          EXIT fit_loop
        END IF
 
        ! Update the steps for all of the model variables.
@@ -781,7 +798,9 @@ CONTAINS
        ! Record the 2-norm of the step that was taken (the GRAD variables were updated).
        IF (PRESENT(RECORD)) THEN
           ! Store the mean squared error at this iteration.
-          RECORD(1,I) = MSE
+          RECORD(1,I) = PREV_MSE
+          ! Store the validation mean squared error.
+          RECORD(2,I) = MSE
           ! Store the norm of the step that was taken.
           TOTAL_GRAD_NORM = 0.0_RT
           TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(V1_GRAD(:,:)**2)
@@ -790,8 +809,12 @@ CONTAINS
           TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(S2_GRAD(:,:)**2)
           TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(V3_GRAD(:,:)**2)
           TOTAL_GRAD_NORM = TOTAL_GRAD_NORM + SUM(S3_GRAD(:)**2)
-          RECORD(2,I) = SQRT(TOTAL_GRAD_NORM)
+          RECORD(3,I) = SQRT(TOTAL_GRAD_NORM)
        END IF
+
+       ! Early stop if we don't expect to see a better solution
+       !  by the time the fit operation is complete.
+       IF (ES .AND. (NS .GT. STEPS - I)) EXIT fit_loop
 
        ! Maintain a constant max-norm across the magnitue of input and internal vectors.
        SCALAR = SQRT(MAXVAL(SUM(INPUT_VECS(:,:)**2, 1)))
@@ -804,7 +827,11 @@ CONTAINS
        ! Write an update about step and convergence to the command line.
        CALL CPU_TIME(CURRENT_TIME)
        IF (CURRENT_TIME - LAST_PRINT_TIME .GT. WAIT_TIME) THEN
-          IF (DID_PRINT) WRITE (*,'(A)',ADVANCE='NO') RESET_LINE
+          IF (DID_PRINT) THEN
+             DO J = 1, 25
+                WRITE (*,'(A)', ADVANCE='NO') CHAR(8) ! <- backspace over the message
+             END DO
+          END IF
           WRITE (*,'(I6,"  (",F6.3,") [",F6.3,"]")', ADVANCE='NO') I, MSE, BEST_MSE
           LAST_PRINT_TIME = CURRENT_TIME
           DID_PRINT = .TRUE.
@@ -827,9 +854,14 @@ CONTAINS
     CALL SET_MIN_MAX(X(:,:))
 
     ! Erase the printed message if one was produced.
-    IF (DID_PRINT) WRITE (*,'(A)',ADVANCE='NO') RESET_LINE
+    IF (DID_PRINT) THEN
+       DO J = 1, 25
+          WRITE (*,'(A)', ADVANCE='NO') CHAR(8)
+       END DO
+    END IF
 
   CONTAINS
+
 
     ! Compute the current step factor as the running average step,
     ! inversely scaled by the average magnitude of the step.

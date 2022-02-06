@@ -1,6 +1,7 @@
 from util.approximate.base import Approximator
 
-SOURCE_FILE = "plrm.f90"
+SOURCE_FILE = "lux.f90"
+# SOURCE_FILE = "plrm.f90"
 # SOURCE_FILE = "stable_flexure.f90"
 # SOURCE_FILE = "stable_relu.f90"
 # SOURCE_FILE = "stable_leaky_relu.f90"
@@ -30,12 +31,28 @@ class PLRM(Approximator):
         self.steps = kwargs.get("steps", 1000)
         if (None not in {di, ds, ns, do}):
             from numpy import zeros, ones
-            self.plrm.new_model(di, ds, ns, do)
-            self.plrm.init_model(seed=self.seed)
+            self.config = self.plrm.new_model_config(di, do, ds, ns)
+            print(self.config)
+            names_to_print = sorted({n for n in dir(self.config) if n[:1] != '_'},
+                                    key=lambda n: (len(n), getattr(self.config, n), n))
+            max_name_len = max(map(len, names_to_print))
+            for n in names_to_print:
+                print(f" {n:{max_name_len}s} {getattr(self.config,n)}")
+            self.model = np.zeros(self.config.TOTAL_SIZE, dtype="float32")
+            self.plrm.init_model(self.config, self.model, seed=self.seed)
             self.x_mean = zeros(di, dtype="float32")
             self.x_stdev = ones(di, dtype="float32")
             self.y_mean = zeros(do, dtype="float32")
             self.y_stdev = ones(do, dtype="float32")
+            # TODO: 
+            #  - Make the derived type fields all lower case.
+            #  - Make a python method for extracting model parts from vector.
+            #  - Test the internals extraction by visualizing weights & values.
+            #  - Verify that training model still works as expected.
+            #  - Write fortran code for locate-aggregate-approximate structure.
+            #   - Add configurations that determine what parts of gradient are computed.
+            #   - If "INPUT_GRAD" array is provided, compute that gradient too.
+            exit()
 
 
     def _fit(self, x, y, normalize_x=True, normalize_y=True,
@@ -161,9 +178,9 @@ class PLRM(Approximator):
 if __name__ == "__main__":
     import numpy as np
     from util.approximate.testing import test_plot
-    layer_dim = 24
-    num_layers = 8
-    m = PLRM(di=2, ds=layer_dim, ns=num_layers, do=1, seed=0, steps=100000)
+    layer_dim = 3
+    num_layers = 4
+    m = PLRM(di=2, ds=layer_dim, ns=num_layers, do=1, seed=0, steps=10000)
     # Try saving an untrained model.
     m.save("testing_empty_save.json")
     m.load("testing_empty_save.json")
