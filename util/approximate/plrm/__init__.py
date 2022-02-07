@@ -7,17 +7,27 @@ SOURCE_FILE = "lux.f90"
 # SOURCE_FILE = "stable_leaky_relu.f90"
 
 class PLRM(Approximator):
-
     def __init__(self, **kwargs):
         # from plrm import plrm
         # self.plrm = plrm
         import os
+        from numpy import zeros, ones
         import fmodpy
         this_dir = os.path.dirname(os.path.abspath(__file__))
         source_code = os.path.join(this_dir, SOURCE_FILE)
         plrm = fmodpy.fimport(source_code, blas=True, omp=True, wrap=True,
                               verbose=False, output_dir=this_dir)
-        self.plrm = plrm.plrm
+        # Store the Fortran module as an attribute.
+        self.PLRM = plrm.plrm
+        # Set defaults for standard internal parameters.
+        self.config = None
+        self.model = zeros(0, dtype="float32")
+        self.x_mean = zeros(1, dtype="float32")
+        self.x_stdev = ones(1, dtype="float32")
+        self.y_mean = zeros(1, dtype="float32")
+        self.y_stdev = ones(1, dtype="float32")
+        self.record = zeros(0, dtype="float32")
+        # Initialize the attributes of the model that can be initialized.
         self._init_model(**kwargs)
 
 
@@ -31,30 +41,69 @@ class PLRM(Approximator):
         self.steps = kwargs.get("steps", 1000)
         if (None not in {di, ds, ns, do}):
             from numpy import zeros, ones
-            self.config = self.plrm.new_model_config(di, do, ds, ns)
-            print(self.config)
-            names_to_print = sorted({n for n in dir(self.config) if n[:1] != '_'},
-                                    key=lambda n: (len(n), getattr(self.config, n), n))
-            max_name_len = max(map(len, names_to_print))
-            for n in names_to_print:
-                print(f" {n:{max_name_len}s} {getattr(self.config,n)}")
-            self.model = np.zeros(self.config.TOTAL_SIZE, dtype="float32")
-            self.plrm.init_model(self.config, self.model, seed=self.seed)
+            self.config = self.PLRM.new_model_config(di, do, ds, ns)
+            # Set any configuration keyword arguments given at initialization.
+            for n in ({n for (n,t) in self.config._fields_} & set(kwargs)):
+                setattr(self.config, n, kwargs[n])
+            # Set all internal arrays and initialize the model.
             self.x_mean = zeros(di, dtype="float32")
             self.x_stdev = ones(di, dtype="float32")
             self.y_mean = zeros(do, dtype="float32")
             self.y_stdev = ones(do, dtype="float32")
-            # TODO: 
-            #  - Make the derived type fields all lower case.
-            #  - Make a python method for extracting model parts from vector.
-            #  - Test the internals extraction by visualizing weights & values.
-            #  - Verify that training model still works as expected.
-            #  - Write fortran code for locate-aggregate-approximate structure.
-            #   - Add configurations that determine what parts of gradient are computed.
-            #   - If "INPUT_GRAD" array is provided, compute that gradient too.
-            exit()
+            self.model = zeros(self.config.total_size, dtype="float32")
+            self.PLRM.init_model(self.config, self.model, seed=self.seed)
 
 
+    # Unpack the model (which is in one array) into it's constituent parts.
+    def model_unpacked(self):
+        class ModelUnpacked:
+            config = self.config
+            model  = self.model
+            input_vecs   = self.model[self.config.siv-1:self.config.eiv].reshape(self.config.mdi, self.config.mds, order="F")
+            input_shift  = self.model[self.config.sis-1:self.config.eis].reshape(self.config.mds, order="F")
+            input_min    = self.model[self.config.sin-1:self.config.ein].reshape(self.config.mds, order="F")
+            input_max    = self.model[self.config.six-1:self.config.eix].reshape(self.config.mds, order="F")
+            state_vecs   = self.model[self.config.ssv-1:self.config.esv].reshape(self.config.mds, self.config.mds, self.config.mns-1, order="F")
+            state_shift  = self.model[self.config.sss-1:self.config.ess].reshape(self.config.mds, self.config.mns-1, order="F")
+            state_min    = self.model[self.config.ssn-1:self.config.esn].reshape(self.config.mds, self.config.mns-1, order="F")
+            state_max    = self.model[self.config.ssx-1:self.config.esx].reshape(self.config.mds, self.config.mns-1, order="F")
+            output_vecs  = self.model[self.config.sov-1:self.config.eov].reshape(self.config.mds, self.config.mdo, order="F")
+            __getitem__  = lambda *args, **kwargs: getattr(*args, **kwargs)
+            def __str__(self):
+                # Calculate the byte size of this model (excluding python descriptors).
+                byte_size = len(self.config._fields_)*4 + self.model.dtype.itemsize*self.model.size
+                if (byte_size < 2**10):
+                    byte_size = f"{byte_size} bytes"
+                elif (byte_size < 2**20):
+                    byte_size = f"{byte_size//2**10:.1f}KB"
+                elif (byte_size < 2**30):
+                    byte_size = f"{byte_size//2**20:.1f}MB"
+                else:
+                    byte_size = f"{byte_size//2**30:.1f}GB"
+                # Create a function that prints the actual contents of the arrays.
+                to_str = lambda arr: "\n    " + "\n    ".join(str(arr).split("\n")) + "\n"
+                # Provide details (and some values where possible).
+                return (
+                    f"PLRM model ({self.config.total_size} parameters) [{byte_size}]\n"+
+                    f"  input dimension  {self.config.mdi}\n"+
+                    f"  output dimension {self.config.mdo}\n"+
+                    f"  state dimension  {self.config.mds}\n"+
+                    f"  number of states {self.config.mns}\n"+
+                     "\n"+
+                    f"  input vecs   {self.input_vecs.shape}  "+to_str(self.input_vecs)+
+                    f"  input shift  {self.input_shift.shape} "+to_str(self.input_shift)+
+                    f"  input min    {self.input_min.shape}   "+to_str(self.input_min)+
+                    f"  input max    {self.input_max.shape}   "+to_str(self.input_max)+
+                    f"  state vecs   {self.state_vecs.shape}  "+to_str(self.state_vecs)+
+                    f"  state shift  {self.state_shift.shape} "+to_str(self.state_shift)+
+                    f"  state min    {self.state_min.shape}   "+to_str(self.state_min)+
+                    f"  state max    {self.state_max.shape}   "+to_str(self.state_max)+
+                    f"  output vecs  {self.output_vecs.shape} "+to_str(self.output_vecs)
+                )
+        return ModelUnpacked()
+
+
+    # Fit this model.
     def _fit(self, x, y, normalize_x=True, normalize_y=True,
              new_model=False, keep_best=True, num_threads=None,
              **kwargs):
@@ -90,87 +139,77 @@ class PLRM(Approximator):
         # Fit internal piecewise linear regression model.
         di = x.shape[1]
         do = y.shape[1]
-        if new_model or (self.plrm.mdi != di) or (self.plrm.mdo != do):
+        if new_model or (self.config.mdi != di) or (self.config.mdo != do):
             kwargs.update({"di":di, "do":do})
             self._init_model(**kwargs)
         # Minimize the mean squared error.
         self.record = zeros((steps,2), dtype="float32", order='C')
-        mse = self.plrm.minimize_mse(x.T, y.T, steps=steps,
+        mse = self.PLRM.minimize_mse(self.config, self.model,
+                                     x.T, y.T, steps=steps,
                                      num_threads=num_threads,
                                      keep_best=keep_best,
                                      record=self.record.T, **kwargs)
 
 
+    # Make predictions for new data.
     def _predict(self, x, embed=False, embeddings=False, positions=False, **kwargs):
         from numpy import zeros, asarray
         # Evaluate the model at all data.
         x = asarray((x - self.x_mean) / self.x_stdev, dtype="float32", order='C')
         if embed:
-            y = zeros((x.shape[0], self.plrm.mds), dtype="float32", order='C')
+            y = zeros((x.shape[0], self.PLRM.mds), dtype="float32", order='C')
         else:
             y = zeros((x.shape[0], self.y_mean.shape[0]), dtype="float32", order='C')
         if (embeddings):
-            self.embeddings = zeros((x.shape[0], self.plrm.mds, self.plrm.mns), dtype="float32", order='F')
+            self.embeddings = zeros((x.shape[0], self.PLRM.mds, self.PLRM.mns), dtype="float32", order='F')
             kwargs["embeddings"] = self.embeddings
         if (positions):
-            self.positions = zeros((x.shape[0], self.plrm.mds, self.plrm.mns), dtype="int32", order='F')
+            self.positions = zeros((x.shape[0], self.PLRM.mds, self.PLRM.mns), dtype="int32", order='F')
             kwargs["positions"] = self.positions
         # Call the unerlying library.
-        self.plrm.evaluate(x.T, y.T, **kwargs)
+        self.PLRM.evaluate(self.config, self.model, x.T, y.T, **kwargs)
         # Denormalize the output values and return them.
         if (not embed):
             y = (y * self.y_stdev) + self.y_mean
         return y
 
+
     # Save this model to a path.
     def save(self, path):
         import json
         with open(path, "w") as f:
-            all_attributes = set(dir(self.plrm))
-            to_save = [n[4:] for n in sorted(all_attributes)
-                       if (n[:4] == "set_") and (n[4:] in all_attributes)]
-            f.write(json.dumps([
-                # Create a dictionary of all attributes that can be "set_".
-                {
-                    n : getattr(self.plrm, n).tolist() if
-                    hasattr(getattr(self.plrm, n), "tolist") else
-                    getattr(self.plrm, n)
-                    for n in to_save
-                },
+            # Get the config as a Python type.
+            if (self.config is None): config = None
+            else: config = {n:getattr(self.config, n) for (n,t) in self.config._fields_}
+            # Write the JSON file with Python types.
+            f.write(json.dumps({
                 # Create a dictionary of the known python attributes.
-                {
-                    "x_mean": self.x_mean.tolist() if hasattr(self, "x_mean") else None,
-                    "x_stdev": self.x_stdev.tolist() if hasattr(self, "x_stdev") else None,
-                    "y_mean": self.y_mean.tolist() if hasattr(self, "y_mean") else None,
-                    "y_stdev": self.y_stdev.tolist() if hasattr(self, "y_stdev") else None,
-                    "record": self.record.tolist() if hasattr(self, "record") else None
-                }
-            ]))
+                "config" : config,
+                "model"  : self.model.tolist(),
+                "x_mean" : self.x_mean.tolist(),
+                "x_stdev": self.x_stdev.tolist(),
+                "y_mean" : self.y_mean.tolist(),
+                "y_stdev": self.y_stdev.tolist(),
+                "record" : self.record.tolist(),
+            }))
+
 
     # Load this model from a path (after having been saved).
     def load(self, path):
         # Read the file.
-        from numpy import asarray
         import json
+        from numpy import asarray
         with open(path, "r") as f:
-            model, attrs = json.loads(f.read())
+            attrs = json.loads(f.read())
         # Load the attributes of the model.
-        for key in model:
-            # Try setting all possible model keys.
-            try:
-                if (model[key] is None): continue
-                elif (type(model[key]) is int):
-                    setattr(self.plrm, key, model[key])
-                else:
-                    setattr(self.plrm, key, asarray(model[key], dtype="float32", order="F"))
-            # If this is a parameter, ignore it.
-            except NotImplementedError: pass
-        # Load the attributes of this class.        
         for key in attrs:
             value = attrs[key]
             if (type(value) is list): 
-                value = asarray(value, dtype="float32", order="F")
+                value = asarray(value, dtype="float32")
             setattr(self, key, value)
+        # Convert the the dictionary configuration into the correct type.
+        if (type(self.config) is dict):
+            self.config = self.PLRM.MODEL_CONFIG(**self.config)
         # Return self in case an assignment was made.
         return self
 
@@ -178,12 +217,28 @@ class PLRM(Approximator):
 if __name__ == "__main__":
     import numpy as np
     from util.approximate.testing import test_plot
-    layer_dim = 3
-    num_layers = 4
-    m = PLRM(di=2, ds=layer_dim, ns=num_layers, do=1, seed=0, steps=10000)
+    layer_dim = 32
+    num_layers = 10
+    m = PLRM()
     # Try saving an untrained model.
     m.save("testing_empty_save.json")
     m.load("testing_empty_save.json")
+    m = PLRM(di=2, ds=layer_dim, ns=num_layers, do=1, seed=0,
+             steps=1000, initial_output_scale=1.0, num_threads=1,
+             revert_to_best=False)
+
+    # # Visualize the initial vectors.
+    # m = m.model_unpacked()
+    # from tlux.plot import Plot
+    # p = Plot()
+    # for i in range(m.config.mds):
+    #     p.add(i, *[[0,v] for v in m.input_vecs[:,i]], mode="lines", frame="input")
+    # for i in range(m.config.mns-1):
+    #     for j in range(m.config.mds):
+    #         p.add(j, *[[0,v] for v in m.state_vecs[:,j,i]], mode="lines", frame=f"state {i+1}")
+    # p.show()
+    # exit()
+
     # Create the test plot.
     p, x, y = test_plot(m, random=True, N=100, plot_points=1000) #plot_points=5000)
     # Try saving the trained model and applying it after loading.

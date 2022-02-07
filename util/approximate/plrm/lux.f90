@@ -103,6 +103,7 @@ MODULE PLRM
      INTEGER :: MNS
      INTEGER :: MDO
      INTEGER :: TOTAL_SIZE
+     INTEGER :: NUM_VARS
      ! Index subsets of total size vector naming scheme:
      !   S__ -> start,   E__ -> end
      !   _I_ -> input,   _S_ -> states, _O_ -> output
@@ -229,14 +230,6 @@ CONTAINS
      CONFIG%SIS = 1 + CONFIG%TOTAL_SIZE
      CONFIG%EIS = CONFIG%SIS-1  +  CONFIG%MDS
      CONFIG%TOTAL_SIZE = CONFIG%EIS
-     !   input min
-     CONFIG%SIN = 1 + CONFIG%TOTAL_SIZE
-     CONFIG%EIN = CONFIG%SIN-1  +  CONFIG%MDS
-     CONFIG%TOTAL_SIZE = CONFIG%EIN
-     !   input max
-     CONFIG%SIX = 1 + CONFIG%TOTAL_SIZE
-     CONFIG%EIX = CONFIG%SIX-1  +  CONFIG%MDS
-     CONFIG%TOTAL_SIZE = CONFIG%EIX
      !   state vecs
      CONFIG%SSV = 1 + CONFIG%TOTAL_SIZE
      CONFIG%ESV = CONFIG%SSV-1  +  CONFIG%MDS * CONFIG%MDS * (CONFIG%MNS-1)
@@ -245,6 +238,20 @@ CONTAINS
      CONFIG%SSS = 1 + CONFIG%TOTAL_SIZE
      CONFIG%ESS = CONFIG%SSS-1  +  CONFIG%MDS * (CONFIG%MNS-1)
      CONFIG%TOTAL_SIZE = CONFIG%ESS
+     !   output vecs
+     CONFIG%SOV = 1 + CONFIG%TOTAL_SIZE
+     CONFIG%EOV = CONFIG%SOV-1  +  CONFIG%MDS * CONFIG%MDO
+     CONFIG%TOTAL_SIZE = CONFIG%EOV
+     !   number of variables
+     CONFIG%NUM_VARS = CONFIG%TOTAL_SIZE
+     !   input min
+     CONFIG%SIN = 1 + CONFIG%TOTAL_SIZE
+     CONFIG%EIN = CONFIG%SIN-1  +  CONFIG%MDS
+     CONFIG%TOTAL_SIZE = CONFIG%EIN
+     !   input max
+     CONFIG%SIX = 1 + CONFIG%TOTAL_SIZE
+     CONFIG%EIX = CONFIG%SIX-1  +  CONFIG%MDS
+     CONFIG%TOTAL_SIZE = CONFIG%EIX
      !   state min
      CONFIG%SSN = 1 + CONFIG%TOTAL_SIZE
      CONFIG%ESN = CONFIG%SSN-1  +  CONFIG%MDS * (CONFIG%MNS-1)
@@ -253,14 +260,6 @@ CONTAINS
      CONFIG%SSX = 1 + CONFIG%TOTAL_SIZE
      CONFIG%ESX = CONFIG%SSX-1  +  CONFIG%MDS * (CONFIG%MNS-1)
      CONFIG%TOTAL_SIZE = CONFIG%ESX
-     !   output vecs
-     CONFIG%SOV = 1 + CONFIG%TOTAL_SIZE
-     CONFIG%EOV = CONFIG%SOV-1  +  CONFIG%MDS * CONFIG%MDO
-     CONFIG%TOTAL_SIZE = CONFIG%EOV
-     !   output shift
-     CONFIG%SOS = 1 + CONFIG%TOTAL_SIZE
-     CONFIG%EOS = CONFIG%SOS-1  +  CONFIG%MDO
-     CONFIG%TOTAL_SIZE = CONFIG%EOS
   END SUBROUTINE NEW_MODEL_CONFIG
 
 
@@ -290,8 +289,7 @@ CONTAINS
          MODEL(CONFIG%SSS:CONFIG%ESS), &
          MODEL(CONFIG%SSN:CONFIG%ESN), &
          MODEL(CONFIG%SSX:CONFIG%ESX), &
-         MODEL(CONFIG%SOV:CONFIG%EOV), &
-         MODEL(CONFIG%SOS:CONFIG%EOS))
+         MODEL(CONFIG%SOV:CONFIG%EOV))
 
     CONTAINS
 
@@ -299,13 +297,12 @@ CONTAINS
       SUBROUTINE UNPACKED_INIT_MODEL(&
            INPUT_VECS, INPUT_SHIFT, INPUT_MIN, INPUT_MAX, &
            STATE_VECS, STATE_SHIFT, STATE_MIN, STATE_MAX, &
-           OUTPUT_VECS, OUTPUT_SHIFT)
+           OUTPUT_VECS)
         REAL(KIND=RT), DIMENSION(CONFIG%MDI, CONFIG%MDS) :: INPUT_VECS
         REAL(KIND=RT), DIMENSION(CONFIG%MDS) :: INPUT_SHIFT, INPUT_MIN, INPUT_MAX
         REAL(KIND=RT), DIMENSION(CONFIG%MDS, CONFIG%MDS, CONFIG%MNS-1) :: STATE_VECS
         REAL(KIND=RT), DIMENSION(CONFIG%MDS, CONFIG%MNS-1) :: STATE_SHIFT, STATE_MIN, STATE_MAX
         REAL(KIND=RT), DIMENSION(CONFIG%MDS, CONFIG%MDO) :: OUTPUT_VECS
-        REAL(KIND=RT), DIMENSION(CONFIG%MDO) :: OUTPUT_SHIFT
         ! Generate well spaced random unit-length vectors (no scaling biases)
         !  for all initial variables in the input, internal, and output.
         CALL RANDOM_UNIT_VECTORS(INPUT_VECS(:,:))
@@ -319,10 +316,10 @@ CONTAINS
         !  shift for the output layer (first two will be rescaled).
         DO I = 1, CONFIG%MDS
            INPUT_SHIFT(I) = CONFIG%INITIAL_SHIFT_RANGE * (&
-                2.0_RT * REAL((I-1),RT) / REAL((CONFIG%MDS-1), RT) - 1.0_RT)
+                2.0_RT * REAL((I-1),RT) &
+                / MAX(1.0_RT, REAL((CONFIG%MDS-1), RT) - 1.0_RT))
            STATE_SHIFT(I,:) = INPUT_SHIFT(I)
         END DO
-        OUTPUT_SHIFT(:) = 0.0_RT
         ! Set the initial min and max values to be unbounded.
         CALL RESET_MIN_MAX(INPUT_MIN, INPUT_MAX, STATE_MIN, STATE_MAX)
       END SUBROUTINE UNPACKED_INIT_MODEL
@@ -407,8 +404,7 @@ CONTAINS
          MODEL(CONFIG%SSS:CONFIG%ESS), &
          MODEL(CONFIG%SSN:CONFIG%ESN), &
          MODEL(CONFIG%SSX:CONFIG%ESX), &
-         MODEL(CONFIG%SOV:CONFIG%EOV), &
-         MODEL(CONFIG%SOS:CONFIG%EOS))
+         MODEL(CONFIG%SOV:CONFIG%EOV))
     ! Deallocate temporary variables.
     DEALLOCATE(STATE_VALUES, TEMP_VALUES)
 
@@ -418,13 +414,12 @@ CONTAINS
     SUBROUTINE UNPACKED_SET_MIN_MAX(&
          INPUT_VECS, INPUT_SHIFT, INPUT_MIN, INPUT_MAX, &
          STATE_VECS, STATE_SHIFT, STATE_MIN, STATE_MAX, &
-         OUTPUT_VECS, OUTPUT_SHIFT)
+         OUTPUT_VECS)
       REAL(KIND=RT), DIMENSION(CONFIG%MDI, CONFIG%MDS) :: INPUT_VECS
       REAL(KIND=RT), DIMENSION(CONFIG%MDS) :: INPUT_SHIFT, INPUT_MIN, INPUT_MAX
       REAL(KIND=RT), DIMENSION(CONFIG%MDS, CONFIG%MDS, CONFIG%MNS-1) :: STATE_VECS
       REAL(KIND=RT), DIMENSION(CONFIG%MDS, CONFIG%MNS-1) :: STATE_SHIFT, STATE_MIN, STATE_MAX
       REAL(KIND=RT), DIMENSION(CONFIG%MDS, CONFIG%MDO) :: OUTPUT_VECS
-      REAL(KIND=RT), DIMENSION(CONFIG%MDO) :: OUTPUT_SHIFT
       ! Compute the input transformation.
       CALL GEMM('T', 'N', N, CONFIG%MDS, CONFIG%MDI, 1.0_RT, &
            INPUTS(:,:), SIZE(INPUTS,1), &
@@ -499,7 +494,7 @@ CONTAINS
        BT = BE-BS+1
        IF (BT .LE. 0) CYCLE batch_evaluation
        ! Unpack the model vector into its parts.
-       CALL UNPACKED_EVALUATE(&
+       CALL UNPACKED_EVALUATE(BS, BE, BT, &
             MODEL(CONFIG%SIV:CONFIG%EIV), &
             MODEL(CONFIG%SIS:CONFIG%EIS), &
             MODEL(CONFIG%SIN:CONFIG%EIN), &
@@ -509,7 +504,6 @@ CONTAINS
             MODEL(CONFIG%SSN:CONFIG%ESN), &
             MODEL(CONFIG%SSX:CONFIG%ESX), &
             MODEL(CONFIG%SOV:CONFIG%EOV), &
-            MODEL(CONFIG%SOS:CONFIG%EOS), &
             INPUTS(:,BS:BE), OUTPUTS(:,BS:BE))
     END DO batch_evaluation
     ! Deallocate temporary variables.
@@ -517,20 +511,20 @@ CONTAINS
 
   CONTAINS
 
-    SUBROUTINE UNPACKED_EVALUATE(&
+    SUBROUTINE UNPACKED_EVALUATE(BS, BE, BT, &
          INPUT_VECS, INPUT_SHIFT, INPUT_MIN, INPUT_MAX, &
          STATE_VECS, STATE_SHIFT, STATE_MIN, STATE_MAX, &
-         OUTPUT_VECS, OUTPUT_SHIFT, INPUTS, OUTPUTS)
+         OUTPUT_VECS, INPUTS, OUTPUTS)
+      INTEGER, INTENT(IN) :: BS, BE, BT
       REAL(KIND=RT), DIMENSION(CONFIG%MDI, CONFIG%MDS) :: INPUT_VECS
       REAL(KIND=RT), DIMENSION(CONFIG%MDS) :: INPUT_SHIFT, INPUT_MIN, INPUT_MAX
       REAL(KIND=RT), DIMENSION(CONFIG%MDS, CONFIG%MDS, CONFIG%MNS-1) :: STATE_VECS
       REAL(KIND=RT), DIMENSION(CONFIG%MDS, CONFIG%MNS-1) :: STATE_SHIFT, STATE_MIN, STATE_MAX
       REAL(KIND=RT), DIMENSION(CONFIG%MDS, CONFIG%MDO) :: OUTPUT_VECS
-      REAL(KIND=RT), DIMENSION(CONFIG%MDO) :: OUTPUT_SHIFT
       REAL(KIND=RT), INTENT(IN),  DIMENSION(:,:) :: INPUTS
       REAL(KIND=RT), INTENT(OUT), DIMENSION(:,:) :: OUTPUTS
       ! Local variables to evaluating a single batch.
-      REAL(KIND=RT), DIMENSION(N,CONFIG%MDS) :: STATE_VALUES, TEMP_VALUES
+      REAL(KIND=RT), DIMENSION(BT,CONFIG%MDS) :: STATE_VALUES, TEMP_VALUES
       INTEGER :: D, L
       ! Compute the input transformation.
       CALL GEMM('T', 'N', BT, CONFIG%MDS, CONFIG%MDI, 1.0_RT, &
@@ -602,9 +596,6 @@ CONTAINS
            OUTPUT_VECS(:,:), SIZE(OUTPUT_VECS,1), &
            STATE_VALUES(:,:), BT, &
            0.0_RT, OUTPUTS(:,:), SIZE(OUTPUTS,1))
-      DO D = 1, CONFIG%MDO
-         OUTPUTS(D,:) = OUTPUT_SHIFT(D) + OUTPUTS(D,:)
-      END DO
     END SUBROUTINE UNPACKED_EVALUATE
   END SUBROUTINE EVALUATE
 
@@ -632,36 +623,31 @@ CONTAINS
          MODEL(CONFIG%SSV:CONFIG%ESV), &
          MODEL(CONFIG%SSS:CONFIG%ESS), &
          MODEL(CONFIG%SOV:CONFIG%EOV), &
-         MODEL(CONFIG%SOS:CONFIG%EOS), &
          MODEL_GRAD(CONFIG%SIV:CONFIG%EIV), &
          MODEL_GRAD(CONFIG%SIS:CONFIG%EIS), &
          MODEL_GRAD(CONFIG%SSV:CONFIG%ESV), &
          MODEL_GRAD(CONFIG%SSS:CONFIG%ESS), &
-         MODEL_GRAD(CONFIG%SOV:CONFIG%EOV), &
-         MODEL_GRAD(CONFIG%SOS:CONFIG%EOS))
+         MODEL_GRAD(CONFIG%SOV:CONFIG%EOV))
 
   CONTAINS
 
-    SUBROUTINE UNPACKED_MODEL_GRADIENT( &
-         INPUT_VECS, INPUT_SHIFT, STATE_VECS, &
-         STATE_SHIFT, OUTPUT_VECS, OUTPUT_SHIFT, &
+    SUBROUTINE UNPACKED_MODEL_GRADIENT( INPUT_VECS, INPUT_SHIFT, &
+         STATE_VECS, STATE_SHIFT, OUTPUT_VECS, &
          INPUT_VECS_GRADIENT, INPUT_SHIFT_GRADIENT, &
          STATE_VECS_GRADIENT, STATE_SHIFT_GRADIENT, &
-         OUTPUT_VECS_GRADIENT, OUTPUT_SHIFT_GRADIENT )
+         OUTPUT_VECS_GRADIENT )
       ! Model variables.
       REAL(KIND=RT), INTENT(IN), DIMENSION(CONFIG%MDI,CONFIG%MDS) :: INPUT_VECS
       REAL(KIND=RT), INTENT(IN), DIMENSION(CONFIG%MDS) :: INPUT_SHIFT
       REAL(KIND=RT), INTENT(IN), DIMENSION(CONFIG%MDS,CONFIG%MDS,CONFIG%MNS-1) :: STATE_VECS
       REAL(KIND=RT), INTENT(IN), DIMENSION(CONFIG%MDS,CONFIG%MNS-1) :: STATE_SHIFT
       REAL(KIND=RT), INTENT(IN), DIMENSION(CONFIG%MDS,CONFIG%MDO) :: OUTPUT_VECS
-      REAL(KIND=RT), INTENT(IN), DIMENSION(CONFIG%MDO) :: OUTPUT_SHIFT
       ! Model variable gradients.
       REAL(KIND=RT), INTENT(INOUT), DIMENSION(CONFIG%MDI,CONFIG%MDS) :: INPUT_VECS_GRADIENT
       REAL(KIND=RT), INTENT(INOUT), DIMENSION(CONFIG%MDS) :: INPUT_SHIFT_GRADIENT
       REAL(KIND=RT), INTENT(INOUT), DIMENSION(CONFIG%MDS,CONFIG%MDS,CONFIG%MNS-1) :: STATE_VECS_GRADIENT
       REAL(KIND=RT), INTENT(INOUT), DIMENSION(CONFIG%MDS,CONFIG%MNS-1) :: STATE_SHIFT_GRADIENT
       REAL(KIND=RT), INTENT(INOUT), DIMENSION(CONFIG%MDS,CONFIG%MDO) :: OUTPUT_VECS_GRADIENT
-      REAL(KIND=RT), INTENT(INOUT), DIMENSION(CONFIG%MDO) :: OUTPUT_SHIFT_GRADIENT
       ! D   - dimension index
       ! L   - layer index
       ! LP1 - layer index "plus 1" -> "P1"
@@ -700,19 +686,13 @@ CONTAINS
            STATE_VALUES(:,:,L), SIZE(STATE_VALUES,1), &
            OUTPUT_VECS(:,:), SIZE(OUTPUT_VECS,1), &
            0.0_RT, OUTPUT_GRADIENT(:,:), SIZE(OUTPUT_GRADIENT,1))
-      DO D = 1, CONFIG%MDO
-         OUTPUT_GRADIENT(:,D) = OUTPUT_SHIFT(D) + OUTPUT_GRADIENT(:,D)
-      END DO
       ! ------------------------------------------------------------------------
       ! Compute the gradient of the model outputs, overwriting "OUTPUT_GRADIENT"
       CALL SQUARED_ERROR_GRADIENT(OUTPUTS, OUTPUT_GRADIENT)
       ! Compute the current sum squared error.
       SUM_SQUARED_ERROR = SUM_SQUARED_ERROR + SUM(OUTPUT_GRADIENT(:,:)**2)
       ! ------------------------------------------------------------------------
-      ! Computee the gradient of variables with respect to the "output gradient"
-      OUTPUT_SHIFT_GRADIENT(:) = SUM(OUTPUT_GRADIENT(:,:), 1) / N &
-           + OUTPUT_SHIFT_GRADIENT(:)
-      ! Compute output variable gradients.
+      ! Compute the gradient of variables with respect to the "output gradient"
       CALL GEMM('T', 'N', CONFIG%MDS, CONFIG%MDO, SIZE(INPUTS,2), 1.0_RT / N, &
            STATE_VALUES(:,:,CONFIG%MNS), SIZE(STATE_VALUES,1), &
            OUTPUT_GRADIENT(:,:), SIZE(OUTPUT_GRADIENT,1), &
@@ -793,7 +773,7 @@ CONTAINS
     REAL(KIND=RT), INTENT(OUT) :: SUM_SQUARED_ERROR
     REAL(KIND=RT), INTENT(OUT), DIMENSION(2,STEPS), OPTIONAL :: RECORD
     !  gradient step arrays, 4 copies of internal model (total of 5).
-    REAL(KIND=RT), DIMENSION(SIZE(MODEL)) :: &
+    REAL(KIND=RT), DIMENSION(CONFIG%NUM_VARS) :: &
          MODEL_GRAD, MODEL_GRAD_MEAN, MODEL_GRAD_CURV, BEST_MODEL
     !  local variables
     LOGICAL :: REVERT_TO_BEST, DID_PRINT, ES
@@ -879,7 +859,7 @@ CONTAINS
           BATCHES = BATCHES + 1.0_RT
           BATCH_END = MIN(NX, BATCH_START+BS-1)
           ! Sum the gradient over all data batches.
-          CALL MODEL_GRADIENT(CONFIG, MODEL, &
+          CALL MODEL_GRADIENT(CONFIG, MODEL(:), &
                X(:,BATCH_START:BATCH_END), &
                Y(:,BATCH_START:BATCH_END), SUM_SQUARED_ERROR, &
                MODEL_GRAD(:))
@@ -912,7 +892,7 @@ CONTAINS
           NS       = 0
           BEST_MSE = MSE
           IF (REVERT_TO_BEST) THEN
-             BEST_MODEL(:) = MODEL(:)
+             BEST_MODEL(:) = MODEL(1:CONFIG%NUM_VARS)
           END IF
        ! Early stop if we don't expect to see a better solution
        !  by the time the fit operation is complete.
@@ -935,7 +915,7 @@ CONTAINS
           MODEL_GRAD(:) = MODEL_GRAD(:) / SQRT(MODEL_GRAD_CURV(:))
        END IF
        ! Take the gradient steps (based on the computed "step" above).
-       MODEL(:) = MODEL(:) - MODEL_GRAD(:) * STEP_FACTOR
+       MODEL(1:CONFIG%NUM_VARS) = MODEL(1:CONFIG%NUM_VARS) - MODEL_GRAD(:) * STEP_FACTOR
 
        ! Record the 2-norm of the step that was taken (the GRAD variables were updated).
        IF (PRESENT(RECORD)) THEN
@@ -962,8 +942,8 @@ CONTAINS
 
     ! Restore the best model seen so far (if enough steps were taken).
     IF (REVERT_TO_BEST) THEN
-       MSE      = BEST_MSE
-       MODEL(:) = BEST_MODEL(:)
+       MSE                      = BEST_MSE
+       MODEL(1:CONFIG%NUM_VARS) = BEST_MODEL(:)
     END IF
 
     ! Set the minimum and maximum values observved at fit time.
@@ -992,32 +972,3 @@ CONTAINS
 
 END MODULE PLRM
 
-
-
-!2022-02-06 00:31:58
-!
-    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    ! ! ! Call an internal operator for this routine that takes the unpacked model. !
-    ! ! CALL UNPACKED_MODEL_GRADIENT( &                                             !
-    ! !      RESHAPE(MODEL(CONFIG%SIV:CONFIG%EIV), (/1,2/)) &                       !
-    ! !      MODEL(CONFIG%SIS:CONFIG%EIS), &                                        !
-    ! !      RESHAPE(MODEL(CONFIG%SIN:CONFIG%EIN), (/1,2/)) &                       !
-    ! !      RESHAPE(MODEL(CONFIG%SIX:CONFIG%EIX), (/1,2/)) &                       !
-    ! !      RESHAPE(MODEL(CONFIG%SSV:CONFIG%ESV), (/1,2/)) &                       !
-    ! !      RESHAPE(MODEL(CONFIG%SSS:CONFIG%ESS), (/1,2/)) &                       !
-    ! !      RESHAPE(MODEL(CONFIG%SSN:CONFIG%ESN), (/1,2/)) &                       !
-    ! !      RESHAPE(MODEL(CONFIG%SSX:CONFIG%ESX), (/1,2/)) &                       !
-    ! !      RESHAPE(MODEL(CONFIG%SOV:CONFIG%EOV), (/1,2/)) &                       !
-    ! !      MODEL(CONFIG%SOS:CONFIG%EOS), &                                        !
-    ! !      RESHAPE(MODEL_GRAD(CONFIG%SIV:CONFIG%EIV), (/1,2/)) &                  !
-    ! !      MODEL_GRAD(CONFIG%SIS:CONFIG%EIS), &                                   !
-    ! !      RESHAPE(MODEL_GRAD(CONFIG%SIN:CONFIG%EIN), (/1,2/)) &                  !
-    ! !      RESHAPE(MODEL_GRAD(CONFIG%SIX:CONFIG%EIX), (/1,2/)) &                  !
-    ! !      RESHAPE(MODEL_GRAD(CONFIG%SSV:CONFIG%ESV), (/1,2/)) &                  !
-    ! !      RESHAPE(MODEL_GRAD(CONFIG%SSS:CONFIG%ESS), (/1,2/)) &                  !
-    ! !      RESHAPE(MODEL_GRAD(CONFIG%SSN:CONFIG%ESN), (/1,2/)) &                  !
-    ! !      RESHAPE(MODEL_GRAD(CONFIG%SSX:CONFIG%ESX), (/1,2/)) &                  !
-    ! !      RESHAPE(MODEL_GRAD(CONFIG%SOV:CONFIG%EOV), (/1,2/)) &                  !
-    ! !      MODEL_GRAD(CONFIG%SOS:CONFIG%EOS))                                     !
-    ! ! ! TODO: Reshape these above to be the correct shape.                        !
-    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
