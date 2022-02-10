@@ -99,18 +99,23 @@ MODULE PLRM
   TYPE, BIND(C) :: MODEL_CONFIG
      ! Size related parameters.
      INTEGER :: MDI
-     INTEGER :: MDS
-     INTEGER :: MNS
+     INTEGER :: MDS = 32
+     INTEGER :: MNS = 8
      INTEGER :: MDO
+     ! Approximation settings for integer inputs.
+     INTEGER :: MNE = 0
+     INTEGER :: MDE = 0
+     ! Summary numbers that are computed.
      INTEGER :: TOTAL_SIZE
      INTEGER :: NUM_VARS
      ! Index subsets of total size vector naming scheme:
      !   S__ -> start,   E__ -> end
-     !   _I_ -> input,   _S_ -> states, _O_ -> output
+     !   _I_ -> input,   _S_ -> states, _O_ -> output, _E_ -> embedding
      !   __V -> vectors, __S -> shifts,  __N -> min,   __X -> max
      INTEGER :: SIV, EIV, SIS, EIS, SIN, EIN, SIX, EIX
      INTEGER :: SSV, ESV, SSS, ESS, SSN, ESN, SSX, ESX
-     INTEGER :: SOV, EOV, SOS, EOS
+     INTEGER :: SOV, EOV
+     INTEGER :: SEV, EEV
      ! Function parameter.
      REAL(KIND=RT) :: DISCONTINUITY = 0.0_RT
      ! Initialization related parameters.
@@ -123,103 +128,54 @@ MODULE PLRM
      REAL(KIND=RT) :: FASTER_RATE = 1.01_RT
      REAL(KIND=RT) :: SLOWER_RATE = 0.99_RT
      INTEGER       :: MIN_STEPS_TO_STABILITY = 1
+     INTEGER       :: NUM_THREADS = 1
+     LOGICAL       :: KEEP_BEST = .TRUE.
+     LOGICAL       :: EARLY_STOP = .TRUE.
   END TYPE MODEL_CONFIG
-     
+
+  ! Function that is defined by OpenMP.
+  INTERFACE
+     FUNCTION OMP_GET_MAX_THREADS()
+       INTEGER :: OMP_GET_MAX_THREADS
+     END FUNCTION OMP_GET_MAX_THREADS
+  END INTERFACE
+
 CONTAINS
 
   ! Generate a model configuration given state parameters for the model.
-  SUBROUTINE NEW_MODEL_CONFIG(MDI, MDO, MDS, MNS, DISCONTINUITY, &
-       INITIAL_SHIFT_RANGE, INITIAL_OUTPUT_SCALE, INITIAL_STEP, &
-       INITIAL_STEP_MEAN_CHANGE, INITIAL_STEP_CURV_CHANGE, &
-       FASTER_RATE, SLOWER_RATE, MIN_STEPS_TO_STABILITY, CONFIG)
+  SUBROUTINE NEW_MODEL_CONFIG(MDI, MDO, MDS, MNS, MNE, &
+       MDE, NUM_THREADS, CONFIG)
      ! Size related parameters.
      INTEGER, INTENT(IN) :: MDI
      INTEGER, INTENT(IN) :: MDO
      INTEGER, OPTIONAL, INTENT(IN) :: MDS
      INTEGER, OPTIONAL, INTENT(IN) :: MNS
-     ! Function parameter.
-     REAL(KIND=RT), OPTIONAL, INTENT(IN) :: DISCONTINUITY
-     ! Initialization related parameters.
-     REAL(KIND=RT), OPTIONAL, INTENT(IN) :: INITIAL_SHIFT_RANGE
-     REAL(KIND=RT), OPTIONAL, INTENT(IN) :: INITIAL_OUTPUT_SCALE
-     REAL(KIND=RT), OPTIONAL, INTENT(IN) :: INITIAL_STEP
-     REAL(KIND=RT), OPTIONAL, INTENT(IN) :: INITIAL_STEP_MEAN_CHANGE
-     REAL(KIND=RT), OPTIONAL, INTENT(IN) :: INITIAL_STEP_CURV_CHANGE
-     ! Optimization related parameters.
-     REAL(KIND=RT), OPTIONAL, INTENT(IN) :: FASTER_RATE
-     REAL(KIND=RT), OPTIONAL, INTENT(IN) :: SLOWER_RATE
-     INTEGER,       OPTIONAL, INTENT(IN) :: MIN_STEPS_TO_STABILITY
+     INTEGER, OPTIONAL, INTENT(IN) :: MNE
+     INTEGER, OPTIONAL, INTENT(IN) :: MDE
+     INTEGER, OPTIONAL, INTENT(IN) :: NUM_THREADS
      ! Output
      TYPE(MODEL_CONFIG), INTENT(OUT) :: CONFIG
-     ! Declare all configuration, assign defaults.
-     CONFIG%MDI = MDI
-     CONFIG%MDO = MDO
      ! MDS
-     IF (PRESENT(MDS)) THEN
-        CONFIG%MDS = MDS
-     ELSE
-        CONFIG%MDS = 32
-     END IF
+     IF (PRESENT(MDS)) CONFIG%MDS = MDS
      ! MNS
-     IF (PRESENT(MNS)) THEN
-        CONFIG%MNS = MNS
-     ELSE
-        CONFIG%MNS = 8
+     IF (PRESENT(MNS)) CONFIG%MNS = MNS
+     ! MNE
+     IF (PRESENT(MNE)) CONFIG%MNE = MNE
+     ! MDE
+     IF (PRESENT(MDE)) THEN
+        CONFIG%MDE = MDE
+     ELSE IF (CONFIG%MNE .GT. 0) THEN
+        CONFIG%MDE = MAX(1, CEILING(LOG(REAL(CONFIG%MNE,RT)) / LOG(2.0_RT)))
      END IF
-     ! DISCONTINUITY
-     IF (PRESENT(DISCONTINUITY)) THEN
-        CONFIG%DISCONTINUITY = DISCONTINUITY
+     ! NUM_THREADS
+     IF (PRESENT(NUM_THREADS)) THEN
+        CONFIG%NUM_THREADS = NUM_THREADS
      ELSE
-        CONFIG%DISCONTINUITY = 0.0_RT
+        CONFIG%NUM_THREADS = OMP_GET_MAX_THREADS()
      END IF
-     ! INITIAL_SHIFT_RANGE
-     IF (PRESENT(INITIAL_SHIFT_RANGE)) THEN
-        CONFIG%INITIAL_SHIFT_RANGE = INITIAL_SHIFT_RANGE
-     ELSE
-        CONFIG%INITIAL_SHIFT_RANGE = 1.0_RT
-     END IF
-     ! INITIAL_OUTPUT_SCALE
-     IF (PRESENT(INITIAL_OUTPUT_SCALE)) THEN
-        CONFIG%INITIAL_OUTPUT_SCALE = INITIAL_OUTPUT_SCALE
-     ELSE
-        CONFIG%INITIAL_OUTPUT_SCALE = 0.1_RT
-     END IF
-     ! INITIAL_STEP
-     IF (PRESENT(INITIAL_STEP)) THEN
-        CONFIG%INITIAL_STEP = INITIAL_STEP
-     ELSE
-        CONFIG%INITIAL_STEP = 0.001_RT
-     END IF
-     ! INITIAL_STEP_MEAN_CHANGE
-     IF (PRESENT(INITIAL_STEP_MEAN_CHANGE)) THEN
-        CONFIG%INITIAL_STEP_MEAN_CHANGE = INITIAL_STEP_MEAN_CHANGE
-     ELSE
-        CONFIG%INITIAL_STEP_MEAN_CHANGE = 0.1_RT
-     END IF
-     ! INITIAL_STEP_CURV_CHANGE
-     IF (PRESENT(INITIAL_STEP_CURV_CHANGE)) THEN
-        CONFIG%INITIAL_STEP_CURV_CHANGE = INITIAL_STEP_CURV_CHANGE
-     ELSE
-        CONFIG%INITIAL_STEP_CURV_CHANGE = 0.01_RT
-     END IF
-     ! FASTER_RATE
-     IF (PRESENT(FASTER_RATE)) THEN
-        CONFIG%FASTER_RATE = FASTER_RATE
-     ELSE
-        CONFIG%FASTER_RATE = 1.01_RT
-     END IF
-     ! SLOWER_RATE
-     IF (PRESENT(SLOWER_RATE)) THEN
-        CONFIG%SLOWER_RATE = SLOWER_RATE
-     ELSE
-        CONFIG%SLOWER_RATE = 0.99_RT
-     END IF
-     ! MIN_STEPS_TO_STABILITY
-     IF (PRESENT(MIN_STEPS_TO_STABILITY)) THEN
-        CONFIG%MIN_STEPS_TO_STABILITY = MIN_STEPS_TO_STABILITY
-     ELSE
-        CONFIG%MIN_STEPS_TO_STABILITY = 1
-     END IF
+     ! Declare all required configurations.
+     CONFIG%MDI = MDI + CONFIG%MDE
+     CONFIG%MDO = MDO
      ! Compute indices related to the parameter vector for this model.
      CONFIG%TOTAL_SIZE = 0
      !   input vecs
@@ -242,6 +198,10 @@ CONTAINS
      CONFIG%SOV = 1 + CONFIG%TOTAL_SIZE
      CONFIG%EOV = CONFIG%SOV-1  +  CONFIG%MDS * CONFIG%MDO
      CONFIG%TOTAL_SIZE = CONFIG%EOV
+     !   embedding vecs
+     CONFIG%SEV = 1 + CONFIG%TOTAL_SIZE
+     CONFIG%EEV = CONFIG%SEV-1  +  CONFIG%MDE * CONFIG%MNE
+     CONFIG%TOTAL_SIZE = CONFIG%EEV
      !   number of variables
      CONFIG%NUM_VARS = CONFIG%TOTAL_SIZE
      !   input min
@@ -289,7 +249,8 @@ CONTAINS
          MODEL(CONFIG%SSS:CONFIG%ESS), &
          MODEL(CONFIG%SSN:CONFIG%ESN), &
          MODEL(CONFIG%SSX:CONFIG%ESX), &
-         MODEL(CONFIG%SOV:CONFIG%EOV))
+         MODEL(CONFIG%SOV:CONFIG%EOV), &
+         MODEL(CONFIG%SEV:CONFIG%EEV))
 
     CONTAINS
 
@@ -297,19 +258,23 @@ CONTAINS
       SUBROUTINE UNPACKED_INIT_MODEL(&
            INPUT_VECS, INPUT_SHIFT, INPUT_MIN, INPUT_MAX, &
            STATE_VECS, STATE_SHIFT, STATE_MIN, STATE_MAX, &
-           OUTPUT_VECS)
+           OUTPUT_VECS, EMBEDDINGS)
         REAL(KIND=RT), DIMENSION(CONFIG%MDI, CONFIG%MDS) :: INPUT_VECS
         REAL(KIND=RT), DIMENSION(CONFIG%MDS) :: INPUT_SHIFT, INPUT_MIN, INPUT_MAX
         REAL(KIND=RT), DIMENSION(CONFIG%MDS, CONFIG%MDS, CONFIG%MNS-1) :: STATE_VECS
         REAL(KIND=RT), DIMENSION(CONFIG%MDS, CONFIG%MNS-1) :: STATE_SHIFT, STATE_MIN, STATE_MAX
         REAL(KIND=RT), DIMENSION(CONFIG%MDS, CONFIG%MDO) :: OUTPUT_VECS
+        REAL(KIND=RT), DIMENSION(CONFIG%MDE, CONFIG%MNE) :: EMBEDDINGS
         ! Generate well spaced random unit-length vectors (no scaling biases)
-        !  for all initial variables in the input, internal, and output.
+        !  for all initial variables in the input, internal, output, and embedings.
         CALL RANDOM_UNIT_VECTORS(INPUT_VECS(:,:))
         DO I = 1, CONFIG%MNS-1
            CALL RANDOM_UNIT_VECTORS(STATE_VECS(:,:,I))
         END DO
         CALL RANDOM_UNIT_VECTORS(OUTPUT_VECS(:,:))
+        IF (CONFIG%MNE .GT. 0) THEN
+           CALL RANDOM_UNIT_VECTORS(EMBEDDINGS(:,:))
+        END IF
         ! Make the output vectors have very small magnitude initially.
         OUTPUT_VECS(:,:) = OUTPUT_VECS(:,:) * CONFIG%INITIAL_OUTPUT_SCALE
         ! Generate random shifts for inputs and internal layers, zero
@@ -317,7 +282,7 @@ CONTAINS
         DO I = 1, CONFIG%MDS
            INPUT_SHIFT(I) = CONFIG%INITIAL_SHIFT_RANGE * (&
                 2.0_RT * REAL((I-1),RT) &
-                / MAX(1.0_RT, REAL((CONFIG%MDS-1), RT) - 1.0_RT))
+                / MAX(1.0_RT, REAL((CONFIG%MDS-1), RT)))
            STATE_SHIFT(I,:) = INPUT_SHIFT(I)
         END DO
         ! Set the initial min and max values to be unbounded.
@@ -369,6 +334,26 @@ CONTAINS
   END SUBROUTINE RANDOM_UNIT_VECTORS
 
 
+  ! Given integer inputs and embedding vectors, put embeddings in
+  !  place of integer inputs inside of a real matrix.
+  SUBROUTINE UNPACK_EMBEDDINGS(CONFIG, EMBEDDINGS, INT_INPUTS, EMBEDDED)
+    TYPE(MODEL_CONFIG), INTENT(IN) :: CONFIG
+    REAL(KIND=RT), INTENT(IN), DIMENSION(CONFIG%MDE,CONFIG%MNE) :: EMBEDDINGS
+    INTEGER, INTENT(IN), DIMENSION(:,:) :: INT_INPUTS
+    REAL(KIND=RT), INTENT(OUT), DIMENSION(:,:) :: EMBEDDED
+    INTEGER :: N, D, E
+    ! Add together appropriate embedding vectors based on integer inputs.
+    EMBEDDED(:,:) = 0.0_RT
+    DO N = 1, SIZE(INT_INPUTS,2)
+       EMBEDDED(:,N) = 0.0_RT
+       DO D = 1, SIZE(INT_INPUTS,1)
+          E = INT_INPUTS(D,N)
+          EMBEDDED(:,N) = EMBEDDED(:,N) + EMBEDDINGS(:,E)
+       END DO
+    END DO
+  END SUBROUTINE UNPACK_EMBEDDINGS
+
+
   ! Reset the minimum and maximum values for internal nonlinearities.
   SUBROUTINE RESET_MIN_MAX(INPUT_MIN, INPUT_MAX, STATE_MIN, STATE_MAX)
     REAL(KIND=RT), DIMENSION(:)   :: INPUT_MIN, INPUT_MAX
@@ -383,38 +368,65 @@ CONTAINS
 
   ! Evaluate the piecewise linear regression model and store the minimum
   !  and maximum values observed at each internal piecewise linear function.
-  SUBROUTINE SET_MIN_MAX(CONFIG, MODEL, INPUTS)
+  SUBROUTINE SET_MIN_MAX(CONFIG, MODEL, X, XI)
     TYPE(MODEL_CONFIG), INTENT(IN) :: CONFIG
     REAL(KIND=RT), INTENT(INOUT), DIMENSION(:) :: MODEL
-    REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: INPUTS
+    REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: X
+    INTEGER, INTENT(IN), OPTIONAL, DIMENSION(:,:) :: XI
     ! Internal values.
-    REAL(KIND=RT), DIMENSION(:,:), ALLOCATABLE :: TEMP_VALUES, STATE_VALUES
-    INTEGER :: I, D, L, N
+    REAL(KIND=RT), DIMENSION(:,:), ALLOCATABLE :: XXI, TEMP_VALUES, STATE_VALUES
+    INTEGER :: I, D, L, N, ES
     ! Get the number of points.
-    N = SIZE(INPUTS,2)
+    N = SIZE(X,2)
     ! Allocate storage for the internal values.
     ALLOCATE(STATE_VALUES(1:N,1:CONFIG%MDS), TEMP_VALUES(1:N,1:CONFIG%MDS))
-    ! Unpack the model.
-    CALL UNPACKED_SET_MIN_MAX(&
-         MODEL(CONFIG%SIV:CONFIG%EIV), &
-         MODEL(CONFIG%SIS:CONFIG%EIS), &
-         MODEL(CONFIG%SIN:CONFIG%EIN), &
-         MODEL(CONFIG%SIX:CONFIG%EIX), &
-         MODEL(CONFIG%SSV:CONFIG%ESV), &
-         MODEL(CONFIG%SSS:CONFIG%ESS), &
-         MODEL(CONFIG%SSN:CONFIG%ESN), &
-         MODEL(CONFIG%SSX:CONFIG%ESX), &
-         MODEL(CONFIG%SOV:CONFIG%EOV))
+    IF (PRESENT(XI)) THEN
+       ! Convert the integer embeddings into their real counterparts.
+       ALLOCATE(XXI(CONFIG%MDI, SIZE(X,2)))
+       ES = SIZE(X,1)+1
+       ! Add the real inputs to the front of each vector.
+       XXI(:ES-1,:) = XI(:,:)
+       ! Put the embeddings into back of each vector.
+       CALL UNPACK_EMBEDDINGS(CONFIG, MODEL(CONFIG%SEV:CONFIG%EEV), &
+            XI, XXI(ES:,:))
+       ! Unpack the model.
+       CALL UNPACKED_SET_MIN_MAX(XXI(:,:), &
+            MODEL(CONFIG%SIV:CONFIG%EIV), &
+            MODEL(CONFIG%SIS:CONFIG%EIS), &
+            MODEL(CONFIG%SIN:CONFIG%EIN), &
+            MODEL(CONFIG%SIX:CONFIG%EIX), &
+            MODEL(CONFIG%SSV:CONFIG%ESV), &
+            MODEL(CONFIG%SSS:CONFIG%ESS), &
+            MODEL(CONFIG%SSN:CONFIG%ESN), &
+            MODEL(CONFIG%SSX:CONFIG%ESX), &
+            MODEL(CONFIG%SOV:CONFIG%EOV))
+       ! Deallocate the full inputs that included embeddings.
+       DEALLOCATE(XXI)
+    ELSE
+       ! Unpack the model.
+       CALL UNPACKED_SET_MIN_MAX(X(:,:), &
+            MODEL(CONFIG%SIV:CONFIG%EIV), &
+            MODEL(CONFIG%SIS:CONFIG%EIS), &
+            MODEL(CONFIG%SIN:CONFIG%EIN), &
+            MODEL(CONFIG%SIX:CONFIG%EIX), &
+            MODEL(CONFIG%SSV:CONFIG%ESV), &
+            MODEL(CONFIG%SSS:CONFIG%ESS), &
+            MODEL(CONFIG%SSN:CONFIG%ESN), &
+            MODEL(CONFIG%SSX:CONFIG%ESX), &
+            MODEL(CONFIG%SOV:CONFIG%EOV))
+    END IF
     ! Deallocate temporary variables.
     DEALLOCATE(STATE_VALUES, TEMP_VALUES)
 
   CONTAINS
 
     ! Initialize the model after unpacking it into its constituent parts.
-    SUBROUTINE UNPACKED_SET_MIN_MAX(&
+    SUBROUTINE UNPACKED_SET_MIN_MAX(INPUTS, &
          INPUT_VECS, INPUT_SHIFT, INPUT_MIN, INPUT_MAX, &
          STATE_VECS, STATE_SHIFT, STATE_MIN, STATE_MAX, &
          OUTPUT_VECS)
+      REAL(KIND=RT), DIMENSION(:,:) :: INPUTS
+      ! Model.
       REAL(KIND=RT), DIMENSION(CONFIG%MDI, CONFIG%MDS) :: INPUT_VECS
       REAL(KIND=RT), DIMENSION(CONFIG%MDS) :: INPUT_SHIFT, INPUT_MIN, INPUT_MAX
       REAL(KIND=RT), DIMENSION(CONFIG%MDS, CONFIG%MDS, CONFIG%MNS-1) :: STATE_VECS
@@ -456,58 +468,74 @@ CONTAINS
 
   
   ! Evaluate the piecewise linear regression model.
-  SUBROUTINE EVALUATE(CONFIG, MODEL, INPUTS, OUTPUTS, &
-       NUM_THREADS, POSITIONS, EMBEDDINGS)
+  SUBROUTINE EVALUATE(CONFIG, MODEL, X, XI, Y, POSITIONS, EMBEDDINGS)
     TYPE(MODEL_CONFIG), INTENT(IN) :: CONFIG
     REAL(KIND=RT), INTENT(IN), DIMENSION(:) :: MODEL
-    REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: INPUTS
-    REAL(KIND=RT), INTENT(OUT), DIMENSION(:,:) :: OUTPUTS
-    INTEGER, OPTIONAL, INTENT(IN) :: NUM_THREADS
+    REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: X
+    INTEGER, OPTIONAL, INTENT(IN), DIMENSION(:,:) :: XI
+    REAL(KIND=RT), INTENT(OUT), DIMENSION(:,:) :: Y
     REAL(KIND=RT), OPTIONAL, INTENT(OUT), DIMENSION(:,:,:) :: EMBEDDINGS ! N, MDS, MNS
-    INTEGER,       OPTIONAL, INTENT(OUT), DIMENSION(:,:,:) :: POSITIONS ! N, MDS, MNS
+    INTEGER,       OPTIONAL, INTENT(OUT), DIMENSION(:,:,:) :: POSITIONS  ! N, MDS, MNS
     ! Internal values.
-    REAL(KIND=RT), DIMENSION(:,:), ALLOCATABLE :: TEMP_VALUES, STATE_VALUES
-    INTEGER :: I, N, BATCH, NB, BN, BS, BE, BT
-    ! OMP interface for determining number of batches.
-    INTERFACE
-       FUNCTION OMP_GET_MAX_THREADS()
-         INTEGER :: OMP_GET_MAX_THREADS
-       END FUNCTION OMP_GET_MAX_THREADS
-    END INTERFACE
+    REAL(KIND=RT), DIMENSION(:,:), ALLOCATABLE :: XXI, TEMP_VALUES, STATE_VALUES
+    INTEGER :: I, N, BATCH, NB, BN, BS, BE, BT, ES
     ! Get the number of points.
-    N = SIZE(INPUTS,2)
+    N = SIZE(X,2)
     ! Allocate storage for the internal values.
     ALLOCATE(STATE_VALUES(1:N,1:CONFIG%MDS), TEMP_VALUES(1:N,1:CONFIG%MDS))
     ! Set up batching for parallelization.
-    IF (PRESENT(NUM_THREADS)) THEN
-       NB = NUM_THREADS
-    ELSE
-       NB = OMP_GET_MAX_THREADS()
-    END IF
-    NB = MIN(N, NB)
+    NB = MIN(N, CONFIG%NUM_THREADS)
     ! Compute the number of points in each batch.
     BN = CEILING(REAL(N) / REAL(NB))
-    !$OMP PARALLEL DO PRIVATE(BS, BE, BT) IF(NB > 1)
+    ! One pluse the number of input components (in case embeddings are used).
+    ES = SIZE(X,1)+1
+    !$OMP PARALLEL DO PRIVATE(BS, BE, BT, XXI) IF(NB > 1)
     batch_evaluation : DO BATCH = 1, NB
        BS = BN*(BATCH-1) + 1
        BE = MIN(N, BN*BATCH)
        BT = BE-BS+1
        IF (BT .LE. 0) CYCLE batch_evaluation
-       ! Unpack the model vector into its parts.
-       CALL UNPACKED_EVALUATE(BS, BE, BT, &
-            MODEL(CONFIG%SIV:CONFIG%EIV), &
-            MODEL(CONFIG%SIS:CONFIG%EIS), &
-            MODEL(CONFIG%SIN:CONFIG%EIN), &
-            MODEL(CONFIG%SIX:CONFIG%EIX), &
-            MODEL(CONFIG%SSV:CONFIG%ESV), &
-            MODEL(CONFIG%SSS:CONFIG%ESS), &
-            MODEL(CONFIG%SSN:CONFIG%ESN), &
-            MODEL(CONFIG%SSX:CONFIG%ESX), &
-            MODEL(CONFIG%SOV:CONFIG%EOV), &
-            INPUTS(:,BS:BE), OUTPUTS(:,BS:BE))
+       ! Generate copies needed to pass embeddings into model.
+       IF (PRESENT(XI)) THEN
+          ! Convert the integer embeddings into their real counterparts.
+          ALLOCATE(XXI(CONFIG%MDI, BT))
+          ! Add the real inputs to the front of each vector.
+          XXI(:ES-1,:) = X(:,BS:BE)
+          ! Put the embeddings into back of each vector.
+          CALL UNPACK_EMBEDDINGS(CONFIG, MODEL(CONFIG%SEV:CONFIG%EEV), &
+               XI(:,BS:BE), XXI(ES:,:))
+          ! Unpack the model vector into its parts.
+          CALL UNPACKED_EVALUATE(BS, BE, BT, &
+               MODEL(CONFIG%SIV:CONFIG%EIV), &
+               MODEL(CONFIG%SIS:CONFIG%EIS), &
+               MODEL(CONFIG%SIN:CONFIG%EIN), &
+               MODEL(CONFIG%SIX:CONFIG%EIX), &
+               MODEL(CONFIG%SSV:CONFIG%ESV), &
+               MODEL(CONFIG%SSS:CONFIG%ESS), &
+               MODEL(CONFIG%SSN:CONFIG%ESN), &
+               MODEL(CONFIG%SSX:CONFIG%ESX), &
+               MODEL(CONFIG%SOV:CONFIG%EOV), &
+               XXI(:,:), Y(:,BS:BE))
+          ! Deallocate memory for embedding copy.
+          DEALLOCATE(XXI)
+       ELSE
+          ! Unpack the model vector into its parts.
+          CALL UNPACKED_EVALUATE(BS, BE, BT, &
+               MODEL(CONFIG%SIV:CONFIG%EIV), &
+               MODEL(CONFIG%SIS:CONFIG%EIS), &
+               MODEL(CONFIG%SIN:CONFIG%EIN), &
+               MODEL(CONFIG%SIX:CONFIG%EIX), &
+               MODEL(CONFIG%SSV:CONFIG%ESV), &
+               MODEL(CONFIG%SSS:CONFIG%ESS), &
+               MODEL(CONFIG%SSN:CONFIG%ESN), &
+               MODEL(CONFIG%SSX:CONFIG%ESX), &
+               MODEL(CONFIG%SOV:CONFIG%EOV), &
+               X(:,BS:BE), Y(:,BS:BE))
+       END IF
     END DO batch_evaluation
     ! Deallocate temporary variables.
     DEALLOCATE(STATE_VALUES, TEMP_VALUES)
+
 
   CONTAINS
 
@@ -601,41 +629,117 @@ CONTAINS
 
   ! Compute the gradient of the sum of squared error of this regression
   ! model with respect to its variables given input and output pairs.
-  SUBROUTINE MODEL_GRADIENT(CONFIG, MODEL, INPUTS, OUTPUTS, SUM_SQUARED_ERROR, MODEL_GRAD)
+  SUBROUTINE MODEL_GRADIENT(CONFIG, MODEL, X, Y, SUM_SQUARED_ERROR, &
+       MODEL_GRAD, XI, INPUT_GRAD)
     TYPE(MODEL_CONFIG), INTENT(IN) :: CONFIG
     REAL(KIND=RT), INTENT(IN), DIMENSION(:) :: MODEL
     ! Data values stored with contiguous points: shape = (MDI,N)
-    REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: INPUTS
-    REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: OUTPUTS
+    REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: X
+    REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: Y
     ! Sum (over all data) squared error (summed over dimensions).
     REAL(KIND=RT), INTENT(INOUT) :: SUM_SQUARED_ERROR
+    INTEGER, OPTIONAL, INTENT(IN), DIMENSION(:,:) :: XI
     ! Gradient of the model parameters.
     REAL(KIND=RT), INTENT(OUT), DIMENSION(:) :: MODEL_GRAD
+    REAL(KIND=RT), OPTIONAL, INTENT(OUT), DIMENSION(:,:) :: INPUT_GRAD
     ! Local allocations for computing gradient.
-    REAL(KIND=RT), DIMENSION(SIZE(INPUTS,2),CONFIG%MDO)            :: OUTPUT_GRADIENT
-    REAL(KIND=RT), DIMENSION(SIZE(INPUTS,2),CONFIG%MDS,CONFIG%MNS) :: STATE_VALUES
-    REAL(KIND=RT), DIMENSION(SIZE(INPUTS,2),CONFIG%MDS)            :: STATE_TEMP
+    REAL(KIND=RT), DIMENSION(:,:), ALLOCATABLE :: XXI
+    REAL(KIND=RT), DIMENSION(SIZE(X,2),CONFIG%MDO)            :: Y_GRADIENT
+    REAL(KIND=RT), DIMENSION(SIZE(X,2),CONFIG%MDS,CONFIG%MNS) :: STATE_VALUES
+    REAL(KIND=RT), DIMENSION(SIZE(X,2),CONFIG%MDS)            :: STATE_TEMP
+    INTEGER :: ES
 
-    ! Call an internal operator for this routine that takes the unpacked model.
-    CALL UNPACKED_MODEL_GRADIENT( &
-         MODEL(CONFIG%SIV:CONFIG%EIV), &
-         MODEL(CONFIG%SIS:CONFIG%EIS), &
-         MODEL(CONFIG%SSV:CONFIG%ESV), &
-         MODEL(CONFIG%SSS:CONFIG%ESS), &
-         MODEL(CONFIG%SOV:CONFIG%EOV), &
-         MODEL_GRAD(CONFIG%SIV:CONFIG%EIV), &
-         MODEL_GRAD(CONFIG%SIS:CONFIG%EIS), &
-         MODEL_GRAD(CONFIG%SSV:CONFIG%ESV), &
-         MODEL_GRAD(CONFIG%SSS:CONFIG%ESS), &
-         MODEL_GRAD(CONFIG%SOV:CONFIG%EOV))
+    ! TODO:
+    ! - Unpack integer embeddings into associated real vector values, sum
+    !   them, and pass them into the model while computing the input gradient.
+    ! - Average the input gradient over common batches of values to compute the
+    !   gradient with respect to the individual embeddings assigned to inputs.
+    ! - Add the zero mean and unit length code into the `MINIMIZE_MSE` routine
+    !   then embed those shifts into the first layer of the model at training end.
+    ! - Add optional rank normalization to model input and output, with a
+    !   fixed number of rank positions (100). Include index sorting code. Use
+    !   binary search mixed with walking sorted to transform new points.
+    ! - Add well spaced sphere design code, replace random sphere usage
+    !   with the well spaced sphere. Especially for embedding initialization.
+
+    IF (.NOT. PRESENT(XI)) THEN
+       ! Call an internal operator for this routine that takes the unpacked model.
+       CALL UNPACKED_MODEL_GRADIENT(X(:,:), &
+            MODEL(CONFIG%SIV:CONFIG%EIV), &
+            MODEL(CONFIG%SIS:CONFIG%EIS), &
+            MODEL(CONFIG%SSV:CONFIG%ESV), &
+            MODEL(CONFIG%SSS:CONFIG%ESS), &
+            MODEL(CONFIG%SOV:CONFIG%EOV), &
+            MODEL_GRAD(CONFIG%SIV:CONFIG%EIV), &
+            MODEL_GRAD(CONFIG%SIS:CONFIG%EIS), &
+            MODEL_GRAD(CONFIG%SSV:CONFIG%ESV), &
+            MODEL_GRAD(CONFIG%SSS:CONFIG%ESS), &
+            MODEL_GRAD(CONFIG%SOV:CONFIG%EOV), &
+            INPUT_GRAD)
+    ELSE
+       ! Convert the integer embeddings into their real counterparts.
+       ALLOCATE(XXI(CONFIG%MDI, SIZE(X,2)))
+       ES = SIZE(X,1)+1
+       ! Add the real inputs to the front of each vector.
+       XXI(:ES-1,:) = X(:,:)
+       ! Put the embeddings into back of each vector.
+       CALL UNPACK_EMBEDDINGS(CONFIG, MODEL(CONFIG%SEV:CONFIG%EEV), &
+            XI(:,:), XXI(ES:,:))
+       ! Call the regular gradient computation step, ensuring to get input gradients.
+       CALL UNPACKED_MODEL_GRADIENT(XXI(:,:), &
+            MODEL(CONFIG%SIV:CONFIG%EIV), &
+            MODEL(CONFIG%SIS:CONFIG%EIS), &
+            MODEL(CONFIG%SSV:CONFIG%ESV), &
+            MODEL(CONFIG%SSS:CONFIG%ESS), &
+            MODEL(CONFIG%SOV:CONFIG%EOV), &
+            MODEL_GRAD(CONFIG%SIV:CONFIG%EIV), &
+            MODEL_GRAD(CONFIG%SIS:CONFIG%EIS), &
+            MODEL_GRAD(CONFIG%SSV:CONFIG%ESV), &
+            MODEL_GRAD(CONFIG%SSS:CONFIG%ESS), &
+            MODEL_GRAD(CONFIG%SOV:CONFIG%EOV), &
+            INPUT_GRAD=XXI) ! <- overwrite "full inputs" with grad info
+       ! Convert the computed input gradients into average gradients for each embedding.
+       CALL UNPACKED_EMBEDDING_GRAD(&
+            XI, XXI(ES:,:), MODEL_GRAD(CONFIG%SEV:CONFIG%EEV))
+       ! Deallocate memory for holding embedded inputs.
+       DEALLOCATE(XXI)
+    END IF
 
   CONTAINS
+    
+    ! Average the gradients over all points to create the embedding gradient.
+    SUBROUTINE UNPACKED_EMBEDDING_GRAD(INT_INPUTS, GRAD, EMBEDDING_GRAD)
+      INTEGER, INTENT(IN), DIMENSION(:,:) :: INT_INPUTS
+      REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: GRAD
+      REAL(KIND=RT), INTENT(INOUT), DIMENSION(CONFIG%MDE,CONFIG%MNE) :: EMBEDDING_GRAD
+      REAL(KIND=RT), DIMENSION(CONFIG%MNE) :: COUNTS
+      INTEGER :: N, D, E
+      ! Accumulate the gradients for all embedding vectors.
+      COUNTS(:) = 0.0_RT
+      EMBEDDING_GRAD(:,:) = 0.0_RT
+      DO N = 1, SIZE(INT_INPUTS,2)
+         DO D = 1, SIZE(INT_INPUTS,1)
+            E = INT_INPUTS(D,N)
+            COUNTS(E) = COUNTS(E) + 1.0_RT
+            EMBEDDING_GRAD(:,E) = EMBEDDING_GRAD(:,E) + GRAD(:,N)
+         END DO
+      END DO
+      ! Average the embedding gradient by dividing by the sum of occurrences.
+      DO E = 1, CONFIG%MNE
+         IF (COUNTS(E) .GT. 0.0_RT) THEN
+            EMBEDDING_GRAD(:,E) = EMBEDDING_GRAD(:,E) / COUNTS(E)
+         END IF
+      END DO
+    END SUBROUTINE UNPACKED_EMBEDDING_GRAD
 
-    SUBROUTINE UNPACKED_MODEL_GRADIENT( INPUT_VECS, INPUT_SHIFT, &
+    ! Compute the model gradient.
+    SUBROUTINE UNPACKED_MODEL_GRADIENT( INPUTS, &
+         INPUT_VECS, INPUT_SHIFT, &
          STATE_VECS, STATE_SHIFT, OUTPUT_VECS, &
          INPUT_VECS_GRADIENT, INPUT_SHIFT_GRADIENT, &
          STATE_VECS_GRADIENT, STATE_SHIFT_GRADIENT, &
-         OUTPUT_VECS_GRADIENT )
+         OUTPUT_VECS_GRADIENT, INPUT_GRAD )
+      REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: INPUTS
       ! Model variables.
       REAL(KIND=RT), INTENT(IN), DIMENSION(CONFIG%MDI,CONFIG%MDS) :: INPUT_VECS
       REAL(KIND=RT), INTENT(IN), DIMENSION(CONFIG%MDS) :: INPUT_SHIFT
@@ -648,6 +752,8 @@ CONTAINS
       REAL(KIND=RT), INTENT(INOUT), DIMENSION(CONFIG%MDS,CONFIG%MDS,CONFIG%MNS-1) :: STATE_VECS_GRADIENT
       REAL(KIND=RT), INTENT(INOUT), DIMENSION(CONFIG%MDS,CONFIG%MNS-1) :: STATE_SHIFT_GRADIENT
       REAL(KIND=RT), INTENT(INOUT), DIMENSION(CONFIG%MDS,CONFIG%MDO) :: OUTPUT_VECS_GRADIENT
+      ! Input gradient (optional).
+      REAL(KIND=RT), INTENT(INOUT), OPTIONAL, DIMENSION(:,:) :: INPUT_GRAD
       ! D   - dimension index
       ! L   - layer index
       ! LP1 - layer index "plus 1" -> "P1"
@@ -657,7 +763,7 @@ CONTAINS
       ! Get the number of points.
       N = REAL(SIZE(INPUTS,2), RT)
       ! -------------------------------------------------------------------------
-      ! Evaluate the model at all data points, store outputs in "OUTPUT_GRADIENT"
+      ! Evaluate the model at all data points, store outputs in "Y_GRADIENT"
       ! 
       ! Compute the input transformation.
       CALL GEMM('T', 'N', SIZE(INPUTS,2), CONFIG%MDS, CONFIG%MDI, 1.0_RT, &
@@ -685,21 +791,21 @@ CONTAINS
       CALL GEMM('N', 'N', SIZE(INPUTS,2), CONFIG%MDO, CONFIG%MDS, 1.0_RT, &
            STATE_VALUES(:,:,L), SIZE(STATE_VALUES,1), &
            OUTPUT_VECS(:,:), SIZE(OUTPUT_VECS,1), &
-           0.0_RT, OUTPUT_GRADIENT(:,:), SIZE(OUTPUT_GRADIENT,1))
+           0.0_RT, Y_GRADIENT(:,:), SIZE(Y_GRADIENT,1))
       ! ------------------------------------------------------------------------
-      ! Compute the gradient of the model outputs, overwriting "OUTPUT_GRADIENT"
-      CALL SQUARED_ERROR_GRADIENT(OUTPUTS, OUTPUT_GRADIENT)
+      ! Compute the gradient of the model outputs, overwriting "Y_GRADIENT"
+      CALL SQUARED_ERROR_GRADIENT(Y, Y_GRADIENT)
       ! Compute the current sum squared error.
-      SUM_SQUARED_ERROR = SUM_SQUARED_ERROR + SUM(OUTPUT_GRADIENT(:,:)**2)
+      SUM_SQUARED_ERROR = SUM_SQUARED_ERROR + SUM(Y_GRADIENT(:,:)**2)
       ! ------------------------------------------------------------------------
       ! Compute the gradient of variables with respect to the "output gradient"
       CALL GEMM('T', 'N', CONFIG%MDS, CONFIG%MDO, SIZE(INPUTS,2), 1.0_RT / N, &
            STATE_VALUES(:,:,CONFIG%MNS), SIZE(STATE_VALUES,1), &
-           OUTPUT_GRADIENT(:,:), SIZE(OUTPUT_GRADIENT,1), &
+           Y_GRADIENT(:,:), SIZE(Y_GRADIENT,1), &
            1.0_RT, OUTPUT_VECS_GRADIENT(:,:), SIZE(OUTPUT_VECS_GRADIENT,1))
       ! Propogate the gradient back to the last internal vector space.
       CALL GEMM('N', 'T', SIZE(INPUTS,2), CONFIG%MDS, CONFIG%MDO, 1.0_RT, &
-           OUTPUT_GRADIENT(:,:), SIZE(OUTPUT_GRADIENT,1), &
+           Y_GRADIENT(:,:), SIZE(Y_GRADIENT,1), &
            OUTPUT_VECS(:,:), SIZE(OUTPUT_VECS,1), &
            0.0_RT, STATE_TEMP(:,:), SIZE(STATE_TEMP,1))
       ! Cycle over all internal layers.
@@ -741,6 +847,13 @@ CONTAINS
            INPUTS(:,:), SIZE(INPUTS,1), &
            STATE_VALUES(:,:,1), SIZE(STATE_VALUES,1), &
            1.0_RT, INPUT_VECS_GRADIENT(:,:), SIZE(INPUT_VECS_GRADIENT,1))
+      ! Compute the gradient at the input if that was requested.
+      IF (PRESENT(INPUT_GRAD)) THEN
+         CALL GEMM('N', 'T', CONFIG%MDI, SIZE(INPUT_GRAD,2), CONFIG%MDS, 1.0_RT, &
+              INPUT_VECS(:,:), SIZE(INPUT_VECS,1), &
+              STATE_VALUES(:,:,1), SIZE(STATE_VALUES,1), &
+              0.0_RT, INPUT_GRAD(:,:), SIZE(INPUT_GRAD,1))
+      END IF
       ! --------------------------------------------------------------
     END SUBROUTINE UNPACKED_MODEL_GRADIENT
 
@@ -760,78 +873,44 @@ CONTAINS
 
 
   ! Fit input / output pairs by minimizing mean squared error.
-  SUBROUTINE MINIMIZE_MSE(CONFIG, MODEL, X, Y, STEPS, BATCH_SIZE, NUM_THREADS, &
-       STEP_SIZE, KEEP_BEST, EARLY_STOP, SUM_SQUARED_ERROR, RECORD)
+  SUBROUTINE MINIMIZE_MSE(CONFIG, MODEL, X, Y, STEPS, XI, &
+       SUM_SQUARED_ERROR, RECORD)
     TYPE(MODEL_CONFIG), INTENT(IN) :: CONFIG
     REAL(KIND=RT), INTENT(INOUT), DIMENSION(:) :: MODEL
     REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: X
     REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: Y
     INTEGER,       INTENT(IN) :: STEPS
-    INTEGER,       INTENT(IN), OPTIONAL :: BATCH_SIZE, NUM_THREADS
-    REAL(KIND=RT), INTENT(IN), OPTIONAL :: STEP_SIZE
-    LOGICAL,       INTENT(IN), OPTIONAL :: KEEP_BEST, EARLY_STOP
+    INTEGER,       INTENT(IN), DIMENSION(:,:), OPTIONAL :: XI
     REAL(KIND=RT), INTENT(OUT) :: SUM_SQUARED_ERROR
     REAL(KIND=RT), INTENT(OUT), DIMENSION(2,STEPS), OPTIONAL :: RECORD
-    !  gradient step arrays, 4 copies of internal model (total of 5).
+    !  Local variables.
+    !    gradient step arrays, 4 copies of model + (num threads - 1)
     REAL(KIND=RT), DIMENSION(CONFIG%NUM_VARS) :: &
          MODEL_GRAD, MODEL_GRAD_MEAN, MODEL_GRAD_CURV, BEST_MODEL
-    !  local variables
-    LOGICAL :: REVERT_TO_BEST, DID_PRINT, ES
-    INTEGER :: BS, I, L, NX, NS, NT, BATCH_START, BATCH_END, J ! TODO: remove J
+    !    singletons
+    LOGICAL :: REVERT_TO_BEST, DID_PRINT
+    INTEGER :: BS, I, NX, NS, BATCH_START, BATCH_END
     REAL(KIND=RT) :: RNX, BATCHES, PREV_MSE, MSE, BEST_MSE
     REAL(KIND=RT) :: STEP_FACTOR, STEP_MEAN_CHANGE, STEP_MEAN_REMAIN, &
          STEP_CURV_CHANGE, STEP_CURV_REMAIN
     REAL :: LAST_PRINT_TIME, CURRENT_TIME, WAIT_TIME
     CHARACTER(LEN=*), PARAMETER :: RESET_LINE = REPEAT(CHAR(8),25)
-    ! Function that is defined by OpenMP.
-    INTERFACE
-       FUNCTION OMP_GET_MAX_THREADS()
-         INTEGER :: OMP_GET_MAX_THREADS
-       END FUNCTION OMP_GET_MAX_THREADS
-    END INTERFACE
     ! Number of points.
     NX = SIZE(X,2)
     RNX = REAL(NX, RT)
-    ! Set the number of threads.
-    IF (PRESENT(NUM_THREADS)) THEN
-       NT = NUM_THREADS
-    ELSE
-       NT = OMP_GET_MAX_THREADS()
-    END IF
-    ! Set the batch size.
-    IF (PRESENT(BATCH_SIZE)) THEN
-       BS = MIN(BATCH_SIZE, NX)
-    ELSE
-       BS = (NX + NT - 1) / NT
-    END IF
     ! Set the step factor.
-    IF (PRESENT(STEP_SIZE)) THEN
-       STEP_FACTOR = STEP_SIZE
-    ELSE
-       STEP_FACTOR = CONFIG%INITIAL_STEP
-    END IF
-    ! Set the earliest allowed early-stopping step.
-    IF (PRESENT(EARLY_STOP)) THEN
-       ES = EARLY_STOP
-    ELSE
-       ES = .TRUE.
-    END IF
-    ! Set the "keep best" boolean.
-    IF (PRESENT(KEEP_BEST)) THEN
-       REVERT_TO_BEST = KEEP_BEST
-    ELSE
-       REVERT_TO_BEST = (STEPS .GE. CONFIG%MIN_STEPS_TO_STABILITY)
-    END IF
-    
+    STEP_FACTOR = CONFIG%INITIAL_STEP
     ! Set the initial "number of steps taken since best" counter.
     NS = 0
+    ! Set the batch size.
+    BS = (NX + CONFIG%NUM_THREADS - 1) / CONFIG%NUM_THREADS
     ! Only "revert" to the best model seen if some steps are taken.
     REVERT_TO_BEST = REVERT_TO_BEST .AND. (STEPS .GT. 0)
     ! Store the start time of this routine (to make sure updates can
     !    be shown to the user at a reasonable frequency).
     CALL CPU_TIME(LAST_PRINT_TIME)
     DID_PRINT = .FALSE.
-    WAIT_TIME = 2.0 * NT ! 2 seconds (times number of threads)
+    WAIT_TIME = 2.0 * CONFIG%NUM_THREADS ! 2 seconds (times number of threads)
     ! Initial rates of change of mean and variance values.
     STEP_MEAN_CHANGE = CONFIG%INITIAL_STEP_MEAN_CHANGE
     STEP_MEAN_REMAIN = 1.0_RT - STEP_MEAN_CHANGE
@@ -844,7 +923,6 @@ CONTAINS
     MODEL_GRAD_MEAN(:) = 0.0_RT
     ! Set the estiamted curvature in steps.
     MODEL_GRAD_CURV(:) = 0.0_RT
-
     ! Iterate, taking steps with the average gradient over all data.
     fit_loop : DO I = 1, STEPS
        ! Compute the average gradient over all points.
@@ -853,19 +931,26 @@ CONTAINS
        MODEL_GRAD(:) = 0.0_RT
        ! Count the number of batches.
        BATCHES = 0.0_RT
-       !$OMP PARALLEL DO NUM_THREADS(NT) PRIVATE(BATCH_END) &
+       !$OMP PARALLEL DO NUM_THREADS(CONFIG%NUM_THREADS) PRIVATE(BATCH_END) &
        !$OMP&  REDUCTION(+: BATCHES, SUM_SQUARED_ERROR, MODEL_GRAD)
        DO BATCH_START = 1, NX, BS
           BATCHES = BATCHES + 1.0_RT
           BATCH_END = MIN(NX, BATCH_START+BS-1)
           ! Sum the gradient over all data batches.
-          CALL MODEL_GRADIENT(CONFIG, MODEL(:), &
-               X(:,BATCH_START:BATCH_END), &
-               Y(:,BATCH_START:BATCH_END), SUM_SQUARED_ERROR, &
-               MODEL_GRAD(:))
+          IF (PRESENT(XI)) THEN
+             CALL MODEL_GRADIENT(CONFIG, MODEL(:), &
+                  X(:,BATCH_START:BATCH_END), &
+                  Y(:,BATCH_START:BATCH_END), &
+                  SUM_SQUARED_ERROR, MODEL_GRAD(:), &
+                  XI=XI(:,BATCH_START:BATCH_END))
+          ELSE
+             CALL MODEL_GRADIENT(CONFIG, MODEL(:), &
+                  X(:,BATCH_START:BATCH_END), &
+                  Y(:,BATCH_START:BATCH_END), &
+                  SUM_SQUARED_ERROR, MODEL_GRAD(:))
+          END IF
        END DO
        !$OMP END PARALLEL DO
-
        ! Convert the sum of squared errors into the mean squared error.
        MSE = SUM_SQUARED_ERROR / RNX
        ! Update the step factor based on model improvement.
@@ -884,19 +969,19 @@ CONTAINS
        END IF
        ! Store the previous error for tracking the best-so-far.
        PREV_MSE = MSE
-       
+
        ! Record that a step was taken.
        NS = NS + 1
        ! Update the saved "best" model based on error.
        IF (MSE .LT. BEST_MSE) THEN
-          NS       = 0
+          NS = 0
           BEST_MSE = MSE
           IF (REVERT_TO_BEST) THEN
              BEST_MODEL(:) = MODEL(1:CONFIG%NUM_VARS)
           END IF
        ! Early stop if we don't expect to see a better solution
        !  by the time the fit operation is complete.
-       ELSE IF (ES .AND. (NS .GT. STEPS - I)) THEN
+       ELSE IF (CONFIG%EARLY_STOP .AND. (NS .GT. STEPS - I)) THEN
           EXIT fit_loop
        END IF
 
@@ -947,10 +1032,11 @@ CONTAINS
     END IF
 
     ! Set the minimum and maximum values observved at fit time.
-    CALL SET_MIN_MAX(CONFIG, MODEL(:), X(:,:))
+    CALL SET_MIN_MAX(CONFIG, MODEL(:), X(:,:), XI(:,:))
 
     ! Erase the printed message if one was produced.
     IF (DID_PRINT) WRITE (*,'(A)',ADVANCE='NO') RESET_LINE
+
 
   CONTAINS
 
