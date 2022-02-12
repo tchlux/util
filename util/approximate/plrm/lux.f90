@@ -342,6 +342,8 @@ CONTAINS
     INTEGER, INTENT(IN), DIMENSION(:,:) :: INT_INPUTS
     REAL(KIND=RT), INTENT(OUT), DIMENSION(:,:) :: EMBEDDED
     INTEGER :: N, D, E
+    REAL(KIND=RT) :: RD
+    RD = REAL(SIZE(INT_INPUTS,1),RT)
     ! Add together appropriate embedding vectors based on integer inputs.
     EMBEDDED(:,:) = 0.0_RT
     DO N = 1, SIZE(INT_INPUTS,2)
@@ -350,6 +352,7 @@ CONTAINS
           E = INT_INPUTS(D,N)
           EMBEDDED(:,N) = EMBEDDED(:,N) + EMBEDDINGS(:,E)
        END DO
+       EMBEDDED(:,N) = EMBEDDED(:,N) / RD
     END DO
   END SUBROUTINE UNPACK_EMBEDDINGS
 
@@ -385,10 +388,10 @@ CONTAINS
        ALLOCATE(XXI(CONFIG%MDI, SIZE(X,2)))
        ES = SIZE(X,1)+1
        ! Add the real inputs to the front of each vector.
-       XXI(:ES-1,:) = XI(:,:)
+       XXI(:ES-1,:) = X(:,:)
        ! Put the embeddings into back of each vector.
        CALL UNPACK_EMBEDDINGS(CONFIG, MODEL(CONFIG%SEV:CONFIG%EEV), &
-            XI, XXI(ES:,:))
+            XI(:,:), XXI(ES:,:))
        ! Unpack the model.
        CALL UNPACKED_SET_MIN_MAX(XXI(:,:), &
             MODEL(CONFIG%SIV:CONFIG%EIV), &
@@ -479,6 +482,12 @@ CONTAINS
     ! Internal values.
     REAL(KIND=RT), DIMENSION(:,:), ALLOCATABLE :: XXI, TEMP_VALUES, STATE_VALUES
     INTEGER :: I, N, BATCH, NB, BN, BS, BE, BT, ES
+    ! Check for a valid data shape given the model.
+    IF (.NOT. VALID_SHAPE(CONFIG, X, Y, XI)) THEN
+       PRINT *, 'ERROR: Model and data shapes passed to EVALUATE do not agree.' 
+       Y(:,:) = 0.0_RT
+       RETURN
+    END IF
     ! Get the number of points.
     N = SIZE(X,2)
     ! Allocate storage for the internal values.
@@ -489,7 +498,12 @@ CONTAINS
     BN = CEILING(REAL(N) / REAL(NB))
     ! One pluse the number of input components (in case embeddings are used).
     ES = SIZE(X,1)+1
-    !$OMP PARALLEL DO PRIVATE(BS, BE, BT, XXI) IF(NB > 1)
+    IF (PRESENT(XI)) THEN
+       ! Convert the integer embeddings into their real counterparts.
+       ALLOCATE(XXI(CONFIG%MDI, N))
+    END IF
+
+    !$OMP PARALLEL DO NUM_THREADS(CONFIG%NUM_THREADS) PRIVATE(BS, BE, BT) IF(NB > 1)
     batch_evaluation : DO BATCH = 1, NB
        BS = BN*(BATCH-1) + 1
        BE = MIN(N, BN*BATCH)
@@ -497,13 +511,11 @@ CONTAINS
        IF (BT .LE. 0) CYCLE batch_evaluation
        ! Generate copies needed to pass embeddings into model.
        IF (PRESENT(XI)) THEN
-          ! Convert the integer embeddings into their real counterparts.
-          ALLOCATE(XXI(CONFIG%MDI, BT))
           ! Add the real inputs to the front of each vector.
-          XXI(:ES-1,:) = X(:,BS:BE)
+          XXI(:ES-1,BS:BE) = X(:,BS:BE)
           ! Put the embeddings into back of each vector.
           CALL UNPACK_EMBEDDINGS(CONFIG, MODEL(CONFIG%SEV:CONFIG%EEV), &
-               XI(:,BS:BE), XXI(ES:,:))
+               XI(:,BS:BE), XXI(ES:,BS:BE))
           ! Unpack the model vector into its parts.
           CALL UNPACKED_EVALUATE(BS, BE, BT, &
                MODEL(CONFIG%SIV:CONFIG%EIV), &
@@ -515,9 +527,7 @@ CONTAINS
                MODEL(CONFIG%SSN:CONFIG%ESN), &
                MODEL(CONFIG%SSX:CONFIG%ESX), &
                MODEL(CONFIG%SOV:CONFIG%EOV), &
-               XXI(:,:), Y(:,BS:BE))
-          ! Deallocate memory for embedding copy.
-          DEALLOCATE(XXI)
+               XXI(:,BS:BE), Y(:,BS:BE))
        ELSE
           ! Unpack the model vector into its parts.
           CALL UNPACKED_EVALUATE(BS, BE, BT, &
@@ -533,6 +543,10 @@ CONTAINS
                X(:,BS:BE), Y(:,BS:BE))
        END IF
     END DO batch_evaluation
+    !$OMP END PARALLEL DO
+
+    ! Deallocate memory for embedding copy.
+    IF (PRESENT(XI)) DEALLOCATE(XXI)
     ! Deallocate temporary variables.
     DEALLOCATE(STATE_VALUES, TEMP_VALUES)
 
@@ -647,7 +661,7 @@ CONTAINS
     REAL(KIND=RT), DIMENSION(SIZE(X,2),CONFIG%MDO)            :: Y_GRADIENT
     REAL(KIND=RT), DIMENSION(SIZE(X,2),CONFIG%MDS,CONFIG%MNS) :: STATE_VALUES
     REAL(KIND=RT), DIMENSION(SIZE(X,2),CONFIG%MDS)            :: STATE_TEMP
-    INTEGER :: ES
+    INTEGER :: ES, I
 
     ! TODO:
     ! - Unpack integer embeddings into associated real vector values, sum
@@ -714,14 +728,16 @@ CONTAINS
       REAL(KIND=RT), INTENT(INOUT), DIMENSION(CONFIG%MDE,CONFIG%MNE) :: EMBEDDING_GRAD
       REAL(KIND=RT), DIMENSION(CONFIG%MNE) :: COUNTS
       INTEGER :: N, D, E
+      REAL(KIND=RT) :: RD
       ! Accumulate the gradients for all embedding vectors.
       COUNTS(:) = 0.0_RT
       EMBEDDING_GRAD(:,:) = 0.0_RT
+      RD = REAL(SIZE(INT_INPUTS,1),RT)
       DO N = 1, SIZE(INT_INPUTS,2)
          DO D = 1, SIZE(INT_INPUTS,1)
             E = INT_INPUTS(D,N)
             COUNTS(E) = COUNTS(E) + 1.0_RT
-            EMBEDDING_GRAD(:,E) = EMBEDDING_GRAD(:,E) + GRAD(:,N)
+            EMBEDDING_GRAD(:,E) = EMBEDDING_GRAD(:,E) + GRAD(:,N) / RD
          END DO
       END DO
       ! Average the embedding gradient by dividing by the sum of occurrences.
@@ -759,7 +775,7 @@ CONTAINS
       ! LP1 - layer index "plus 1" -> "P1"
       INTEGER :: D, L, LP1
       ! Number of points.
-      REAL(KIND=RT) :: N
+      REAL(KIND=RT) :: N, NORM
       ! Get the number of points.
       N = REAL(SIZE(INPUTS,2), RT)
       ! -------------------------------------------------------------------------
@@ -798,6 +814,19 @@ CONTAINS
       ! Compute the current sum squared error.
       SUM_SQUARED_ERROR = SUM_SQUARED_ERROR + SUM(Y_GRADIENT(:,:)**2)
       ! ------------------------------------------------------------------------
+         ! -----------------------------------------------------------------
+         ! Make all of the previous basis function values unit norm, 
+         !   so that the gradient points towards the one that is shaped
+         !   most similarly to the error (rather than one that is 
+         !   scaled to be largest).
+         DO D = 1, CONFIG%MDS
+            NORM = NORM2(STATE_VALUES(:,D,CONFIG%MNS))
+            IF (NORM .GT. 0.0_RT) &
+                 STATE_VALUES(:,D,CONFIG%MNS) = STATE_VALUES(:,D,CONFIG%MNS) / NORM
+            ! TODO: ELSE ; reset the vector + shift producing that component
+         END DO
+         ! -----------------------------------------------------------------
+
       ! Compute the gradient of variables with respect to the "output gradient"
       CALL GEMM('T', 'N', CONFIG%MDS, CONFIG%MDO, SIZE(INPUTS,2), 1.0_RT / N, &
            STATE_VALUES(:,:,CONFIG%MNS), SIZE(STATE_VALUES,1), &
@@ -820,6 +849,18 @@ CONTAINS
          ! Compute the shift gradient.
          STATE_SHIFT_GRADIENT(:,L) = SUM(STATE_VALUES(:,:,LP1), 1) / N &
               + STATE_SHIFT_GRADIENT(:,L)
+         ! -----------------------------------------------------------------
+         ! Make all of the previous basis function values unit norm, 
+         !   so that the gradient points towards the one that is shaped
+         !   most similarly to the error (rather than one that is 
+         !   scaled to be largest).
+         DO D = 1, CONFIG%MDS
+            NORM = NORM2(STATE_VALUES(:,D,L))
+            IF (NORM .GT. 0.0_RT) &
+                 STATE_VALUES(:,D,L) = STATE_VALUES(:,D,L) / NORM
+            ! TODO: ELSE ; reset the vector + shift producing that component
+         END DO
+         ! -----------------------------------------------------------------
          ! Compute the gradient with respect to each output and all inputs.
          CALL GEMM('T', 'N', CONFIG%MDS, CONFIG%MDS, SIZE(INPUTS,2), 1.0_RT / N, &
               STATE_VALUES(:,:,L), SIZE(STATE_VALUES,1), &
@@ -871,6 +912,40 @@ CONTAINS
 
   END SUBROUTINE MODEL_GRADIENT
 
+  ! Return .TRUE. if the input and output shapes
+  FUNCTION VALID_SHAPE(CONFIG, X, Y, XI)
+    TYPE(MODEL_CONFIG), INTENT(IN) :: CONFIG
+    REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: X
+    REAL(KIND=RT), INTENT(IN), DIMENSION(:,:) :: Y
+    INTEGER,       INTENT(IN), DIMENSION(:,:), OPTIONAL :: XI
+    LOGICAL :: VALID_SHAPE
+    ! Local variables.
+    INTEGER :: DIM_IN, DIM_OUT
+    ! Compute the dimensional shapes of inputs.
+    DIM_IN = SIZE(X, 1)
+    DIM_OUT = SIZE(Y,1)
+    ! Compute whether the shape matches the CONFIG.
+    VALID_SHAPE = (SIZE(X,2) .EQ. SIZE(Y,2))
+    IF (VALID_SHAPE) THEN
+       VALID_SHAPE = (DIM_IN + CONFIG%MDE .EQ. CONFIG%MDI) .AND. (DIM_OUT .EQ. CONFIG%MDO)
+       IF (PRESENT(XI) .AND. VALID_SHAPE) THEN
+          VALID_SHAPE = SIZE(XI,2) .EQ. SIZE(X,2)
+          IF (VALID_SHAPE) THEN
+             VALID_SHAPE = (MINVAL(XI) .GE. 1) .AND. (MAXVAL(XI) .LE. CONFIG%MNE)
+             IF (.NOT. VALID_SHAPE) THEN
+                PRINT *, 'ERROR: Embeddings provided are out of range.'
+             END IF
+          ELSE
+             PRINT *, 'ERROR: "XI" shape does not match "X" shape.'
+          END IF
+       ELSE IF (.NOT. VALID_SHAPE) THEN
+          PRINT *, 'ERROR: Input or output dimension of data and model do not match.'
+       END IF
+    ELSE
+       PRINT *, 'ERROR: "X" and "Y" inputs do not have same number of points.'
+    END IF
+  END FUNCTION VALID_SHAPE
+
 
   ! Fit input / output pairs by minimizing mean squared error.
   SUBROUTINE MINIMIZE_MSE(CONFIG, MODEL, X, Y, STEPS, XI, &
@@ -895,6 +970,13 @@ CONTAINS
          STEP_CURV_CHANGE, STEP_CURV_REMAIN
     REAL :: LAST_PRINT_TIME, CURRENT_TIME, WAIT_TIME
     CHARACTER(LEN=*), PARAMETER :: RESET_LINE = REPEAT(CHAR(8),25)
+    ! Check for a valid data shape given the model.
+    IF (.NOT. VALID_SHAPE(CONFIG, X, Y, XI)) THEN
+       PRINT *, 'ERROR: Model and data shapes passed to MINIMIZE_MSE do not agree.' 
+       SUM_SQUARED_ERROR = 0.0_RT
+       IF (PRESENT(RECORD)) RECORD(:,:) = 0.0_RT
+       RETURN
+    END IF
     ! Number of points.
     NX = SIZE(X,2)
     RNX = REAL(NX, RT)
@@ -931,7 +1013,8 @@ CONTAINS
        MODEL_GRAD(:) = 0.0_RT
        ! Count the number of batches.
        BATCHES = 0.0_RT
-       !$OMP PARALLEL DO NUM_THREADS(CONFIG%NUM_THREADS) PRIVATE(BATCH_END) &
+       !$OMP PARALLEL DO NUM_THREADS(CONFIG%NUM_THREADS) &
+       !$OMP&  PRIVATE(BATCH_START, BATCH_END) &
        !$OMP&  REDUCTION(+: BATCHES, SUM_SQUARED_ERROR, MODEL_GRAD)
        DO BATCH_START = 1, NX, BS
           BATCHES = BATCHES + 1.0_RT
@@ -1007,7 +1090,7 @@ CONTAINS
           ! Store the mean squared error at this iteration.
           RECORD(1,I) = MSE
           ! Store the norm of the step that was taken.
-          RECORD(2,I) = SUM(MODEL_GRAD(:)**2)
+          RECORD(2,I) = SQRT(MAX(EPSILON(0.0_RT), SUM(MODEL_GRAD(:)**2)))
        END IF
 
        ! Maintain a constant max-norm across the magnitue of input and internal vectors.

@@ -97,7 +97,9 @@ class PLRM(Approximator):
                     f"  output dimension {self.config.mdo}\n"+
                     f"  state dimension  {self.config.mds}\n"+
                     f"  number of states {self.config.mns}\n"+
-                     "\n"+
+                    (f"  embedding dimension  {self.config.mde}\n"+
+                     f"  number of embeddings {self.config.mne}\n"
+                     if self.config.mne > 0 else "")+"\n"+
                     f"  embeddings   {self.embeddings.shape}  "+to_str(self.embeddings)+
                     f"  input vecs   {self.input_vecs.shape}  "+to_str(self.input_vecs)+
                     f"  input shift  {self.input_shift.shape} "+to_str(self.input_shift)+
@@ -136,6 +138,7 @@ class PLRM(Approximator):
         mne = 0
         mde = 0
         if (xi is not None):
+            xi = np.asarray(xi, dtype="int32", order="C").T
             mne = max(self.config.mne, num_categories)
             mde = self.config.mde
             kwargs.update({"mne":mne, "mde":mde})
@@ -177,6 +180,7 @@ class PLRM(Approximator):
                                x.T, y.T, steps=steps,
                                xi=xi, record=self.record.T)
 
+
     # Make predictions for new data.
     def _predict(self, x, xi=None, embeddings=False, positions=False, **kwargs):
         from numpy import zeros, asarray
@@ -197,7 +201,7 @@ class PLRM(Approximator):
             maxval = xi.max()
             assert (0 <= minval <= self.config.mne), f"Expected minimum category in 'xi' to be 0 (for unknown) or 1, received {minval}."
             assert (0 <= maxval <= self.config.mne), f"Expected largest category in 'xi' to be at most {self.config.mne}, received {maxval}."
-        print("xi:", xi.shape)
+            assert (xi.shape[1] == x.shape[0]), f"Provided 'x' {x.shape} and 'xi' {xi.T.shape} do not match."
         # Call the unerlying library.
         self.PLRM.evaluate(self.config, self.model, x.T, y.T, xi=xi, **kwargs)
         # Denormalize the output values and return them.
@@ -247,46 +251,41 @@ class PLRM(Approximator):
 if __name__ == "__main__":
     import numpy as np
     from util.approximate.testing import test_plot
+    from util.approximate import NearestNeighbor as NN
     layer_dim = 20
     num_layers = 4
     m = PLRM()
+
     # Try saving an untrained model.
     m.save("testing_empty_save.json")
     m.load("testing_empty_save.json")
     m = PLRM(di=2, ds=layer_dim, ns=num_layers, do=1, mde=4, mne=2, seed=0,
-             steps=1000, initial_output_scale=1.0, num_threads=1,
+             steps=100, initial_output_scale=1.0, num_threads=1,
              revert_to_best=False)
-    from util.approximate import LSHEP
-
     # Create the test plot.
-    p, x, y = test_plot(LSHEP(), random=True, N=100, plot_points=1000) #plot_points=5000)
-    # # Try saving the trained model and applying it after loading.
-    # m.save("testing_real_save.json")
-    # m.load("testing_real_save.json")
-    # p.add("Loaded values", *x.T, m(x)+0.05, color=1, marker_size=4)
+    p, x, y = test_plot(m, random=True, N=100, plot_points=1000) #plot_points=5000)
+    # Try saving the trained model and applying it after loading.
+    m.save("testing_real_save.json")
+    m.load("testing_real_save.json")
+    p.add("Loaded values", *x.T, m(x)+0.05, color=1, marker_size=4)
 
     print("Building model..")
     # Fit a new model that has categories for two different functions.
-    m = PLRM(di=2, ds=layer_dim, ns=num_layers, do=1, mde=4, mne=2, seed=0, steps=1000, num_threads=1)
+    m = PLRM(di=2, ds=layer_dim, ns=num_layers, do=1, mne=2, seed=0, steps=1000)
     all_x = np.concatenate((x, x), axis=0)
     all_y = np.concatenate((y, np.cos(np.linalg.norm(x,axis=1))), axis=0)
-    all_xi = np.concatenate((np.ones(len(x), dtype="int32"),2*np.ones(len(x), dtype="int32"))).reshape((1,-1))
-    print("all_x.shape: ",all_x.shape)
-    print("all_y.shape: ",all_y.shape)
-    print("all_xi.shape: ",all_xi.shape)
-    print(m)
-    m.fit(all_x, all_y, xi=all_xi, num_threads=1)
-    print("m.config.mne: ", m.config.mne)
-    print("Evaluating y1..")
+    all_xi = np.concatenate((np.ones(len(x)),2*np.ones(len(x)))).reshape((-1,1))
+    m.fit(all_x, all_y, xi=all_xi)
+    # Create an evaluation set that evaluates the model that was built over two differnt functions.
     xi1 = np.ones((len(x),1),dtype="int32")
     y1 = m(x, xi=xi1)
-    print("y1.shape: ", y1.shape)
-    print("Evaluating y2..")
     y2 = m(x, xi=2*xi1)
     print("Adding to plot..")
-    p.add("t0", *all_x.T, all_y, color=2)
-    p.add("y1", *x.T, y1, color=2)
-    p.add("y2", *x.T, y2, color=3)
+    p = type(p)()
+    p.add("xi=1 true", *x.T, all_y[:len(all_y)//2], color=0)
+    p.add("xi=2 true", *x.T, all_y[len(all_y)//2:], color=1)
+    p.add_func("xi=1", lambda x: m(x, np.ones(len(x), dtype="int32").reshape((1,-1))), [0,1], [0,1], color=3, mode="markers", shade=True)
+    p.add_func("xi=2", lambda x: m(x, 2*np.ones(len(x), dtype="int32").reshape((1,-1))), [0,1], [0,1], color=2, mode="markers", shade=True)
 
     # Generate the visual.
     print("Generating surface plot..")
@@ -295,15 +294,16 @@ if __name__ == "__main__":
     p = type(p)("Mean squared error")
     # Rescale the columns of the record for visualization.
     record = m.record
-    record /= record.max(axis=0)
     p.add("MSE", list(range(record.shape[0])), record[:,0], color=1, mode="lines")
     p.add("Step sizes", list(range(record.shape[0])), record[:,1], color=2, mode="lines")
     p.show(append=True, show=True)
     print("", "done.", flush=True)
     # Remove the save files.
     import os
-    os.remove("testing_empty_save.json")
-    os.remove("testing_real_save.json")
+    try: os.remove("testing_empty_save.json")
+    except: pass
+    try: os.remove("testing_real_save.json")
+    except: pass
 
     VISUALIZE_EMBEDDINGS = False
     if VISUALIZE_EMBEDDINGS:
