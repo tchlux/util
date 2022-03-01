@@ -117,6 +117,9 @@ class PLRM(Approximator):
     # Fit this model.
     def _fit(self, x, y, xi=None, normalize_x=True, normalize_y=True,
              new_model=False, **kwargs):
+        # If this model isn't initialized, then do that.
+        if (self.config is None):
+            self._init_model(di=x.shape[1], do=y.shape[1])
         # Get the number of steps for training.
         steps = kwargs.get("steps", self.steps)
         # If a random seed is provided, then only 2 threads can be used
@@ -127,26 +130,26 @@ class PLRM(Approximator):
             if ((num_threads is None) or (num_threads > 2)):
                 import warnings
                 warnings.warn("Seeding a PLRM model will deterministically initialize weights, but num_threads > 2 will result in nondeterministic model updates.")
-        # Check that the categories meet expectations.
-        if (xi is not None):
-            minval = xi.min()
-            maxval = xi.max()
-            num_categories = maxval - minval + 1
         # Verify the shape of the model matches the data.
         di = x.shape[1]
         do = y.shape[1]
         mne = 0
         mde = 0
+        # Check that the categories meet expectations.
         if (xi is not None):
             xi = np.asarray(xi, dtype="int32", order="C").T
+            minval = xi.min()
+            maxval = xi.max()
+            num_categories = int(maxval - minval + 1)
             mne = max(self.config.mne, num_categories)
             mde = self.config.mde
-            kwargs.update({"mne":mne, "mde":mde})
+            if (mne > 0): kwargs.update({"mne":mne})
+            if (mde > 0): kwargs.update({"mde":mde})
         # If the shape of the model does not match the data, reinitialize.
-        if new_model or (self.config.mdi != di+mde) or (self.config.mdo != do):
+        if (new_model or (self.config.mdi != di+mde) or
+            (self.config.mdo != do) or ((mne > 0) and (mde <= 0))):
             kwargs.update({"di":di, "do":do})
             self._init_model(**kwargs)
-
         # Set any configuration keyword arguments given at initialization.
         for n in ({n for (n,t) in self.config._fields_} & set(kwargs)):
             setattr(self.config, n, kwargs[n])
@@ -251,64 +254,160 @@ class PLRM(Approximator):
 if __name__ == "__main__":
     import numpy as np
     from util.approximate.testing import test_plot
-    from util.approximate import NearestNeighbor as NN
-    layer_dim = 20
-    num_layers = 4
-    m = PLRM()
+    from util.stats import pca
+    from tlux.plot import Plot
+    from tlux.random import well_spaced_ball
 
-    # Try saving an untrained model.
-    m.save("testing_empty_save.json")
-    m.load("testing_empty_save.json")
-    m = PLRM(di=2, ds=layer_dim, ns=num_layers, do=1, mde=4, mne=2, seed=0,
-             steps=100, initial_output_scale=1.0, num_threads=1,
-             revert_to_best=False)
-    # Create the test plot.
-    p, x, y = test_plot(m, random=True, N=100, plot_points=1000) #plot_points=5000)
-    # Try saving the trained model and applying it after loading.
-    m.save("testing_real_save.json")
-    m.load("testing_real_save.json")
-    p.add("Loaded values", *x.T, m(x)+0.05, color=1, marker_size=4)
+    # Define a wrapper convenience function for computing principal components.
+    from sklearn.decomposition import PCA        
+    def pca(x, num_components=None):
+        pca = PCA(n_components=num_components)
+        if (num_components is None): num_components = min(*x.shape)
+        else: num_components = min(num_components, *x.shape)
+        pca.fit(x)
+        return pca.components_, pca.singular_values_
 
-    print("Building model..")
-    # Fit a new model that has categories for two different functions.
-    m = PLRM(di=2, ds=layer_dim, ns=num_layers, do=1, mne=2, seed=0, steps=1000)
-    all_x = np.concatenate((x, x), axis=0)
-    all_y = np.concatenate((y, np.cos(np.linalg.norm(x,axis=1))), axis=0)
-    all_xi = np.concatenate((np.ones(len(x)),2*np.ones(len(x)))).reshape((-1,1))
-    m.fit(all_x, all_y, xi=all_xi)
-    # Create an evaluation set that evaluates the model that was built over two differnt functions.
-    xi1 = np.ones((len(x),1),dtype="int32")
-    y1 = m(x, xi=xi1)
-    y2 = m(x, xi=2*xi1)
-    print("Adding to plot..")
-    p = type(p)()
-    p.add("xi=1 true", *x.T, all_y[:len(all_y)//2], color=0)
-    p.add("xi=2 true", *x.T, all_y[len(all_y)//2:], color=1)
-    p.add_func("xi=1", lambda x: m(x, np.ones(len(x), dtype="int32").reshape((1,-1))), [0,1], [0,1], color=3, mode="markers", shade=True)
-    p.add_func("xi=2", lambda x: m(x, 2*np.ones(len(x), dtype="int32").reshape((1,-1))), [0,1], [0,1], color=2, mode="markers", shade=True)
+    # TODO:
+    #  - bounds on curvature based on the layer in the model
+    #  - way to increase basis function diversity (different shift distribution?)
+    #    it gets very low with depth of model using uniform and random ortho on sphere
+    # 
 
-    # Generate the visual.
-    print("Generating surface plot..")
-    p.show(show=False)
-    print("Generating loss plot..")
-    p = type(p)("Mean squared error")
-    # Rescale the columns of the record for visualization.
-    record = m.record
-    p.add("MSE", list(range(record.shape[0])), record[:,0], color=1, mode="lines")
-    p.add("Step sizes", list(range(record.shape[0])), record[:,1], color=2, mode="lines")
-    p.show(append=True, show=True)
-    print("", "done.", flush=True)
-    # Remove the save files.
-    import os
-    try: os.remove("testing_empty_save.json")
-    except: pass
-    try: os.remove("testing_real_save.json")
-    except: pass
+    layer_dim = 100
+    num_layers = 10
+
+    TEST_SPECTRUM = True
+    if TEST_SPECTRUM:
+    #     layer_dim = 40
+    #     num_layers = 20
+        n = 10000
+        d_in = 3
+        d_out = 5
+        # Control array print options for readability.
+        np.set_printoptions(edgeitems=50, linewidth=100000, 
+            formatter=dict(float=lambda v: f"{v:.2f}"))
+
+        # Plot the values (project onto 3D if there are more).
+        visualize = False
+        def plot_vals(x, name="", d=3, show=False):
+            if (not visualize): return
+            if (x.shape[1] > d):
+                vecs, mags = pca(x, num_components=d)
+                x = np.matmul(x, vecs.T)
+            # Create the plot.
+            p = Plot(name)
+            p.add("", *x.T, color=1, marker_size=4, marker_line_width=1)
+            p.plot(show=show, append=True, show_legend=False)
+        # Initialize a model and data.
+        m = PLRM(di=d_in, ds=layer_dim, ns=num_layers, do=d_out, initial_shift_range=2.0)
+        x = well_spaced_ball(n, d_in)
+        y = np.vstack([
+            np.cos(2*np.pi*(i+1)*np.linalg.norm(x,axis=1))
+            for i in range(d_out)]).T
+        # Show the input points.
+        plot_vals(x, "Input")
+        # Generate embeddings for all points.
+        m(x, embeddings=True)
+        for l in range(num_layers):
+            emb = m.embeddings[:,:,l]
+            print(l)
+            print("  min", emb.min().round(2))#, emb.min(axis=0))
+            print("  max", emb.max().round(2))#, emb.max(axis=0))
+            print("  point spectrum:", pca(emb)[1])
+            print("  basis spectrum:", pca(emb.T)[1])
+            print()
+            plot_vals(emb, f"Layer {l+1}", show=(l==num_layers-1))
+        # Fit the model, then look at the new spectrum.
+        print('-'*70)
+        m.fit(x, y, steps=2000)
+        m(x, embeddings=True)
+        print('-'*70)
+        #Show the spectrum.
+        for l in range(num_layers):
+            emb = m.embeddings[:,:,l]
+            print(l)
+            print("  min", emb.min().round(2))#, emb.min(axis=0))
+            print("  max", emb.max().round(2))#, emb.max(axis=0))
+            print("  point spectrum:", pca(emb)[1])
+            print("  basis spectrum:", pca(emb.T)[1])
+            print()
+            plot_vals(emb, f"Fit Layer {l+1}", show=(l==num_layers-1))
+
+
+
+    TEST_SAVE_LOAD = False
+    if TEST_SAVE_LOAD:
+        # Try saving an untrained model.
+        m = PLRM()
+        m.save("testing_empty_save.json")
+        m.load("testing_empty_save.json")
+        m = PLRM(di=2, ds=layer_dim, ns=num_layers, do=1, mde=4, mne=2, seed=0,
+                 steps=1000, initial_output_scale=1.0, num_threads=2)
+        # Create the test plot.
+        p, x, y = test_plot(m, random=True, N=100, plot_points=1000) #plot_points=5000)
+        # Try saving the trained model and applying it after loading.
+        m.save("testing_real_save.json")
+        m.load("testing_real_save.json")
+        p.add("Loaded values", *x.T, m(x)+0.05, color=1, marker_size=4)
+        p.plot(show=False)
+        # Add plot showing the training loss.
+        print("Generating loss plot..")
+        p = type(p)("Mean squared error")
+        # Rescale the columns of the record for visualization.
+        record = m.record
+        p.add("MSE", list(range(record.shape[0])), record[:,0], color=1, mode="lines")
+        p.add("Step sizes", list(range(record.shape[0])), record[:,1], color=2, mode="lines")
+        p.show(append=True, show=True)
+        print("", "done.", flush=True)
+        # Remove the save files.
+        import os
+        try: os.remove("testing_empty_save.json")
+        except: pass
+        try: os.remove("testing_real_save.json")
+        except: pass
+
+
+    TEST_INT_INPUT = False
+    if TEST_INT_INPUT:
+        print("Building model..")
+        # Fit a small throw-away model to get the test plot points.
+        m = PLRM(di=2, ds=1, ns=1, steps=10)
+        p, x, y = test_plot(m, random=True, N=100)
+        # Initialize a new model.
+        m = PLRM(di=2, ds=layer_dim, ns=num_layers, do=1, mne=2, seed=0, steps=1000, num_threads=2)
+        all_x = np.concatenate((x, x), axis=0)
+        all_y = np.concatenate((y, np.cos(np.linalg.norm(x,axis=1))), axis=0)
+        all_xi = np.concatenate((np.ones(len(x)),2*np.ones(len(x)))).reshape((-1,1)).astype("int32")
+        print("fitting model that should reshape")
+        m.fit(all_x, all_y, xi=all_xi)
+        # Create an evaluation set that evaluates the model that was built over two differnt functions.
+        xi1 = np.ones((len(x),1),dtype="int32")
+        y1 = m(x, xi=xi1)
+        y2 = m(x, xi=2*xi1)
+        print("Adding to plot..")
+        p = type(p)()
+        p.add("xi=1 true", *x.T, all_y[:len(all_y)//2], color=0)
+        p.add("xi=2 true", *x.T, all_y[len(all_y)//2:], color=1)
+        p.add_func("xi=1", lambda x: m(x, np.ones(len(x), dtype="int32").reshape((1,-1))), [0,1], [0,1], color=3, mode="markers", shade=True)
+        p.add_func("xi=2", lambda x: m(x, 2*np.ones(len(x), dtype="int32").reshape((1,-1))), [0,1], [0,1], color=2, mode="markers", shade=True)
+
+        # Generate the visual.
+        print("Generating surface plot..")
+        p.show(show=False)
+        print("Generating loss plot..")
+        p = type(p)("Mean squared error")
+        # Rescale the columns of the record for visualization.
+        record = m.record
+        p.add("MSE", list(range(record.shape[0])), record[:,0], color=1, mode="lines")
+        p.add("Step sizes", list(range(record.shape[0])), record[:,1], color=2, mode="lines")
+        p.show(append=True, show=True)
+        print("", "done.", flush=True)
+
 
     VISUALIZE_EMBEDDINGS = False
     if VISUALIZE_EMBEDDINGS:
         # Create a blank-slate model, to see what it looks like.
-        n = PLRM(di=2, ds=layer_dim, ns=num_layers, do=1, seed=0)
+        n = PLRM(di=2, ds=layer_dim, ns=num_layers, do=1, seed=0, num_threads=2)
         from util.random import latin
         nx = latin(2000, 2)
         #   visialize the initial model at all layers.
