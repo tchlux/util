@@ -100,16 +100,16 @@ class PLRM(Approximator):
                     (f"  embedding dimension  {self.config.mde}\n"+
                      f"  number of embeddings {self.config.mne}\n"
                      if self.config.mne > 0 else "")+"\n"+
-                    f"  embeddings   {self.embeddings.shape}  "+to_str(self.embeddings)+
-                    f"  input vecs   {self.input_vecs.shape}  "+to_str(self.input_vecs)+
-                    f"  input shift  {self.input_shift.shape} "+to_str(self.input_shift)+
-                    f"  input min    {self.input_min.shape}   "+to_str(self.input_min)+
-                    f"  input max    {self.input_max.shape}   "+to_str(self.input_max)+
-                    f"  state vecs   {self.state_vecs.shape}  "+to_str(self.state_vecs)+
-                    f"  state shift  {self.state_shift.shape} "+to_str(self.state_shift)+
-                    f"  state min    {self.state_min.shape}   "+to_str(self.state_min)+
-                    f"  state max    {self.state_max.shape}   "+to_str(self.state_max)+
-                    f"  output vecs  {self.output_vecs.shape} "+to_str(self.output_vecs)
+                    f"  embeddings   {self.embeddings.shape}  \n"+#+to_str(self.embeddings)+
+                    f"  input vecs   {self.input_vecs.shape}  \n"+#to_str(self.input_vecs)+
+                    f"  input shift  {self.input_shift.shape} \n"+#to_str(self.input_shift)+
+                    f"  input min    {self.input_min.shape}   \n"+#to_str(self.input_min)+
+                    f"  input max    {self.input_max.shape}   \n"+#to_str(self.input_max)+
+                    f"  state vecs   {self.state_vecs.shape}  \n"+#to_str(self.state_vecs)+
+                    f"  state shift  {self.state_shift.shape} \n"+#to_str(self.state_shift)+
+                    f"  state min    {self.state_min.shape}   \n"+#to_str(self.state_min)+
+                    f"  state max    {self.state_max.shape}   \n"+#to_str(self.state_max)+
+                    f"  output vecs  {self.output_vecs.shape} \n"#to_str(self.output_vecs)
                 )
         return ModelUnpacked()
 
@@ -273,10 +273,10 @@ if __name__ == "__main__":
     #    it gets very low with depth of model using uniform and random ortho on sphere
     # 
 
-    layer_dim = 100
-    num_layers = 10
+    layer_dim = 32
+    num_layers = 2
 
-    TEST_SPECTRUM = True
+    TEST_SPECTRUM = False
     if TEST_SPECTRUM:
     #     layer_dim = 40
     #     num_layers = 20
@@ -335,7 +335,7 @@ if __name__ == "__main__":
 
 
 
-    TEST_SAVE_LOAD = False
+    TEST_SAVE_LOAD = True
     if TEST_SAVE_LOAD:
         # Try saving an untrained model.
         m = PLRM()

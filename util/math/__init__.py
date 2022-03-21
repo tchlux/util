@@ -34,10 +34,10 @@ def flatten(l): return [v for row in l for v in row]
 # Given a list of lists, transpose it and return.
 def transpose(l): return [list(row) for row in zip(*l)]
 
-# Return a boolean "is_numeric"
+# Return True if the object can behave like a real number.
 def is_numeric(obj):
     try:
-        abs((.3*obj + 1*obj) - .3*obj)
+        abs((1.*obj + 1*obj)**1 - (obj/1. + obj/1)**1.0)
         return True
     except: return False
 
